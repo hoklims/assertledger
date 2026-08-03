@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -265,6 +265,18 @@ const defaultIo: CliIo = {
   writeStderr: (text) => process.stderr.write(text),
 };
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+async function isDirectInvocation(
+  moduleUrl: string,
+  entryPath: string | undefined,
+): Promise<boolean> {
+  if (entryPath === undefined) return false;
+  try {
+    return (await realpath(fileURLToPath(moduleUrl))) === (await realpath(path.resolve(entryPath)));
+  } catch {
+    return false;
+  }
+}
+
+if (await isDirectInvocation(import.meta.url, process.argv[1])) {
   process.exitCode = await runCli(process.argv.slice(2), defaultIo);
 }

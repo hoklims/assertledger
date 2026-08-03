@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -280,6 +281,61 @@ describe("SDK facade", () => {
 });
 
 describe("JSON CLI", () => {
+  it("runs when its entry path traverses a directory link", async (context) => {
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "testforge-linked-entry-"));
+    temporaryDirectories.push(temporaryRoot);
+    const linkedRoot = path.join(temporaryRoot, "project");
+    try {
+      await symlink(process.cwd(), linkedRoot, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        ["EACCES", "EPERM", "UNKNOWN"].includes(String(error.code))
+      ) {
+        context.skip(`directory links are unavailable: ${String(error.code)}`);
+        return;
+      }
+      throw error;
+    }
+
+    const tsxEntrypoint = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+    const cliEntrypoint = path.join(linkedRoot, "src", "cli.ts");
+    const result = await new Promise<{ code: number | null; stderr: string; stdout: string }>(
+      (resolve, reject) => {
+        const child = spawn(
+          process.execPath,
+          [tsxEntrypoint, cliEntrypoint, "schema", "replay-result", "--json"],
+          {
+            cwd: process.cwd(),
+            shell: false,
+            windowsHide: true,
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+        const stdout: Buffer[] = [];
+        const stderr: Buffer[] = [];
+        child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+        child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+        child.once("error", reject);
+        child.once("close", (code) =>
+          resolve({
+            code,
+            stdout: Buffer.concat(stdout).toString("utf8"),
+            stderr: Buffer.concat(stderr).toString("utf8"),
+          }),
+        );
+      },
+    );
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.notEqual(result.stdout, "", "linked CLI entrypoint emitted no schema");
+    assert.equal(
+      JSON.parse(result.stdout).$id,
+      "https://testforge.dev/schemas/replay-result.v1.json",
+    );
+  });
+
   it("prints one machine-readable schema document to stdout", async () => {
     const capture = captureIo(process.cwd());
 
