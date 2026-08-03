@@ -1,0 +1,5 @@
+{
+  "name": "testforge-node-example",
+  "private": true,
+  "type": "module"
+}

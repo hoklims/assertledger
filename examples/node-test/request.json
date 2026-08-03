@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "1.0.0",
+  "repository": {
+    "root": "./examples/node-test/repository",
+    "exclude": [".git", ".testforge", "node_modules"]
+  },
+  "adapter": {
+    "kind": "node-test",
+    "executable": "node",
+    "baseTestFiles": ["tests/base.test.js"]
+  },
+  "isolation": {
+    "kind": "trusted-local",
+    "acknowledgedUnsafeExecution": true,
+    "environmentAllowlist": ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"]
+  },
+  "candidateRoots": ["tests/candidates"],
+  "budgets": {
+    "maximumCandidates": 4,
+    "maximumWorlds": 4,
+    "maximumExecutions": 24,
+    "maximumRepositoryFiles": 10000,
+    "maximumRepositoryBytes": 100000000,
+    "maximumWorldOverlayBytes": 1000000,
+    "maximumCandidateBytes": 16384,
+    "maximumTotalCandidateBytes": 65536,
+    "timeoutMsPerExecution": 5000,
+    "maximumOutputBytes": 65536
+  },
+  "policy": {
+    "policyVersion": "1.0.0",
+    "requiredAttempts": 2,
+    "minimumTargetWeightPermille": 1000,
+    "maximumSelectedCandidates": 1,
+    "acceptedTargetOutcomes": ["ASSERTION_FAILURE"]
+  },
+  "worlds": [
+    {
+      "id": "reference",
+      "kind": "REFERENCE",
+      "required": true,
+      "weight": 0,
+      "provenance": "example:correct-implementation",
+      "files": []
+    },
+    {
+      "id": "target-parity-inversion",
+      "kind": "TARGET",
+      "required": true,
+      "weight": 1,
+      "provenance": "example:known-fault",
+      "files": [
+        {
+          "path": "src/is-even.js",
+          "content": "export function isEven(value) {\n  return value % 2 === 1;\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "neutral-bitwise-equivalence",
+      "kind": "NEUTRAL",
+      "required": true,
+      "weight": 0,
+      "provenance": "example:reviewed-equivalent",
+      "files": [
+        {
+          "path": "src/is-even.js",
+          "content": "export function isEven(value) {\n  return (value & 1) === 0;\n}\n"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "strong",
+      "files": [
+        {
+          "path": "tests/candidates/strong.test.js",
+          "content": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { isEven } from \"../../src/is-even.js\";\ntest(\"two is even\", () => assert.equal(isEven(2), true));\n"
+        }
+      ]
+    },
+    {
+      "id": "weak",
+      "files": [
+        {
+          "path": "tests/candidates/weak.test.js",
+          "content": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { isEven } from \"../../src/is-even.js\";\ntest(\"returns a boolean\", () => assert.equal(typeof isEven(2), \"boolean\"));\n"
+        }
+      ]
+    }
+  ]
+}

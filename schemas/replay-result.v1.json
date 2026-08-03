@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "schemaValid": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "decisionDigestValid": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "artifactDigestValid": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "decisionSemanticsValid": {
+      "$ref": "#/$defs/__schema4"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "decisionDigestValid",
+    "artifactDigestValid",
+    "decisionSemanticsValid"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge replay result",
+  "description": "Independent integrity and semantic replay verdicts for a TestForge evidence manifest.",
+  "$defs": {
+    "__schema0": {
+      "type": "boolean"
+    },
+    "__schema1": {
+      "type": "boolean"
+    },
+    "__schema2": {
+      "type": "boolean"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/replay-result.v1.json"
+}

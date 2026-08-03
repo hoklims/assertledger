@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.testforge/
+.omx/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db

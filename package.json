@@ -1,0 +1,62 @@
+{
+  "name": "testforge",
+  "version": "0.1.0",
+  "description": "Deterministic evidence harness for evaluating generated tests across declared code worlds.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "packageManager": "pnpm@11.1.2",
+  "bin": {
+    "testforge": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "schemas",
+    "integrations",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run check:schemas && pnpm run typecheck && pnpm run test && pnpm run build",
+    "check:schemas": "tsx scripts/check-schemas.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "generate:schemas": "tsx scripts/generate-schemas.ts",
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage tests/*.test.ts",
+    "prepack": "pnpm run build && pnpm run check:schemas"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.6",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "22.20.1",
+    "tsx": "4.23.5",
+    "typescript": "7.0.2"
+  }
+}
