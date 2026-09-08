@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "1.0.0",
+  "schemas": [
+    {
+      "path": "schemas/agentic-benchmark-acquisition-replay-result.v1.json",
+      "rawSha256": "sha256:529e01e156360ce3fc9234eb2750ed2df9d46b1afe2ce7965cdf36ce725055a1",
+      "$id": "https://testforge.dev/schemas/agentic-benchmark-acquisition-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-benchmark-acquisition-request.v1.json",
+      "rawSha256": "sha256:6aa185dd085cb3c68a09aa9639d889fa7a988a92db1a07f7ef4946a3b681d004",
+      "$id": "https://testforge.dev/schemas/agentic-benchmark-acquisition-request.v1.json"
+    },
+    {
+      "path": "schemas/agentic-benchmark-acquisition-result.v1.json",
+      "rawSha256": "sha256:e358aa9a31efb895e618075040e6ee088e019f6a8c5766eb6b2416a612d7aa64",
+      "$id": "https://testforge.dev/schemas/agentic-benchmark-acquisition-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-benchmark-artifact.v1.json",
+      "rawSha256": "sha256:1eabb625a15aa11db7f33e47cb8254b98b1d4535127e683e8a7d311765cab299",
+      "$id": "https://testforge.dev/schemas/agentic-benchmark-artifact.v1.json"
+    },
+    {
+      "path": "schemas/agentic-benchmark-replay-result.v1.json",
+      "rawSha256": "sha256:1cd6f3699b700de4536ce7cd99f749ffe3142b8f1da28750d8b2df434d6d7203",
+      "$id": "https://testforge.dev/schemas/agentic-benchmark-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-benchmark-request.v1.json",
+      "rawSha256": "sha256:309e4b85302ff3146a9326af3c787c6241f28415902faa28c9274214c74a9153",
+      "$id": "https://testforge.dev/schemas/agentic-benchmark-request.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-allocation-commitment-replay-result.v1.json",
+      "rawSha256": "sha256:aea2b1e6310c028ad43fd1b3699f63a4473934acc2dbd690834a75370850e4e2",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-commitment-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-allocation-commitment.v1.json",
+      "rawSha256": "sha256:61a789ddbfc820998828c0501fe9e1476b336306ffe3cb0700094f62f52f21df",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-commitment.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-allocation-replay-result.v1.json",
+      "rawSha256": "sha256:9f660ac3425d67c94742fbfef64be0ea4e1938bb88ea49fc097355c935b257d4",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-allocation-request.v1.json",
+      "rawSha256": "sha256:a44b3f2bdacc28029588d07c78e09f44ea512342ca1cbeacc62ea71b7d1c5074",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-request.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-allocation-reveal.v1.json",
+      "rawSha256": "sha256:f6fc6c9cc56f61a1f67f2ba77e72cadd3bea2ddd6862ce565d1e44ebcf7fb52b",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-reveal.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-allocation.v1.json",
+      "rawSha256": "sha256:248de6e66dc51aae9785785597ac66432855269f78f821e259c2627d7af0c9f8",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-allocation.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-experiment-artifact.v1.json",
+      "rawSha256": "sha256:57f649fd4dd6e3387132443ed7714a37578fcba128f1be2d9004cfa36276a5ca",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-artifact.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-experiment-plan-replay-result.v1.json",
+      "rawSha256": "sha256:8dc2133a84cb00e64ac28929baf085593eea9384cc0cf6a69beb8d908c222284",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-plan-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-experiment-plan.v1.json",
+      "rawSha256": "sha256:0cf6eb5314b4eb11b1ea6237f7ced841a7757af743f0783325d6c38d5e8ce619",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-plan.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-experiment-replay-request.v1.json",
+      "rawSha256": "sha256:e834f9c179883e050f87582a83dad2f22a40379aa0b47fff79c82742f1724841",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-replay-request.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-experiment-replay-result.v1.json",
+      "rawSha256": "sha256:2411a221c98c799c668e767b5a6dc3b8b1a7f4b168a60b8065898491b1cef14b",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-experiment-request.v1.json",
+      "rawSha256": "sha256:b2edfd64843a7ad5cc5bea9e2a63b80258387a271694428c20e5c0de7ce31075",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-request.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-provenance.v1.json",
+      "rawSha256": "sha256:ec2d78923ad45bafa69b7a55e1ea41878d84e591946f87ac6d9dcde69a92eeb2",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-provenance.v1.json"
+    },
+    {
+      "path": "schemas/agentic-corpus-trust-policy.v1.json",
+      "rawSha256": "sha256:d40ed16d1c1c8113dbf81311e2066579981a5a0f8a7d2b0b9a733d8403fba3d2",
+      "$id": "https://testforge.dev/schemas/agentic-corpus-trust-policy.v1.json"
+    },
+    {
+      "path": "schemas/agentic-profile-replay-result.v1.json",
+      "rawSha256": "sha256:be9c7bef9f463d2f409ad51c7efb4ec99516420a8ad5b1fc1e0d2c81fd843a3e",
+      "$id": "https://testforge.dev/schemas/agentic-profile-replay-result.v1.json"
+    },
+    {
+      "path": "schemas/agentic-profile-replay-result.v2.json",
+      "rawSha256": "sha256:903ef99d2c3bbe029e03caba130313413d2bdb05818a8382ddb0afd9322898a9",
+      "$id": "https://testforge.dev/schemas/agentic-profile-replay-result.v2.json"
+    },
+    {
+      "path": "schemas/agentic-profile-report.v1.json",
+      "rawSha256": "sha256:e024337835aa46080e2c4a78606ac52e4869756e064d0f654adef76f4f1d15ac",
+      "$id": "https://testforge.dev/schemas/agentic-profile-report.v1.json"
+    },
+    {
+      "path": "schemas/agentic-profile-report.v2.json",
+      "rawSha256": "sha256:1f3f999b1d0e1657c1dcb02c21148dae37dc2e3958eed1eb0c93275c07edfecb",
+      "$id": "https://testforge.dev/schemas/agentic-profile-report.v2.json"
+    },
+    {
+      "path": "schemas/agentic-profile-request.v1.json",
+      "rawSha256": "sha256:bab47eb4bf43b047bca752b7370d4470f77d1f232b8be6904f3f7ab720750aff",
+      "$id": "https://testforge.dev/schemas/agentic-profile-request.v1.json"
+    },
+    {
+      "path": "schemas/agentic-profile-request.v2.json",
+      "rawSha256": "sha256:445b49e7c03114f194d387f4f3a22fb0375bca59926bd436d9ba487c399a7b9c",
+      "$id": "https://testforge.dev/schemas/agentic-profile-request.v2.json"
+    },
+    {
+      "path": "schemas/evidence-manifest.v1.json",
+      "rawSha256": "sha256:7d15674c2f9f949692d224b7460e7a0ac6276704b004ee63522c9ca885f5a0f0",
+      "$id": "https://testforge.dev/schemas/evidence-manifest.v1.json"
+    },
+    {
+      "path": "schemas/replay-result.v1.json",
+      "rawSha256": "sha256:6236d140fad2079315edc3555654f3eb976e3b8bdf7ee8ad8cd936727f193890",
+      "$id": "https://testforge.dev/schemas/replay-result.v1.json"
+    },
+    {
+      "path": "schemas/repository-analysis.v1.json",
+      "rawSha256": "sha256:09ae41f92b4c8450358f01d0ba9e77d29eaeae998b3b1e164b87c68f99bab663",
+      "$id": "https://testforge.dev/schemas/repository-analysis.v1.json"
+    },
+    {
+      "path": "schemas/repository-audit.v1.json",
+      "rawSha256": "sha256:f17776e245699fd9e83ed19efe0b4584ddab1922c9f2b3dc50cb58e7d578b6d7",
+      "$id": "https://testforge.dev/schemas/repository-audit.v1.json"
+    },
+    {
+      "path": "schemas/repository-init-config.v1.json",
+      "rawSha256": "sha256:384022966f3909bb24ea9a4c9cc7922484f1eb53205e4b648d028a279ec9f382",
+      "$id": "https://testforge.dev/schemas/repository-init-config.v1.json"
+    },
+    {
+      "path": "schemas/repository-init-lock.v1.json",
+      "rawSha256": "sha256:3d63c741682156db875da1f444c5e403da4436ee8ff5dc432b19a5cbb34b625d",
+      "$id": "https://testforge.dev/schemas/repository-init-lock.v1.json"
+    },
+    {
+      "path": "schemas/repository-init-result.v1.json",
+      "rawSha256": "sha256:0fbc09e81775d2baa14592ca9f582b2b1cb0cbc0f98b75845561d28e4c713106",
+      "$id": "https://testforge.dev/schemas/repository-init-result.v1.json"
+    },
+    {
+      "path": "schemas/verification-request.v1.json",
+      "rawSha256": "sha256:e2a4663c2f79755a59f713cf2a4ba7fc5344dd01c52dab8ae13acab372935c6a",
+      "$id": "https://testforge.dev/schemas/verification-request.v1.json"
+    }
+  ]
+}

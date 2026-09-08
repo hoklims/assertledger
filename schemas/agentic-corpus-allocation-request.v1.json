@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "allocationId": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "seedDigest": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "strata": {
+      "minItems": 1,
+      "maxItems": 100000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema2"
+      }
+    }
+  },
+  "required": ["schemaVersion", "allocationId", "seedDigest", "strata"],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema1": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema2": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "sourceIdentityDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "calibrationCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "caseIds": {
+          "minItems": 2,
+          "maxItems": 100000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        }
+      },
+      "required": ["sourceId", "sourceIdentityDigest", "calibrationCount", "caseIds"],
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-request.v1.json"
+}

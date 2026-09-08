@@ -1,0 +1,336 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "experimentVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "experimentId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "hypothesis": {
+          "type": "string",
+          "const": "H3"
+        },
+        "partition": {
+          "type": "string",
+          "const": "HOLDOUT"
+        },
+        "planDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "allocationDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "trustPolicyDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "evidenceBindings": {
+          "minItems": 1,
+          "maxItems": 1000000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema2"
+          }
+        },
+        "payloadSchemaId": {
+          "type": "string",
+          "const": "https://testforge.dev/payloads/agentic-corpus-experiment-h3.v1.json"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "cases": {
+              "minItems": 1,
+              "maxItems": 100000,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema3"
+              }
+            }
+          },
+          "required": ["cases"],
+          "additionalProperties": false
+        },
+        "limitations": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema6"
+          }
+        },
+        "candidateSetDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "evidenceSetDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "payloadDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["SUPPORTED", "NOT_SUPPORTED", "INSUFFICIENT"]
+            },
+            "evaluatedCaseIds": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "baselineDetectedCaseIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "profileDetectedCaseIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "insufficientCaseIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "baselineDetectedCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "profileDetectedCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maximumDetectionDeficitCases": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "nonInferior": {
+              "type": "boolean"
+            },
+            "sourceResults": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sourceId": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "sourceIdentityDigest": {
+                    "$ref": "#/$defs/__schema1"
+                  },
+                  "evaluatedCaseIds": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  },
+                  "baselineDetectedCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "profileDetectedCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "nonInferior": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "sourceId",
+                  "sourceIdentityDigest",
+                  "evaluatedCaseIds",
+                  "baselineDetectedCount",
+                  "profileDetectedCount",
+                  "nonInferior"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "status",
+            "evaluatedCaseIds",
+            "baselineDetectedCaseIds",
+            "profileDetectedCaseIds",
+            "insufficientCaseIds",
+            "baselineDetectedCount",
+            "profileDetectedCount",
+            "maximumDetectionDeficitCases",
+            "nonInferior",
+            "sourceResults"
+          ],
+          "additionalProperties": false
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "experimentVersion",
+        "experimentId",
+        "hypothesis",
+        "partition",
+        "planDigest",
+        "allocationDigest",
+        "trustPolicyDigest",
+        "evidenceBindings",
+        "payloadSchemaId",
+        "payload",
+        "limitations",
+        "candidateSetDigest",
+        "evidenceSetDigest",
+        "payloadDigest",
+        "result",
+        "artifactDigest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": ["artifact"],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema1": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema2": {
+      "type": "object",
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "receiptDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "receiptContentDigest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": ["runId", "receiptDigest", "receiptContentDigest"],
+      "additionalProperties": false
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "baselineAttempts": {
+          "minItems": 1,
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema4"
+          }
+        },
+        "profileAttempts": {
+          "minItems": 1,
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema4"
+          }
+        }
+      },
+      "required": ["caseId", "baselineAttempts", "profileAttempts"],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "buggy": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "fixed": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "requiredSuite": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "runIds": {
+          "type": "object",
+          "properties": {
+            "buggy": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "fixed": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "requiredSuite": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": ["buggy", "fixed", "requiredSuite"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["ordinal", "buggy", "fixed", "requiredSuite", "runIds"],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "ASSERTION_FAILURE",
+            "COLLECTION_FAILURE",
+            "COMPILE_FAILURE",
+            "PROCESS_CRASH",
+            "TIMEOUT",
+            "INFRA_ERROR",
+            "NO_TEST_DISCOVERED"
+          ]
+        },
+        "attributed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["outcome", "attributed"],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-replay-request.v1.json"
+}

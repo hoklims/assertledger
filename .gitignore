@@ -3,6 +3,7 @@ dist/
 coverage/
 .testforge/
 .omx/
+graphify-out/cache/
 *.log
 *.tmp
 .DS_Store

@@ -1,201 +1,224 @@
-# TestForge
+# AssertLedger
 
-TestForge is a model-, provider-, harness-, and framework-independent evidence harness for candidate
-automated tests. It runs each candidate against explicit code worlds, evaluates normalized evidence
-with a versioned deterministic policy, selects eligible candidates, and emits an auditable manifest.
+**Does your regression test actually catch the bug?**
 
-> An agent may propose tests. Only a versioned decision policy may decide what the observed runs
-> demonstrate.
+AssertLedger runs the same test against fixed code, a known fault and a neutral control.
+You get a verdict, the observations behind it and an evidence file you can replay.
 
-TestForge does **not** prove program correctness, complete fault detection, universal oracle quality,
-or permanent freedom from flakiness. It answers a narrower question: did the submitted candidate
-distinguish the operator-supplied worlds during the recorded attempts under the declared policy?
+**English** · [Français](README.fr.md)
 
-## What works in v0.1
+[Try the example](#try-the-example) · [Understand the result](#understand-the-result) · [Use your repository](#use-your-repository) · [Documentation](#documentation)
 
-- deterministic repository analysis for agent context;
-- candidate test overlays restricted to configured test roots;
-- reference, target, and neutral worlds supplied as file overlays;
-- one immutable repository snapshot per campaign and a fresh workspace for every attempt;
-- repeated execution with explicit budgets, bounded output capture, and stream digests;
-- controls showing whether each world was green before adding a candidate;
-- a built-in `node:test` adapter with runtime discovery and file-based failure attribution;
-- a framework-neutral structured-command adapter protocol;
-- deterministic gates, marginal-coverage selection, and decision and artifact digests;
-- JSON CLI, TypeScript SDK, MCP stdio server, JSON Schema, and an agent skill.
+**1.0 · node:test · CLI, SDK and MCP · MIT**
 
-The only execution backend in v0.1 is `trusted-local`. Every manifest records this backend as
-`UNSANDBOXED`. **Do not use it for hostile or untrusted code.** Temporary directories, timeouts, and
-an environment allowlist are resource controls, not a security boundary. See
-[SECURITY.md](SECURITY.md).
-
-## Architecture
-
-```text
-Agent or harness
-      │
-      ▼
-Integration facade
-Skill / MCP / JSON CLI / TypeScript SDK
-      │
-      ▼
-TestForge orchestrator
-Analysis / workspaces / execution / budgets / adapters
-      │
-      ▼
-Deterministic core
-Canonical evidence / gates / selection / manifest digests
-```
-
-Dependencies point downward. The core has no filesystem, process, network, clock, random, model, or
-provider dependency. External execution can be nondeterministic; the decision function is
-deterministic over normalized observations. See [docs/architecture.md](docs/architecture.md) and
-[docs/proof-model.md](docs/proof-model.md).
-
-## Install and verify
-
-Requirements: Node.js 22.15 or newer and pnpm 11.
+Install in your repository with Node.js 22.15 or later:
 
 ```sh
+npm install --save-dev assertledger@1.0.0
+npx assertledger doctor .
+```
+
+The [historical correction demo](examples/git-history/README.md) runs from the installed package.
+The source example below walks through the evidence step by step.
+
+## A passing test can miss the bug
+
+Suppose `isEven(2)` should return `true`. A regression accidentally inverts the implementation.
+
+```js
+// Both tests pass on the correct implementation.
+assert.equal(typeof isEven(2), "boolean"); // Also passes when the answer is wrong.
+assert.equal(isEven(2), true);             // Detects this particular regression.
+```
+
+AssertLedger makes that distinction explicit:
+
+| Same candidate test | Fixed code | Known fault | Neutral control | Result |
+| --- | --- | --- | --- | --- |
+| “Returns a boolean” | Pass | Pass | Pass | `WEAK_ORACLE` for this fault |
+| “Two is even” | Pass | Assertion failure | Pass | Eligible for selection |
+| Test crashes or times out | — | Operational error | — | No credited detection |
+
+The operator supplies the fault and the neutral control. AssertLedger does not invent their meaning.
+Repeated runs and base tests check that the observed difference can be attributed to the candidate.
+
+```mermaid
+flowchart LR
+    T[Same candidate test] --> R[Fixed code]
+    T --> B[Known fault]
+    T --> N[Neutral control]
+    R --> E[Recorded observations]
+    B --> E
+    N --> E
+    E --> V[Deterministic verdict]
+    V --> M[Replayable evidence]
+```
+
+## Try the example
+
+You need **Git**, **Node.js 22.15+** and **pnpm 11.1.2**. The first built-in adapter is `node:test`.
+
+```sh
+git clone --branch v1.0.0 https://github.com/hoklims/assertledger.git
+cd assertledger
 pnpm install --frozen-lockfile
-pnpm check
 pnpm build
 ```
 
-The following command executes repository and candidate code with the unsandboxed local backend.
-Review the request first, then run it only on a disposable machine or an otherwise trusted checkout:
+The bundled example contains a correct parity function, an inverted version, a neutral equivalent,
+and the two tests above. Inspect [its request](examples/node-test/request.json), then run:
 
 ```sh
 node dist/cli.js verify examples/node-test/request.json --allow-unsafe-execution --json
 ```
 
-Expected process exit codes:
+> **Run trusted code only.** `--allow-unsafe-execution` authorizes local code execution.
+> This backend is explicitly **UNSANDBOXED**. Use a trusted checkout; it cannot contain hostile code.
 
-| Code | Meaning |
-| ---: | --- |
-| `0` | Command succeeded, or campaign `VERIFIED` |
-| `2` | Campaign complete but `REJECTED` |
-| `3` | Campaign `INCONCLUSIVE` |
-| `4` | Invalid request or manifest |
-| `5` | Engine or infrastructure error |
-| `64` | CLI usage error |
+Expected decision:
 
-## JSON CLI
+```json
+{
+  "status": "VERIFIED",
+  "selectedCandidateIds": ["strong"],
+  "reasonCodes": ["POLICY_SATISFIED"]
+}
+```
+
+That is the `decision` section of the full manifest. The `weak` candidate is marked `WEAK_ORACLE`.
+The manifest also records the controls, attempts, observed outcomes, digests and execution limits.
+
+### Save and replay the evidence
+
+Create `demo.mjs` at the repository root with the following content. This writes UTF-8 consistently
+on Windows and Linux and uses the same example through the SDK:
+
+```js
+import { readFile, writeFile } from "node:fs/promises";
+import { AssertLedger } from "./dist/index.js";
+
+const ledger = new AssertLedger();
+const request = JSON.parse(await readFile("examples/node-test/request.json", "utf8"));
+// Review the trusted example before explicitly authorizing its execution.
+request.isolation.acknowledgedUnsafeExecution = true;
+const manifest = await ledger.verify(request);
+await writeFile("manifest.json", JSON.stringify(manifest, null, 2), "utf8");
+console.log(manifest.decision);
+```
 
 ```sh
-testforge analyze . --json
-testforge schema verification-request --json
-testforge verify testforge.request.json --allow-unsafe-execution --json
-testforge replay testforge.manifest.json --json
-testforge mcp
-# Operator-only opt-in: testforge mcp --allow-unsafe-execution
+node demo.mjs
+node dist/cli.js replay manifest.json --json
 ```
 
-`verify` and `replay` also accept `-` or an omitted file argument and then read JSON from stdin. The
-CLI rejects file and stdin JSON inputs larger than 16 MiB. JSON results go to stdout. Diagnostics go
-to stderr. `testforge mcp` reserves stdout for JSON-RPC.
+All five replay fields should be `true`: `valid`, `schemaValid`, `decisionDigestValid`,
+`artifactDigestValid` and `decisionSemanticsValid`. Replay requires no model and does not run tests again.
 
-`--allow-unsafe-execution` is an external authorization signal. The CLI requires it for every
-campaign and sets the request's local acknowledgement before validation. The flag does not create a
-sandbox.
+## Understand the result
 
-Versioned JSON Schemas are published for the
-[`verification request`](schemas/verification-request.v1.json),
-[`repository analysis`](schemas/repository-analysis.v1.json),
-[`evidence manifest`](schemas/evidence-manifest.v1.json), and
-[`replay result`](schemas/replay-result.v1.json). The CLI `schema` command prints any of these four
-schemas by name. A complete runnable request is available at
-[`examples/node-test/request.json`](examples/node-test/request.json).
+| Campaign verdict | What it tells you | Next step |
+| --- | --- | --- |
+| `VERIFIED` | Selected tests meet the declared policy for these worlds and attempts. | Review the fault, controls and evidence before accepting the test. |
+| `REJECTED` | No candidate meets the declared policy. | Read candidate reasons; strengthen the assertion or correct the declared worlds. |
+| `INCONCLUSIVE` | The observations do not support a stable decision. | Inspect unstable runs, discovery and operational errors. |
+| `ENGINE_ERROR` | The campaign could not produce a usable result. | Fix the environment or configuration, then rerun. |
 
-## TypeScript SDK
+A timeout, syntax error, collection failure or process crash **never counts as a detected bug**.
+A rejection concerns the declared fault model; the test may still have value elsewhere.
 
-```ts
-import { readFile } from "node:fs/promises";
-import { TestForge } from "testforge";
+Replay checks integrity and decision consistency. It does **not** authenticate whoever produced the
+observations, prove general program correctness or guarantee permanent freedom from flaky tests.
 
-const testforge = new TestForge();
-const context = await testforge.analyze("/absolute/path/to/repository");
-const request = JSON.parse(await readFile("testforge.request.json", "utf8"));
-const manifest = await testforge.verify(request);
-const integrity = testforge.replay(manifest);
+## Use your repository
+
+Start with a static diagnostic. It reads the repository without running its tests or writing files:
+
+```sh
+node dist/cli.js doctor path/to/your-repository
+node dist/cli.js doctor path/to/your-repository --json
 ```
 
-The SDK accepts plain JSON-compatible values and validates them against the same contracts as the
-CLI. Unlike the CLI and MCP tool, `TestForge.verify()` has no separate authorization parameter: the
-caller must set `isolation.acknowledgedUnsafeExecution` to `true` after applying its own policy.
+`WOULD_CREATE` means a configuration can be planned. You still supply the candidate and controls.
+The [initialization guide](docs/repository-init.md) explains `init`, the configuration and evidence
+lock. Detection of a framework is not proof that AssertLedger can execute it.
 
-`TestForge.replay()` reports schema validity, both digest checks, and deterministic decision-semantic
-validity. Its aggregate `valid` field is true only when all four checks pass. Replay does not rerun
-the campaign, authenticate the producer, or establish that the observations were truthful.
+After initialization, [runtime doctor](docs/runtime-doctor.md) can check Node, the reporter,
+discovery and assertion attribution with `doctor --runtime --allow-unsafe-execution`.
+For a refusal, use `explain CODE` to get a safe next action.
 
-## MCP v2 over stdio
+### Qualify a committed regression test
 
-Start the read-only server with `testforge mcp`, or configure an MCP client with `testforge` as the
-command and `["mcp"]` as its argument array. The default server exposes three tools:
+Choose the buggy commit (`BEFORE`), its correction (`AFTER`) and a neutral control (`NEUTRAL`).
+The candidate comes from `AFTER`; the exact same bytes run in all three worlds.
+Replace the paths, revisions and neutral reason below with your own:
 
-| Tool | Purpose |
+```sh
+node dist/cli.js check path/to/your-repository --before BEFORE --after AFTER --neutral NEUTRAL --neutral-reason "Explain why this control preserves the expected behavior" --test tests/regression.test.js --base-test tests/base.test.js --out .assertledger/evidence-001 --allow-unsafe-execution
+```
+
+| Required for this first Git workflow | Why |
 | --- | --- |
-| `testforge_analyze` | Produce repository context for test generation |
-| `testforge_schema` | Return any of the four published JSON Schemas |
-| `testforge_replay` | Validate and replay a manifest's schema, digests, and decision semantics |
+| Committed JavaScript `node:test` candidate | Each world receives the same recorded test. |
+| No declared runtime dependencies | This workflow does not install or transport dependencies. |
+| An unchanged base test in every revision | The control must not change with the correction. |
+| The same file paths, apart from the candidate | File additions, deletions and renames are not qualified yet. |
 
-`testforge_verify` is absent by default. A server operator may register it by starting
-`testforge mcp --allow-unsafe-execution`, or by calling `createTestForgeServer({
-allowUnsafeExecution: true })`. The tool then accepts a verification request and executes it without
-a second per-call authorization field. Run that server only inside the intended isolation boundary;
-do not let an MCP caller decide whether the capability exists. The server resolves repository roots
-to real paths and confines them to the server process's current working directory by default.
-Programmatic operators may supply a different `allowedRepositoryRoots` allowlist.
+The command saves `summary.md`, `executed-request.json` and `manifest.json` in a new output directory.
+`manifest.json` is published last; its presence marks a complete result. The saved request refers to
+a temporary snapshot that has been removed; preserve the Git revisions if you need to run again.
+Read the [Git workflow guide](docs/git-regression.md) for limits and neutral-control semantics.
 
-## Continuous integration
+## Use it with an agent
 
-Run `pnpm check` on every change. The included GitHub Actions workflow runs this gate on Node.js 22
-and 24 on Ubuntu and Windows, then performs a package dry run. A CI job that executes campaigns must
-also treat `trusted-local` as `UNSANDBOXED`: use an isolated runner without secrets or host
-credentials, and pass `--allow-unsafe-execution` only from reviewed CI configuration.
+An agent can propose a candidate; the deterministic engine evaluates the observations.
+Use the [agent skill](integrations/skill/SKILL.md), [TypeScript SDK](docs/reference.md#typescript-sdk)
+or [MCP reference](docs/reference.md#mcp-v2-over-stdio).
 
-## Decision semantics
+Generate a project-scoped Codex configuration from the built CLI:
 
-- `VERIFIED`: at least one candidate completed all required evidence and was selected.
-- `REJECTED`: the campaign completed, but no candidate satisfied the policy.
-- `INCONCLUSIVE`: controls or candidate evidence were incomplete, unstable, timed out, or affected
-  by infrastructure failure.
-- `ENGINE_ERROR`: the deterministic core could not normalize the supplied evidence safely.
+```sh
+node dist/cli.js connect path/to/your-repository --client codex
+```
 
-Only an attributed `ASSERTION_FAILURE` can kill a target in protocol v1. Compilation errors,
-collection failures, crashes, timeouts, and infrastructure errors never count as target evidence.
+This previews the configuration and packaged skill. Add `--write` to install both; different
+existing content is preserved and reported as a conflict. The generated MCP server starts read-only.
+Candidate execution requires a separate explicit opt-in. See [developer entry points](docs/developer-experience.md)
+for project trust and reload requirements.
 
-Campaign budgets cover aggregate candidate, world, repository, overlay, and execution counts or
-bytes. `timeoutMsPerExecution` and `maximumOutputBytes` apply to each process execution; the timeout
-and process-tree termination are best effort on the local host.
+Use `--client claude-code` for Claude Code or `--client mcp` for a generic descriptor.
+`disconnect --client codex --write` removes only byte-identical owned files.
+The [client guide](docs/client-connections.md) covers installation and removal.
 
-Before a built-in `node:test` campaign runs, TestForge probes the requested executable, resolves its
-real path, probes that resolved file again, and requires matching Node.js versions of at least
-22.15. The manifest records the requested executable, resolved path, Node.js version, and executable
-SHA-256 digest.
+## Documentation
 
-Each candidate records the ordered gates `COMPLETENESS`, `STABILITY`, `DISCOVERY`, `REFERENCE`,
-`NEUTRAL`, and `TARGET_STRENGTH`, including evidence run IDs and reason codes. See
-[docs/proof-model.md](docs/proof-model.md) for candidate statuses, controls, selection, and digest
-scope.
+| You want to… | Start here |
+| --- | --- |
+| Set up a repository | [Initialization](docs/repository-init.md) · [Static audit](docs/repository-audit.md) |
+| Diagnose a blockage | [Runtime doctor](docs/runtime-doctor.md) · [Reason-code guidance](docs/diagnostics.md) |
+| Try a historical correction | [Unicode-regexp example](examples/git-history/README.md) |
+| Qualify a correction or connect Codex | [Git workflow](docs/git-regression.md) · [Developer entry points](docs/developer-experience.md) |
+| Understand attribution, controls and digests | [Proof model](docs/proof-model.md) |
+| Integrate the CLI, SDK or MCP | [Integration reference](docs/reference.md) |
+| Verify the actual distributed package | [Distribution checks](docs/distribution.md) · [CI evidence](docs/ci.md) |
+| Extend an adapter | [Adapter protocol](docs/adapter-protocol.md) · [Architecture](docs/architecture.md) |
+| Review the 1.0 scope | [Release criteria](docs/release-1.0.md) · [Roadmap](docs/roadmap.md) |
+| Explore advanced evaluation work | [Profiles](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) |
 
-The manifest is sufficient to replay TestForge's deterministic decision, but it is not a complete
-audit archive. It stores content and process-output digests, not candidate or world bodies, a
-repository archive, or raw logs. Preserve the original request, repository snapshot or trusted
-source reference, raw logs, dependencies, and any structured-command executable identity separately
-when independent audit or reproduction matters. Manifest digests detect changes; they do not
-authenticate the producer.
+Scientific profiles and calibration retain their own evidence requirements. Their presence does
+not establish an improvement on an external product or a measured product-market fit.
 
-## Project status and roadmap
+## Contribute
 
-Version `0.1.0` is a production-oriented foundation, not a claim of ecosystem completeness. The
-deterministic core and protocols are framework-independent; `node:test` is the first built-in
-framework adapter. Other frameworks integrate through the structured-command protocol described in
-[docs/adapter-protocol.md](docs/adapter-protocol.md).
+```sh
+pnpm check
+pnpm run smoke:package
+```
 
-Planned work is not shipped behavior. Priorities include a real sandbox backend, additional
-framework reporters with runtime attribution, signed provenance, cross-runtime conformance
-fixtures, and more built-in adapters. See [docs/roadmap.md](docs/roadmap.md).
+Add a failing behavioral test for public contract changes. Keep execution in the engine and decision
+logic in the pure core. Read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
-Contributions are welcome under the [MIT license](LICENSE). Read [CONTRIBUTING.md](CONTRIBUTING.md)
-before changing a public contract.
+**Compatibility:** AssertLedger is the current name. Legacy TestForge aliases and versioned wire
+identifiers remain available so existing integrations and evidence can be replayed.
+See the [migration guide](docs/migration-testforge-to-assertledger.md).
+
+Licensed under [MIT](LICENSE).

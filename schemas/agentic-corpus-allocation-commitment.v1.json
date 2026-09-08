@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "commitmentVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "commitmentId": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "allocationId": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "trustPolicyDigest": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "caseSet": {
+      "minItems": 2,
+      "maxItems": 100000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema2"
+      }
+    },
+    "strata": {
+      "minItems": 1,
+      "maxItems": 100000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema3"
+      }
+    },
+    "signers": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/__schema4"
+        },
+        {
+          "$ref": "#/$defs/__schema4"
+        }
+      ]
+    },
+    "commitmentDigest": {
+      "$ref": "#/$defs/__schema1"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "commitmentVersion",
+    "commitmentId",
+    "allocationId",
+    "trustPolicyDigest",
+    "caseSet",
+    "strata",
+    "signers",
+    "commitmentDigest"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema1": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema2": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "caseDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "provenanceDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "sourceIdentityDigest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": ["caseId", "caseDigest", "provenanceDigest", "sourceId", "sourceIdentityDigest"],
+      "additionalProperties": false
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "sourceIdentityDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "calibrationCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        }
+      },
+      "required": ["sourceId", "sourceIdentityDigest", "calibrationCount"],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "keyId": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["AUTHOR", "REVIEWER"]
+        },
+        "shareCommitmentDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": ["keyId", "role", "shareCommitmentDigest", "signature"],
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-commitment.v1.json"
+}

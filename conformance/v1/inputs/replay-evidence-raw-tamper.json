@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "1.0.0",
+  "repositoryDigest": "sha256:6c5d7f5ef84e5ceeb4ca8fcf6350f3dfdd2e575ff44e605a9f05f4aa43e37a21",
+  "evidenceContext": {
+    "engine": {
+      "name": "testforge",
+      "version": "0.1.0"
+    },
+    "adapter": {
+      "name": "node-test",
+      "version": "22.0.0",
+      "configuration": {
+        "kind": "node-test",
+        "executable": "node"
+      }
+    },
+    "execution": {
+      "isolation": "UNSANDBOXED",
+      "environmentAllowlist": [],
+      "budgets": {},
+      "candidateRoots": ["tests"]
+    },
+    "worlds": [
+      {
+        "id": "neutral",
+        "provenance": "conformance:neutral",
+        "digest": "sha256:3ae3f40fcd8592146d113c4252e5f8d69b2b5b1e25f93fd626360aa52cd6ac06"
+      },
+      {
+        "id": "reference",
+        "provenance": "conformance:reference",
+        "digest": "sha256:19f3324c3f857f03845ad6c701306ce05333e0e28afde3a82c85d00b903879c6"
+      },
+      {
+        "id": "target",
+        "provenance": "conformance:target",
+        "digest": "sha256:be18811d2679c0575fc8854fb95113170b781d882aa5bff9717f8cbfd218e9e6"
+      }
+    ]
+  },
+  "policy": {
+    "policyVersion": "1.0.0",
+    "requiredAttempts": 1,
+    "minimumTargetWeightPermille": 1000,
+    "maximumSelectedCandidates": 1,
+    "acceptedTargetOutcomes": ["ASSERTION_FAILURE"]
+  },
+  "worlds": [
+    {
+      "id": "neutral",
+      "kind": "NEUTRAL",
+      "required": true,
+      "weight": 0
+    },
+    {
+      "id": "reference",
+      "kind": "REFERENCE",
+      "required": true,
+      "weight": 0
+    },
+    {
+      "id": "target",
+      "kind": "TARGET",
+      "required": true,
+      "weight": 10
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate",
+      "digest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "sizeBytes": 100,
+      "status": "ELIGIBLE",
+      "killedTargetIds": ["target"],
+      "targetWeightKilled": 10,
+      "gates": [
+        {
+          "name": "COMPLETENESS",
+          "status": "PASSED",
+          "evidenceRunIds": ["candidate:neutral:1", "candidate:reference:1", "candidate:target:1"],
+          "reasonCodes": []
+        },
+        {
+          "name": "STABILITY",
+          "status": "PASSED",
+          "evidenceRunIds": ["candidate:neutral:1", "candidate:reference:1", "candidate:target:1"],
+          "reasonCodes": []
+        },
+        {
+          "name": "DISCOVERY",
+          "status": "PASSED",
+          "evidenceRunIds": ["candidate:neutral:1", "candidate:reference:1", "candidate:target:1"],
+          "reasonCodes": []
+        },
+        {
+          "name": "REFERENCE",
+          "status": "PASSED",
+          "evidenceRunIds": ["candidate:reference:1"],
+          "reasonCodes": []
+        },
+        {
+          "name": "NEUTRAL",
+          "status": "PASSED",
+          "evidenceRunIds": ["candidate:neutral:1"],
+          "reasonCodes": []
+        },
+        {
+          "name": "TARGET_STRENGTH",
+          "status": "PASSED",
+          "evidenceRunIds": ["candidate:target:1"],
+          "reasonCodes": []
+        }
+      ],
+      "reasonCodes": ["POLICY_SATISFIED"]
+    }
+  ],
+  "observations": [
+    {
+      "runId": "control:neutral:1",
+      "candidateId": null,
+      "worldId": "neutral",
+      "attempt": 1,
+      "outcome": "TIMEOUT",
+      "testsDiscovered": 1,
+      "candidateTestsDiscovered": 0,
+      "attributed": false,
+      "durationMs": 1
+    },
+    {
+      "runId": "control:reference:1",
+      "candidateId": null,
+      "worldId": "reference",
+      "attempt": 1,
+      "outcome": "PASS",
+      "testsDiscovered": 1,
+      "candidateTestsDiscovered": 0,
+      "attributed": false,
+      "durationMs": 1
+    },
+    {
+      "runId": "control:target:1",
+      "candidateId": null,
+      "worldId": "target",
+      "attempt": 1,
+      "outcome": "PASS",
+      "testsDiscovered": 1,
+      "candidateTestsDiscovered": 0,
+      "attributed": false,
+      "durationMs": 1
+    },
+    {
+      "runId": "candidate:neutral:1",
+      "candidateId": "candidate",
+      "worldId": "neutral",
+      "attempt": 1,
+      "outcome": "PASS",
+      "testsDiscovered": 2,
+      "candidateTestsDiscovered": 1,
+      "attributed": true,
+      "durationMs": 1
+    },
+    {
+      "runId": "candidate:reference:1",
+      "candidateId": "candidate",
+      "worldId": "reference",
+      "attempt": 1,
+      "outcome": "PASS",
+      "testsDiscovered": 2,
+      "candidateTestsDiscovered": 1,
+      "attributed": true,
+      "durationMs": 10
+    },
+    {
+      "runId": "candidate:target:1",
+      "candidateId": "candidate",
+      "worldId": "target",
+      "attempt": 1,
+      "outcome": "ASSERTION_FAILURE",
+      "testsDiscovered": 2,
+      "candidateTestsDiscovered": 1,
+      "attributed": true,
+      "durationMs": 1
+    }
+  ],
+  "decision": {
+    "status": "VERIFIED",
+    "selectedCandidateIds": ["candidate"],
+    "reasonCodes": ["POLICY_SATISFIED"]
+  },
+  "decisionDigest": "sha256:bbecbbbbb790db1912b9ce06336420446c71df8d57eb0b040854ba672a220faa",
+  "artifactDigest": "sha256:d1f40c9201b6cd31d24309da250669f17efcab94f606a0c1e88160f072c0aea7",
+  "adapter": {
+    "kind": "node-test"
+  },
+  "isolation": {
+    "kind": "trusted-local",
+    "level": "UNSANDBOXED",
+    "acknowledgedUnsafeExecution": true
+  },
+  "limitations": ["Static conformance fixture; not execution truth."]
+}

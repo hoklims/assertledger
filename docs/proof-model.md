@@ -1,6 +1,6 @@
 # Evidence and decision model
 
-TestForge uses “proof” to mean recorded operational evidence, not mathematical verification of a
+AssertLedger uses “proof” to mean recorded operational evidence, not mathematical verification of a
 program.
 
 ## What `VERIFIED` means
@@ -90,7 +90,7 @@ The manifest carries two SHA-256 integrity values with different scopes:
   detects changes to operational observation fields and disclosure metadata that do not alter the
   decision digest.
 
-`TestForge.replay()` validates the manifest contract, recomputes both digests, and recomputes
+`AssertLedger.replay()` validates the manifest contract, recomputes both digests, and recomputes
 candidate assessments and the final decision from the recorded normalized evidence. Its result
 includes `schemaValid`, `decisionDigestValid`, `artifactDigestValid`, and
 `decisionSemanticsValid`; `valid` requires all four rails. Replay does not rerun tests, prove that
@@ -105,7 +105,7 @@ executable identities, and raw logs separately when independent audit matters.
 
 ## Explicit non-claims
 
-TestForge does not prove:
+AssertLedger does not prove:
 
 - absence of bugs or complete fault detection;
 - universal oracle quality;

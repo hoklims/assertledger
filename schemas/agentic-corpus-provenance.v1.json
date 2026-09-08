@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "domain": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "trustPolicyDigest": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "caseId": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "caseDigest": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "source": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "execution": {
+      "$ref": "#/$defs/__schema5"
+    },
+    "author": {
+      "$ref": "#/$defs/__schema6"
+    },
+    "reviewer": {
+      "$ref": "#/$defs/__schema8"
+    },
+    "provenanceDigest": {
+      "$ref": "#/$defs/__schema2"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "domain",
+    "trustPolicyDigest",
+    "caseId",
+    "caseDigest",
+    "source",
+    "execution",
+    "author",
+    "reviewer",
+    "provenanceDigest"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge agentic corpus provenance",
+  "description": "Paired, dual-signed provenance for one unchanged agentic corpus case v1.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "string",
+      "const": "TESTFORGE_AGENTIC_CORPUS_CASE_V1"
+    },
+    "__schema2": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "sourceIdentityDigest": {
+          "$ref": "#/$defs/__schema2"
+        }
+      },
+      "required": ["sourceId", "sourceRevision", "sourceIdentityDigest"],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "EXECUTED"
+        },
+        "protocolId": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "evidenceDigests": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema2"
+          }
+        },
+        "receiptDigest": {
+          "$ref": "#/$defs/__schema2"
+        }
+      },
+      "required": ["status", "protocolId", "evidenceDigests", "receiptDigest"],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "keyId": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "signature": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": ["keyId", "signature"],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "__schema8": {
+      "type": "object",
+      "properties": {
+        "keyId": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "signature": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": ["keyId", "signature"],
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-corpus-provenance.v1.json"
+}

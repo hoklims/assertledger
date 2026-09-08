@@ -1,0 +1,575 @@
+{
+  "schemaVersion": "1.0.0",
+  "sourceManifest": {
+    "schemaVersion": "1.0.0",
+    "repositoryDigest": "sha256:6c5d7f5ef84e5ceeb4ca8fcf6350f3dfdd2e575ff44e605a9f05f4aa43e37a21",
+    "evidenceContext": {
+      "engine": {
+        "name": "testforge",
+        "version": "0.1.0"
+      },
+      "adapter": {
+        "name": "node-test",
+        "version": "22.0.0",
+        "configuration": {
+          "kind": "node-test",
+          "executable": "node"
+        }
+      },
+      "execution": {
+        "isolation": "UNSANDBOXED",
+        "environmentAllowlist": [],
+        "budgets": {},
+        "candidateRoots": ["tests"]
+      },
+      "worlds": [
+        {
+          "id": "neutral",
+          "provenance": "conformance:neutral",
+          "digest": "sha256:3ae3f40fcd8592146d113c4252e5f8d69b2b5b1e25f93fd626360aa52cd6ac06"
+        },
+        {
+          "id": "reference",
+          "provenance": "conformance:reference",
+          "digest": "sha256:19f3324c3f857f03845ad6c701306ce05333e0e28afde3a82c85d00b903879c6"
+        },
+        {
+          "id": "target",
+          "provenance": "conformance:target",
+          "digest": "sha256:be18811d2679c0575fc8854fb95113170b781d882aa5bff9717f8cbfd218e9e6"
+        }
+      ]
+    },
+    "policy": {
+      "policyVersion": "1.0.0",
+      "requiredAttempts": 1,
+      "minimumTargetWeightPermille": 1000,
+      "maximumSelectedCandidates": 1,
+      "acceptedTargetOutcomes": ["ASSERTION_FAILURE"]
+    },
+    "worlds": [
+      {
+        "id": "neutral",
+        "kind": "NEUTRAL",
+        "required": true,
+        "weight": 0
+      },
+      {
+        "id": "reference",
+        "kind": "REFERENCE",
+        "required": true,
+        "weight": 0
+      },
+      {
+        "id": "target",
+        "kind": "TARGET",
+        "required": true,
+        "weight": 10
+      }
+    ],
+    "candidates": [
+      {
+        "id": "candidate",
+        "digest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+        "sizeBytes": 100,
+        "status": "ELIGIBLE",
+        "killedTargetIds": ["target"],
+        "targetWeightKilled": 10,
+        "gates": [
+          {
+            "name": "COMPLETENESS",
+            "status": "PASSED",
+            "evidenceRunIds": [
+              "candidate:neutral:1",
+              "candidate:reference:1",
+              "candidate:target:1"
+            ],
+            "reasonCodes": []
+          },
+          {
+            "name": "STABILITY",
+            "status": "PASSED",
+            "evidenceRunIds": [
+              "candidate:neutral:1",
+              "candidate:reference:1",
+              "candidate:target:1"
+            ],
+            "reasonCodes": []
+          },
+          {
+            "name": "DISCOVERY",
+            "status": "PASSED",
+            "evidenceRunIds": [
+              "candidate:neutral:1",
+              "candidate:reference:1",
+              "candidate:target:1"
+            ],
+            "reasonCodes": []
+          },
+          {
+            "name": "REFERENCE",
+            "status": "PASSED",
+            "evidenceRunIds": ["candidate:reference:1"],
+            "reasonCodes": []
+          },
+          {
+            "name": "NEUTRAL",
+            "status": "PASSED",
+            "evidenceRunIds": ["candidate:neutral:1"],
+            "reasonCodes": []
+          },
+          {
+            "name": "TARGET_STRENGTH",
+            "status": "PASSED",
+            "evidenceRunIds": ["candidate:target:1"],
+            "reasonCodes": []
+          }
+        ],
+        "reasonCodes": ["POLICY_SATISFIED"]
+      }
+    ],
+    "observations": [
+      {
+        "runId": "control:neutral:1",
+        "candidateId": null,
+        "worldId": "neutral",
+        "attempt": 1,
+        "outcome": "PASS",
+        "testsDiscovered": 1,
+        "candidateTestsDiscovered": 0,
+        "attributed": false,
+        "durationMs": 1
+      },
+      {
+        "runId": "control:reference:1",
+        "candidateId": null,
+        "worldId": "reference",
+        "attempt": 1,
+        "outcome": "PASS",
+        "testsDiscovered": 1,
+        "candidateTestsDiscovered": 0,
+        "attributed": false,
+        "durationMs": 1
+      },
+      {
+        "runId": "control:target:1",
+        "candidateId": null,
+        "worldId": "target",
+        "attempt": 1,
+        "outcome": "PASS",
+        "testsDiscovered": 1,
+        "candidateTestsDiscovered": 0,
+        "attributed": false,
+        "durationMs": 1
+      },
+      {
+        "runId": "candidate:neutral:1",
+        "candidateId": "candidate",
+        "worldId": "neutral",
+        "attempt": 1,
+        "outcome": "PASS",
+        "testsDiscovered": 2,
+        "candidateTestsDiscovered": 1,
+        "attributed": true,
+        "durationMs": 1
+      },
+      {
+        "runId": "candidate:reference:1",
+        "candidateId": "candidate",
+        "worldId": "reference",
+        "attempt": 1,
+        "outcome": "PASS",
+        "testsDiscovered": 2,
+        "candidateTestsDiscovered": 1,
+        "attributed": true,
+        "durationMs": 10
+      },
+      {
+        "runId": "candidate:target:1",
+        "candidateId": "candidate",
+        "worldId": "target",
+        "attempt": 1,
+        "outcome": "ASSERTION_FAILURE",
+        "testsDiscovered": 2,
+        "candidateTestsDiscovered": 1,
+        "attributed": true,
+        "durationMs": 1
+      }
+    ],
+    "decision": {
+      "status": "VERIFIED",
+      "selectedCandidateIds": ["candidate"],
+      "reasonCodes": ["POLICY_SATISFIED"]
+    },
+    "decisionDigest": "sha256:bbecbbbbb790db1912b9ce06336420446c71df8d57eb0b040854ba672a220faa",
+    "artifactDigest": "sha256:d1f40c9201b6cd31d24309da250669f17efcab94f606a0c1e88160f072c0aea7",
+    "adapter": {
+      "kind": "node-test"
+    },
+    "isolation": {
+      "kind": "trusted-local",
+      "level": "UNSANDBOXED",
+      "acknowledgedUnsafeExecution": true
+    },
+    "limitations": ["Static conformance fixture; not execution truth."]
+  },
+  "sourceArtifactDigest": "sha256:d1f40c9201b6cd31d24309da250669f17efcab94f606a0c1e88160f072c0aea7",
+  "sourceDecisionDigest": "sha256:bbecbbbbb790db1912b9ce06336420446c71df8d57eb0b040854ba672a220faa",
+  "referenceWorldId": "reference",
+  "policy": {
+    "benchmarkVersion": "1.0.0",
+    "minimumMeasuredSamplesPerRegime": 3,
+    "coldMeasuredSamples": 3,
+    "warmupSamples": 1,
+    "warmMeasuredSamples": 3,
+    "maximumExecutions": 7
+  },
+  "protocol": {
+    "protocolVersion": "1.0.0",
+    "clock": "MONOTONIC",
+    "unit": "MICROSECOND",
+    "quantile": "NEAREST_RANK",
+    "phases": ["PREPARATION", "STARTUP", "COMPILE_OR_COLLECTION", "EXECUTION"],
+    "coldDefinition": "FRESH_WORKSPACE_FRESH_PROCESS_RESET_DECLARED_CACHES",
+    "warmDefinition": "FRESH_WORKSPACE_FRESH_PROCESS_RETAIN_DECLARED_CACHES"
+  },
+  "fingerprint": {
+    "environmentId": "conformance-environment",
+    "os": {
+      "platform": "win32",
+      "release": "conformance",
+      "arch": "x64"
+    },
+    "cpu": {
+      "arch": "x64",
+      "model": "conformance-cpu",
+      "logicalCores": 4
+    },
+    "logicalCpuLimit": null,
+    "memoryLimitBytes": null,
+    "executionBoundary": "UNSANDBOXED",
+    "tools": [
+      {
+        "role": "runtime",
+        "name": "node",
+        "version": "22.0.0",
+        "digest": "sha256:76eb7326063e0743d570a3f82c342a448d533780e69042e242d31b06549040af",
+        "configurationDigest": "sha256:c1fed8252d27c6d935f5b70d3a453d260d737d2a780b03106eca17a0f7e0a3b3"
+      }
+    ],
+    "dependencyGraphDigest": "sha256:5a5d78a65e0587b48fe4e724fa35ad0a6be0a577ff24a5f32936778bd6a0aab3",
+    "phaseReporterDigest": "sha256:50bf9a7940fa6cfaa12f7ddfadce4c47d5ab86dc0b3043f71e995cdaf4f0056b"
+  },
+  "policyDigest": "sha256:1bec75893e7067d25a9c82bc35e4e03eea0b870a757657b672ffe91731198de3",
+  "protocolDigest": "sha256:da169675059d585a2087b0f66c0da15edadf188adeae2fb1f088dbe0cac29953",
+  "fingerprintDigest": "sha256:8de06264b080fa15df624a43d2315d2bc6d4d24bc02d792ee98ac3864efaadfc",
+  "comparisonScopeDigest": "sha256:5d693976793ed6ebc4a90882847b34636818571fb80e9ef818740e391fb72f90",
+  "runs": [
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "COLD",
+      "role": "MEASUREMENT",
+      "ordinal": 1,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 7
+        }
+      ],
+      "totalUs": 10
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "COLD",
+      "role": "MEASUREMENT",
+      "ordinal": 2,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 17
+        }
+      ],
+      "totalUs": 20
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "COLD",
+      "role": "MEASUREMENT",
+      "ordinal": 3,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 27
+        }
+      ],
+      "totalUs": 30
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "WARM",
+      "role": "WARMUP",
+      "ordinal": 1,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 37
+        }
+      ],
+      "totalUs": 40
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "WARM",
+      "role": "MEASUREMENT",
+      "ordinal": 1,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 47
+        }
+      ],
+      "totalUs": 50
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "WARM",
+      "role": "MEASUREMENT",
+      "ordinal": 2,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 57
+        }
+      ],
+      "totalUs": 60
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "WARM",
+      "role": "MEASUREMENT",
+      "ordinal": 3,
+      "status": "COMPLETE",
+      "outcome": "PASS",
+      "phases": [
+        {
+          "phase": "PREPARATION",
+          "durationUs": 1
+        },
+        {
+          "phase": "STARTUP",
+          "durationUs": 1
+        },
+        {
+          "phase": "COMPILE_OR_COLLECTION",
+          "durationUs": 1
+        },
+        {
+          "phase": "EXECUTION",
+          "durationUs": 67
+        }
+      ],
+      "totalUs": 70
+    }
+  ],
+  "summaries": [
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "COLD",
+      "status": "MEASURED",
+      "counters": {
+        "planned": 3,
+        "recorded": 3,
+        "accepted": 3,
+        "failed": 0,
+        "warmup": 0
+      },
+      "wall": {
+        "total": {
+          "minimumUs": 10,
+          "p50Us": 20,
+          "p95Us": 30,
+          "maximumUs": 30
+        },
+        "phases": {
+          "PREPARATION": {
+            "minimumUs": 1,
+            "p50Us": 1,
+            "p95Us": 1,
+            "maximumUs": 1
+          },
+          "STARTUP": {
+            "minimumUs": 1,
+            "p50Us": 1,
+            "p95Us": 1,
+            "maximumUs": 1
+          },
+          "COMPILE_OR_COLLECTION": {
+            "minimumUs": 1,
+            "p50Us": 1,
+            "p95Us": 1,
+            "maximumUs": 1
+          },
+          "EXECUTION": {
+            "minimumUs": 7,
+            "p50Us": 17,
+            "p95Us": 27,
+            "maximumUs": 27
+          }
+        }
+      },
+      "cpu": {
+        "availability": "UNAVAILABLE",
+        "quantiles": null
+      }
+    },
+    {
+      "candidateId": "candidate",
+      "candidateDigest": "sha256:5a0888431a0a4a61f7b3e8a920b8e1400e27e710fce2f6b9a4de93b14bab9368",
+      "regime": "WARM",
+      "status": "MEASURED",
+      "counters": {
+        "planned": 3,
+        "recorded": 3,
+        "accepted": 3,
+        "failed": 0,
+        "warmup": 1
+      },
+      "wall": {
+        "total": {
+          "minimumUs": 50,
+          "p50Us": 60,
+          "p95Us": 70,
+          "maximumUs": 70
+        },
+        "phases": {
+          "PREPARATION": {
+            "minimumUs": 1,
+            "p50Us": 1,
+            "p95Us": 1,
+            "maximumUs": 1
+          },
+          "STARTUP": {
+            "minimumUs": 1,
+            "p50Us": 1,
+            "p95Us": 1,
+            "maximumUs": 1
+          },
+          "COMPILE_OR_COLLECTION": {
+            "minimumUs": 1,
+            "p50Us": 1,
+            "p95Us": 1,
+            "maximumUs": 1
+          },
+          "EXECUTION": {
+            "minimumUs": 47,
+            "p50Us": 57,
+            "p95Us": 67,
+            "maximumUs": 67
+          }
+        }
+      },
+      "cpu": {
+        "availability": "UNAVAILABLE",
+        "quantiles": null
+      }
+    }
+  ],
+  "limitations": [
+    "UNSANDBOXED measurements are trusted-local operational evidence.",
+    "Benchmark comparisons are valid only within the declared comparison scope.",
+    "Observed timings do not alter the source TestForge VERIFIED decision."
+  ],
+  "artifactDigest": "sha256:60c55617fd1a951cec452f67523df92ab0d7ec935f1a0b45629631192ddc6ce8"
+}

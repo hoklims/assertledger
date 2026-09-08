@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "revealVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "commitmentDigest": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "shares": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "properties": {
+            "keyId": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "secret": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": ["keyId", "secret"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "keyId": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "secret": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": ["keyId", "secret"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "revealDigest": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": ["schemaVersion", "revealVersion", "commitmentDigest", "shares", "revealDigest"],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-reveal.v1.json"
+}

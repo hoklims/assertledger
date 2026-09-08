@@ -1,0 +1,28 @@
+{
+  "repository": "sindresorhus/escape-string-regexp",
+  "fixUrl": "https://github.com/sindresorhus/escape-string-regexp/commit/732905da074f0220487ad6a27590f89bd0819374",
+  "sources": [
+    {
+      "file": "before.cjs.txt",
+      "upstreamPath": "index.js",
+      "commit": "5085b257c801507460270b747f645276fbc1d937",
+      "gitBlob": "58217a4efa3c835c532499a3dad887017dc70a6b",
+      "sha256": "48b8be4119e6f09b8942c490397fc047da012e0cc223d75a76363856af68fce4"
+    },
+    {
+      "file": "fixed.cjs.txt",
+      "upstreamPath": "index.js",
+      "commit": "732905da074f0220487ad6a27590f89bd0819374",
+      "gitBlob": "e5bb9db7933b7230327c7d99cc8459575f090dd4",
+      "sha256": "44f81777dbee24c245fc220d9e019e031da31a5722743a74272f218b7ffed563"
+    },
+    {
+      "file": "LICENSE",
+      "upstreamPath": "license",
+      "commit": "732905da074f0220487ad6a27590f89bd0819374",
+      "gitBlob": "e7af2f77107d73046421ef56c4684cbfdd3c1e89",
+      "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+    }
+  ],
+  "scope": "Byte-exact upstream module snapshots, projected into an AssertLedger-authored node:test Git fixture. This does not qualify the complete upstream repository or its original AVA suite."
+}

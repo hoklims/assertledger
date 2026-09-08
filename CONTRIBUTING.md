@@ -1,8 +1,12 @@
 # Contributing
 
-TestForge accepts small, reviewable changes backed by observable behavior.
+AssertLedger accepts small, reviewable changes backed by observable behavior.
 
 Use Node.js 22.15 or newer and pnpm 11.
+
+`pnpm test` and `pnpm test:coverage` build the package through their explicit pretest lifecycle
+scripts, enabled in `pnpm-workspace.yaml`. This supplies the compiled reporter even in a fresh
+checkout. `pnpm check` includes that same build and test path.
 
 1. Read `AGENTS.md`, `docs/architecture.md`, and `docs/proof-model.md`.
 2. Install the pinned toolchain with `pnpm install --frozen-lockfile`.
@@ -11,6 +15,9 @@ Use Node.js 22.15 or newer and pnpm 11.
 5. Run `pnpm generate:schemas` after changing any wire contract, and include all resulting files in
    `schemas/` in the review.
 6. Run `pnpm check` and include the relevant evidence in the pull request.
+
+Test and coverage runs execute at most two test files concurrently. Many suites launch real child
+processes; bounded concurrency keeps their unchanged execution deadlines meaningful on shared hosts.
 
 Commits should follow Conventional Commits. Contract-breaking changes require a schema-version and
 migration discussion before implementation.

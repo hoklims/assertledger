@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "status": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "reasonCodes": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "detections": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "actions": {
+      "$ref": "#/$defs/__schema7"
+    },
+    "files": {
+      "$ref": "#/$defs/__schema8"
+    },
+    "requiredOperatorInputs": {
+      "$ref": "#/$defs/__schema9"
+    },
+    "nextCommands": {
+      "$ref": "#/$defs/__schema10"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "status",
+    "reasonCodes",
+    "detections",
+    "actions",
+    "files",
+    "requiredOperatorInputs",
+    "nextCommands"
+  ],
+  "additionalProperties": false,
+  "title": "AssertLedger repository init result",
+  "description": "Deterministic initialization plan and outcome without campaign execution.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "string",
+      "enum": ["CREATED", "UNCHANGED", "WOULD_CREATE", "BLOCKED", "CONFLICT"]
+    },
+    "__schema2": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema3"
+      }
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "packageManager": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["pnpm", "npm", "yarn", "bun", "uv", "poetry", "pip"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "framework": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["node:test", "vitest", "jest", "bun:test", "pytest"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "testCommand": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema5"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ciProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["github-actions", "gitlab-ci", "azure-pipelines", "circleci"]
+          }
+        },
+        "adapterRecommendation": {
+          "type": "string",
+          "enum": ["node-test", "operator-supplied", "unavailable"]
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema3"
+          }
+        }
+      },
+      "required": [
+        "packageManager",
+        "framework",
+        "testCommand",
+        "ciProviders",
+        "adapterRecommendation",
+        "reasonCodes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "arguments": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema6"
+          }
+        }
+      },
+      "required": ["executable", "arguments"],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "__schema7": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["CREATE", "REGENERATE"]
+          },
+          "path": {
+            "type": "string",
+            "enum": ["assertledger.config.json", "assertledger.lock.json"]
+          }
+        },
+        "required": ["kind", "path"],
+        "additionalProperties": false
+      }
+    },
+    "__schema8": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "enum": ["assertledger.config.json", "assertledger.lock.json"]
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16777216
+          }
+        },
+        "required": ["path", "digest", "content"],
+        "additionalProperties": false
+      }
+    },
+    "__schema9": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "worlds"
+        },
+        {
+          "type": "string",
+          "const": "candidates"
+        }
+      ]
+    },
+    "__schema10": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema5"
+      }
+    }
+  },
+  "$id": "https://testforge.dev/schemas/repository-init-result.v1.json"
+}
