@@ -9,10 +9,17 @@ You get a verdict, the observations behind it and an evidence file you can repla
 
 [Try the example](#try-the-example) · [Understand the result](#understand-the-result) · [Use your repository](#use-your-repository) · [Documentation](#documentation)
 
-> **Development preview · 0.1.0**
->
-> The 1.0 release is being prepared in [PR #4](https://github.com/hoklims/assertledger/pull/4).
-> Install from the source branch below. The npm package and the 1.0 release are not yet published.
+**1.0 · node:test · CLI, SDK and MCP · MIT**
+
+Install in your repository with Node.js 22.15 or later:
+
+```sh
+npm install --save-dev assertledger@1.0.0
+npx assertledger doctor .
+```
+
+The [historical correction demo](examples/git-history/README.md) runs from the installed package.
+The source example below walks through the evidence step by step.
 
 ## A passing test can miss the bug
 
@@ -52,7 +59,7 @@ flowchart LR
 You need **Git**, **Node.js 22.15+** and **pnpm 11.1.2**. The first built-in adapter is `node:test`.
 
 ```sh
-git clone --branch codex/release-1-0 https://github.com/hoklims/assertledger.git
+git clone --branch v1.0.0 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build
@@ -135,6 +142,10 @@ node dist/cli.js doctor path/to/your-repository --json
 The [initialization guide](docs/repository-init.md) explains `init`, the configuration and evidence
 lock. Detection of a framework is not proof that AssertLedger can execute it.
 
+After initialization, [runtime doctor](docs/runtime-doctor.md) can check Node, the reporter,
+discovery and assertion attribution with `doctor --runtime --allow-unsafe-execution`.
+For a refusal, use `explain CODE` to get a safe next action.
+
 ### Qualify a committed regression test
 
 Choose the buggy commit (`BEFORE`), its correction (`AFTER`) and a neutral control (`NEUTRAL`).
@@ -169,20 +180,26 @@ Generate a project-scoped Codex configuration from the built CLI:
 node dist/cli.js connect path/to/your-repository --client codex
 ```
 
-This prints the configuration. Add `--write` to create `.codex/config.toml` if absent; different
+This previews the configuration and packaged skill. Add `--write` to install both; different
 existing content is preserved and reported as a conflict. The generated MCP server starts read-only.
 Candidate execution requires a separate explicit opt-in. See [developer entry points](docs/developer-experience.md)
 for project trust and reload requirements.
+
+Use `--client claude-code` for Claude Code or `--client mcp` for a generic descriptor.
+`disconnect --client codex --write` removes only byte-identical owned files.
+The [client guide](docs/client-connections.md) covers installation and removal.
 
 ## Documentation
 
 | You want to… | Start here |
 | --- | --- |
 | Set up a repository | [Initialization](docs/repository-init.md) · [Static audit](docs/repository-audit.md) |
+| Diagnose a blockage | [Runtime doctor](docs/runtime-doctor.md) · [Reason-code guidance](docs/diagnostics.md) |
+| Try a historical correction | [Unicode-regexp example](examples/git-history/README.md) |
 | Qualify a correction or connect Codex | [Git workflow](docs/git-regression.md) · [Developer entry points](docs/developer-experience.md) |
 | Understand attribution, controls and digests | [Proof model](docs/proof-model.md) |
 | Integrate the CLI, SDK or MCP | [Integration reference](docs/reference.md) |
-| Verify the actual distributed package | [Distribution checks](docs/distribution.md) |
+| Verify the actual distributed package | [Distribution checks](docs/distribution.md) · [CI evidence](docs/ci.md) |
 | Extend an adapter | [Adapter protocol](docs/adapter-protocol.md) · [Architecture](docs/architecture.md) |
 | Review the 1.0 scope | [Release criteria](docs/release-1.0.md) · [Roadmap](docs/roadmap.md) |
 | Explore advanced evaluation work | [Profiles](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) |

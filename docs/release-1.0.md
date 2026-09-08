@@ -1,7 +1,8 @@
 # AssertLedger 1.0
 
-Cap décidé par le propriétaire le 8 septembre 2026. Ce document décrit la release à construire,
-pas une version déjà publiée. Le nom du package reste `assertledger` et le dépôt public est
+Cap décidé par le propriétaire le 8 septembre 2026. Ce document fixe les critères de la version 1.0 ;
+la publication est attestée séparément par le tag, le registre npm et la release GitHub.
+Le nom du package reste `assertledger` et le dépôt public est
 [hoklims/assertledger](https://github.com/hoklims/assertledger).
 
 ## Résultat utilisateur
@@ -55,7 +56,8 @@ la seule publication d’un package 1.0.
 
 Le candidat local du 8 septembre passe `pnpm check` avec 307 tests. La version du package est
 encore `0.1.0`. Le dépôt public dédié est créé et `origin` configuré ; aucune release n’est publiée.
-Le contrôle npm retourne `E401` : une authentification valide sera nécessaire à la publication.
+Le contrôle npm initial retournait `E401`. L’authentification du compte personnel `hoklims` a
+ensuite été vérifiée ; elle ne vaut pas preuve de publication.
 Le diff hérité est conservé ; sa présence ne constitue pas une acceptation de tous ses travaux.
 La preuve externe [HOK-406](https://linear.app/hoklims/issue/HOK-406) reste ouverte et ne donne pas
 autorité pour modifier la politique active.

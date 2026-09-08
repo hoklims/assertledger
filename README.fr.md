@@ -9,10 +9,17 @@ Vous obtenez un verdict, les observations qui le justifient et un fichier de pre
 
 [Essayer l’exemple](#essayer-lexemple) · [Comprendre le résultat](#comprendre-le-résultat) · [Utiliser votre dépôt](#utiliser-votre-dépôt) · [Documentation](#documentation)
 
-> **Aperçu de développement · 0.1.0**
->
-> La version 1.0 se prépare dans la [PR nº 4](https://github.com/hoklims/assertledger/pull/4).
-> Installez la branche source ci-dessous. Le paquet npm et la version 1.0 ne sont pas encore publiés.
+**1.0 · node:test · CLI, SDK et MCP · MIT**
+
+Installez l’outil dans votre dépôt avec Node.js 22.15 ou une version ultérieure :
+
+```sh
+npm install --save-dev assertledger@1.0.0
+npx assertledger doctor .
+```
+
+La [démonstration d’une correction historique](examples/git-history/README.md) fonctionne depuis
+le paquet installé. L’exemple source ci-dessous détaille les preuves étape par étape.
 
 ## Un test vert peut laisser passer le bug
 
@@ -53,7 +60,7 @@ flowchart LR
 Prérequis : **Git**, **Node.js 22.15+** et **pnpm 11.1.2**. Le premier adaptateur intégré utilise `node:test`.
 
 ```sh
-git clone --branch codex/release-1-0 https://github.com/hoklims/assertledger.git
+git clone --branch v1.0.0 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build
@@ -142,6 +149,10 @@ node dist/cli.js doctor path/to/your-repository --json
 candidat et les contrôles. Le [guide d’initialisation](docs/repository-init.md) décrit `init`,
 la configuration et le verrou des preuves. Détecter un framework ne signifie pas savoir l’exécuter.
 
+Après l’initialisation, le [diagnostic dynamique](docs/runtime-doctor.md) vérifie Node, le reporter,
+la découverte des tests et l’attribution des assertions avec `doctor --runtime --allow-unsafe-execution`.
+Pour comprendre un refus, lancez `explain CODE` : la commande indique la prochaine action sûre.
+
 ### Qualifier un test de régression commité
 
 Choisissez le commit qui contient le bug (`BEFORE`), sa correction (`AFTER`) et un témoin neutre
@@ -177,11 +188,15 @@ Générez une configuration Codex propre au projet avec le CLI compilé :
 node dist/cli.js connect path/to/your-repository --client codex
 ```
 
-Cette commande affiche la configuration. Ajoutez `--write` pour créer `.codex/config.toml` s’il
-n’existe pas ; tout contenu existant différent est conservé et signalé comme un conflit.
+Cette commande prévisualise la configuration et le skill fourni. Ajoutez `--write` pour les
+installer ; tout contenu existant différent est conservé et signalé comme un conflit.
 Le serveur MCP généré démarre en lecture seule. L’exécution de tests candidats demande une
 autorisation explicite distincte. Le [guide de prise en main](docs/developer-experience.md) précise
 les exigences de confiance du projet et de rechargement du client.
+
+Utilisez `--client claude-code` pour Claude Code ou `--client mcp` pour un descripteur générique.
+`disconnect --client codex --write` retire seulement les fichiers restés strictement identiques.
+Le [guide des clients](docs/client-connections.md) décrit l’installation et la désinstallation.
 
 ## Documentation
 
@@ -190,10 +205,12 @@ Le guide Git est en français ; les autres références techniques sont en angla
 | Vous souhaitez… | Commencez ici |
 | --- | --- |
 | Préparer un dépôt | [Initialisation](docs/repository-init.md) · [Audit statique](docs/repository-audit.md) |
+| Comprendre un blocage | [Diagnostic dynamique](docs/runtime-doctor.md) · [Explication des motifs](docs/diagnostics.md) |
+| Essayer une correction historique | [Exemple Unicode-regexp](examples/git-history/README.md) |
 | Qualifier une correction ou connecter Codex | [Parcours Git](docs/git-regression.md) · [Prise en main](docs/developer-experience.md) |
 | Comprendre l’attribution, les contrôles et les empreintes | [Modèle de preuve](docs/proof-model.md) |
 | Intégrer le CLI, le SDK ou MCP | [Référence d’intégration](docs/reference.md) |
-| Vérifier le paquet réellement distribué | [Contrôles de distribution](docs/distribution.md) |
+| Vérifier le paquet réellement distribué | [Contrôles de distribution](docs/distribution.md) · [Preuves CI](docs/ci.md) |
 | Développer un adaptateur | [Protocole des adaptateurs](docs/adapter-protocol.md) · [Architecture](docs/architecture.md) |
 | Consulter le périmètre de la version 1.0 | [Critères de release](docs/release-1.0.md) · [Feuille de route](docs/roadmap.md) |
 | Explorer les évaluations avancées | [Profils](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) |

@@ -21,6 +21,7 @@ import {
   portablePathKey,
   sealManifestArtifact,
 } from "../core/index.js";
+import { renderDiagnostics } from "../diagnostics.js";
 import { verifyCampaign } from "./index.js";
 
 const GIT_PROCESS_LIMIT = 32;
@@ -773,6 +774,11 @@ export function renderGitRegressionSummary(
     ),
     `- Neutral reason: ${markdown(options.neutralReason)}`,
     "- Execution: **UNSANDBOXED trusted-local** (explicit operator opt-in)",
+    "",
+    renderDiagnostics([
+      ...manifest.decision.reasonCodes,
+      ...manifest.candidates.flatMap((candidate) => candidate.reasonCodes),
+    ]),
     "",
     "## Limitations:",
     "",

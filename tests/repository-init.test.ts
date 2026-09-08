@@ -79,6 +79,41 @@ const nodePackage = {
 };
 
 describe("repository init v1", () => {
+  it("advances past zero-width scanner tokens and still detects later imports", async () => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "",
+      "test/base.test.js":
+        'const heading = /^# heading$/mu;\nimport test from "node:test";\ntest("base", () => {});\n',
+    });
+    const moduleUrl = new URL("../src/engine/index.ts", import.meta.url).href;
+    const program = `import { initializeRepository } from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(await initializeRepository(${JSON.stringify(root)}, { dryRun: true })));`;
+    const child = await execFileAsync(
+      process.execPath,
+      [
+        "--max-old-space-size=256",
+        "--import",
+        import.meta.resolve("tsx"),
+        "--input-type=module",
+        "--eval",
+        program,
+      ],
+      { timeout: 5_000, windowsHide: true, maxBuffer: 65_536 },
+    ).catch(() => {
+      assert.fail("INIT_SCANNER_DID_NOT_TERMINATE");
+    });
+    const result = parseRepositoryInitResult(JSON.parse(child.stdout));
+    assert.equal(result.status, "WOULD_CREATE");
+    assert.equal(result.detections.framework, "node:test");
+    const config = parseRepositoryInitConfig(
+      JSON.parse(
+        result.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null",
+      ),
+    );
+    assert.equal(config.adapter.kind, "node-test");
+    if (config.adapter.kind === "node-test")
+      assert.deepEqual(config.adapter.baseTestFiles, ["test/base.test.js"]);
+  });
+
   it("publishes three strict schemas and fail-closed semantic parsers", async () => {
     for (const schema of [
       repositoryInitConfigJsonSchema(),

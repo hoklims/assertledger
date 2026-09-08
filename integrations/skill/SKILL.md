@@ -1,6 +1,8 @@
 ---
 name: assertledger
 description: Analyze a repository, submit candidate tests, and accept only deterministic AssertLedger evidence.
+metadata:
+  version: "1.0.0"
 ---
 
 # AssertLedger skill
@@ -10,6 +12,21 @@ Use this skill when an agent is asked to generate tests whose actual evidence mu
 AssertLedger was formerly named TestForge. The `assertledger` CLI is the preferred binary; the
 `testforge` binary remains a legacy-compatible alias for the same commands during the compatibility
 window.
+
+## Preferred path: a committed regression
+
+1. Run `assertledger doctor <repo> --json` for static readiness. Runtime probes require the separate
+   `doctor --runtime --allow-unsafe-execution` command and prior operator authorization.
+2. Ask the operator or harness for the buggy, corrected and neutral revisions, the neutral reason,
+   candidate path and unchanged base tests. Do not invent a neutral control's meaning.
+3. For committed dependency-free JavaScript `node:test`, use `assertledger check` or the MCP
+   `assertledger_check` tool. The server operator must enable execution; a tool payload cannot grant it.
+4. Preserve the manifest and run `assertledger replay`. Use `assertledger explain CODE` or the
+   read-only `assertledger_explain` tool to understand a refusal without changing the policy.
+5. The configuration, skill and server do not grant trust. Never treat a crash, timeout, compilation
+   error or missing test as detection. The returned limitations remain part of the result.
+
+## Lower-level verification requests
 
 1. Run `assertledger init <repo> --dry-run --json`, review conflicts and planned bytes, then run
    `assertledger init <repo> --json`. Initialization is static and manages only the two AssertLedger

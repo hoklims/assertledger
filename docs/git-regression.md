@@ -13,6 +13,13 @@ assertledger check . --before BEFORE --after AFTER --neutral NEUTRAL --neutral-r
 
 L’exécution `trusted-local` est volontairement **UNSANDBOXED**. Le drapeau `--allow-unsafe-execution` constitue l’autorisation distincte de l’opérateur. L’API équivalente est `new AssertLedger().checkGitRegression(options)` et exige `allowUnsafeExecution: true`.
 
+MCP expose le même parcours avec `assertledger_check` (alias `testforge_check`) seulement si
+l’opérateur a démarré le serveur avec `--allow-unsafe-execution`. L’entrée reprend les options
+du SDK, sans le champ de permission : `repository`, `before`, `after` facultatif, `neutral`,
+`neutralReason`, `test`, `baseTests` et `out`. La racine est confinée aux dépôts autorisés ; le
+dossier de sortie suit les mêmes contrôles que la CLI. Un client ne peut pas s’accorder cette
+permission dans son message.
+
 ## Limites de cette première tranche
 
 - seules les révisions commitées sont lues ; les changements locaux sont ignorés ;

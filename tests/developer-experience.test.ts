@@ -9,7 +9,12 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { type CliIo, runCli } from "../src/cli.js";
 import { parseRepositoryInitResult } from "../src/contracts/index.js";
-import { createCodexProjectConfig } from "../src/engine/connection.js";
+import {
+  type ConnectionClient,
+  connectClient,
+  createCodexProjectConfig,
+  disconnectClient,
+} from "../src/engine/connection.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const packageMetadata = JSON.parse(
@@ -149,6 +154,33 @@ describe("developer entry points", () => {
     );
   });
 
+  it("compares legacy Codex configuration bytes without UTF-8 replacement equivalence", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "assertledger-byte-config-"));
+    temporaryDirectories.push(parent);
+    const root = path.join(parent, "repository-�");
+    await mkdir(root);
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-byte-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+
+    const emitted = await createCodexProjectConfig(root, builtEntry, false);
+    await mkdir(path.dirname(emitted.path), { recursive: true });
+    const expectedBytes = Buffer.from(emitted.content, "utf8");
+    const replacement = Buffer.from("�", "utf8");
+    const replacementOffset = expectedBytes.indexOf(replacement);
+    assert.notEqual(replacementOffset, -1);
+    const malformedBytes = Buffer.concat([
+      expectedBytes.subarray(0, replacementOffset),
+      Buffer.from([0x80]),
+      expectedBytes.subarray(replacementOffset + replacement.length),
+    ]);
+    await writeFile(emitted.path, malformedBytes);
+
+    assert.equal((await createCodexProjectConfig(root, builtEntry, true)).status, "CONFLICT");
+  });
+
   it("rejects a symlinked project configuration directory", async (context) => {
     const root = await fixtureRepository();
     const outside = await mkdtemp(path.join(os.tmpdir(), "assertledger-dx-outside-"));
@@ -175,12 +207,194 @@ describe("developer entry points", () => {
     );
   });
 
+  it("rejects a linked client artifact parent before creating any sibling artifact", async (context) => {
+    const root = await fixtureRepository();
+    const outside = await mkdtemp(path.join(os.tmpdir(), "assertledger-client-link-outside-"));
+    temporaryDirectories.push(outside);
+    try {
+      await symlink(
+        outside,
+        path.join(root, ".agents"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") {
+        context.skip("directory links require privileges on this host");
+        return;
+      }
+      throw error;
+    }
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-client-link-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+
+    await assert.rejects(
+      connectClient(root, builtEntry, "codex", true),
+      /CONNECT_CONFIG_PATH_UNSAFE/u,
+    );
+    await assert.rejects(readFile(path.join(root, ".codex", "config.toml"), "utf8"), /ENOENT/u);
+    await assert.rejects(
+      readFile(path.join(outside, "skills", "assertledger", "SKILL.md"), "utf8"),
+      /ENOENT/u,
+    );
+  });
+
+  it("plans, installs, and removes byte-owned Codex and Claude Code project artifacts", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-client-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    const skill = "---\nname: assertledger\ndescription: Fixture skill.\n---\n\n# Fixture\n";
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), skill);
+
+    for (const client of ["codex", "claude-code"] as const) {
+      const preview = await connectClient(root, builtEntry, client, false);
+      assert.equal(preview.status, "EMITTED");
+      assert.equal(preview.artifacts.length, 2);
+      for (const artifact of preview.artifacts) {
+        assert.notEqual(artifact.path, null);
+        if (artifact.path === null) throw new Error("expected a managed artifact path");
+        await assert.rejects(readFile(artifact.path, "utf8"), /ENOENT/u);
+      }
+
+      const created = await connectClient(root, builtEntry, client, true);
+      assert.equal(created.status, "CREATED");
+      for (const artifact of created.artifacts) {
+        assert.notEqual(artifact.path, null);
+        if (artifact.path === null) throw new Error("expected a managed artifact path");
+        assert.equal(await readFile(artifact.path, "utf8"), artifact.content);
+      }
+      assert.equal((await connectClient(root, builtEntry, client, true)).status, "UNCHANGED");
+
+      const removalPreview = await disconnectClient(root, builtEntry, client, false);
+      assert.equal(removalPreview.status, "EMITTED");
+      for (const artifact of created.artifacts) {
+        assert.notEqual(artifact.path, null);
+        if (artifact.path === null) throw new Error("expected a managed artifact path");
+        assert.equal(await readFile(artifact.path, "utf8"), artifact.content);
+      }
+      assert.equal((await disconnectClient(root, builtEntry, client, true)).status, "REMOVED");
+      assert.equal((await disconnectClient(root, builtEntry, client, true)).status, "ABSENT");
+      for (const artifact of created.artifacts) {
+        assert.notEqual(artifact.path, null);
+        if (artifact.path === null) throw new Error("expected a managed artifact path");
+        await assert.rejects(readFile(artifact.path, "utf8"), /ENOENT/u);
+      }
+    }
+  });
+
+  it("refuses divergent client artifacts without partial install or removal", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-client-conflict-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(
+      path.join(builtRoot, "integrations", "skill", "SKILL.md"),
+      "---\nname: assertledger\n---\n",
+    );
+
+    await mkdir(path.join(root, ".agents", "skills", "assertledger"), { recursive: true });
+    const skillPath = path.join(root, ".agents", "skills", "assertledger", "SKILL.md");
+    await writeFile(skillPath, "operator-owned\n");
+    const conflict = await connectClient(root, builtEntry, "codex", true);
+    assert.equal(conflict.status, "CONFLICT");
+    assert.equal(await readFile(skillPath, "utf8"), "operator-owned\n");
+    await assert.rejects(readFile(path.join(root, ".codex", "config.toml"), "utf8"), /ENOENT/u);
+
+    await writeFile(skillPath, conflict.artifacts[1]?.content ?? "");
+    assert.equal((await connectClient(root, builtEntry, "codex", true)).status, "CREATED");
+    await writeFile(skillPath, "changed after installation\n");
+    const removalConflict = await disconnectClient(root, builtEntry, "codex", true);
+    assert.equal(removalConflict.status, "CONFLICT");
+    assert.equal(await readFile(skillPath, "utf8"), "changed after installation\n");
+    assert.equal(
+      await readFile(path.join(root, ".codex", "config.toml"), "utf8"),
+      removalConflict.artifacts[0]?.content,
+    );
+  });
+
+  it("compares managed skill bytes exactly and rejects unsupported runtime clients", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-client-byte-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Skill �\n");
+
+    const preview = await connectClient(root, builtEntry, "codex", false);
+    const config = preview.artifacts[0];
+    const skill = preview.artifacts[1];
+    assert.ok(config !== undefined && config.path !== null);
+    assert.ok(skill !== undefined && skill.path !== null);
+    if (
+      config === undefined ||
+      config.path === null ||
+      skill === undefined ||
+      skill.path === null
+    ) {
+      throw new Error("expected managed client artifact paths");
+    }
+    await mkdir(path.dirname(config.path), { recursive: true });
+    await mkdir(path.dirname(skill.path), { recursive: true });
+    await writeFile(config.path, config.content);
+    await writeFile(skill.path, Buffer.from("# Skill \x80\n", "binary"));
+    assert.equal((await connectClient(root, builtEntry, "codex", true)).status, "CONFLICT");
+
+    await assert.rejects(
+      connectClient(root, builtEntry, "unsupported" as ConnectionClient, false),
+      /CONNECT_CLIENT_UNSUPPORTED/u,
+    );
+  });
+
+  it("emits a generic stdio descriptor without claiming a universal config path", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-generic-mcp-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+
+    const result = await connectClient(root, builtEntry, "mcp", false);
+    assert.equal(result.status, "EMITTED");
+    assert.equal(result.artifacts.length, 1);
+    assert.equal(result.artifacts[0]?.path, null);
+    const descriptor = JSON.parse(result.artifacts[0]?.content ?? "null") as {
+      transport: string;
+      command: string;
+      args: string[];
+      cwd: string;
+    };
+    assert.equal(descriptor.transport, "stdio");
+    assert.equal(descriptor.command, process.execPath);
+    assert.deepEqual(descriptor.args, [builtEntry, "mcp", "--root", await realpath(root)]);
+    assert.equal(descriptor.cwd, await realpath(root));
+  });
+
   it("rejects source-only connect and malformed client usage", async () => {
     const root = await fixtureRepository();
-    const sourceCapture = captureIo(root);
-    assert.equal(await runCli(["connect", ".", "--client", "codex"], sourceCapture.io), 3);
-    assert.match(sourceCapture.stderr(), /pnpm build/u);
-    assert.equal(sourceCapture.stdout(), "");
+    for (const argv of [
+      ["connect", ".", "--client", "codex"],
+      ["connect", ".", "--client", "claude-code"],
+      ["connect", ".", "--client", "mcp"],
+      ["disconnect", ".", "--client", "codex"],
+    ]) {
+      const sourceCapture = captureIo(root);
+      assert.equal(await runCli(argv, sourceCapture.io), 3);
+      assert.match(sourceCapture.stderr(), /pnpm build/u);
+      assert.equal(sourceCapture.stdout(), "");
+    }
 
     for (const argv of [
       ["connect", "."],
@@ -191,6 +405,9 @@ describe("developer entry points", () => {
       ["connect", ".", "--client", "codex", "--client", "codex"],
       ["connect", ".", "--client", "codex", "--write", "--write"],
       ["connect", "-x", "--client", "codex"],
+      ["connect", ".", "--client", "mcp", "--write"],
+      ["disconnect", ".", "--client", "mcp"],
+      ["disconnect", ".", "--client", "claude"],
     ]) {
       const capture = captureIo(root);
       assert.equal(await runCli(argv, capture.io), 64);
@@ -241,13 +458,43 @@ describe("developer entry points", () => {
       windowsHide: true,
     });
     const cli = path.join(outDir, "cli.js");
-    const generated = await execFileAsync(
+    const packagedSkillDirectory = path.join(buildRoot, "integrations", "skill");
+    await mkdir(packagedSkillDirectory, { recursive: true });
+    await writeFile(
+      path.join(packagedSkillDirectory, "SKILL.md"),
+      await readFile(path.join(process.cwd(), "integrations", "skill", "SKILL.md"), "utf8"),
+    );
+    const generic = await execFileAsync(
+      process.execPath,
+      [cli, "connect", root, "--client", "mcp"],
+      { cwd: process.cwd(), timeout: 5_000, maxBuffer: 64 * 1024, windowsHide: true },
+    );
+    const descriptor = JSON.parse(generic.stdout) as {
+      command: string;
+      args: string[];
+      cwd: string;
+    };
+    assert.equal(descriptor.command, process.execPath);
+    assert.equal(descriptor.cwd, canonicalRoot);
+    assert.deepEqual(descriptor.args, [cli, "mcp", "--root", canonicalRoot]);
+
+    const preview = await execFileAsync(
       process.execPath,
       [cli, "connect", root, "--client", "codex"],
       { cwd: process.cwd(), timeout: 5_000, maxBuffer: 64 * 1024, windowsHide: true },
     );
-    const values = new Map(
-      generated.stdout
+    assert.match(preview.stdout, /^EMITTED: .*\.codex.*config\.toml/mu);
+    assert.match(preview.stdout, /^EMITTED: .*\.agents.*SKILL\.md/mu);
+    assert.match(preview.stdout, /--- BEGIN ASSERTLEDGER CONFIGURATION ---/u);
+    assert.match(preview.stdout, /^\[mcp_servers\.assertledger\]$/mu);
+    assert.match(preview.stdout, /--- END ASSERTLEDGER CONFIGURATION ---/u);
+    assert.match(preview.stdout, /--- BEGIN ASSERTLEDGER SKILL ---/u);
+    assert.match(preview.stdout, /^# AssertLedger skill$/mu);
+    assert.match(preview.stdout, /--- END ASSERTLEDGER SKILL ---/u);
+    assert.match(preview.stdout, /No files changed/u);
+    const codexPlan = await connectClient(root, cli, "codex", false);
+    const codexValues = new Map(
+      (codexPlan.artifacts[0]?.content ?? "")
         .trim()
         .split(/\r?\n/u)
         .slice(1)
@@ -256,9 +503,6 @@ describe("developer entry points", () => {
           return [line.slice(0, separator), JSON.parse(line.slice(separator + 3))] as const;
         }),
     );
-    assert.equal(values.get("command"), process.execPath);
-    assert.equal(values.get("cwd"), canonicalRoot);
-    assert.deepEqual(values.get("args"), [cli, "mcp", "--root", canonicalRoot]);
 
     const created = await execFileAsync(
       process.execPath,
@@ -267,7 +511,23 @@ describe("developer entry points", () => {
     );
     assert.match(created.stdout, /^CREATED: /u);
     const configPath = path.join(root, ".codex", "config.toml");
-    assert.equal(await readFile(configPath, "utf8"), generated.stdout);
+    assert.match(await readFile(configPath, "utf8"), /^\[mcp_servers\.assertledger\]$/mu);
+    assert.equal(
+      await readFile(path.join(root, ".agents", "skills", "assertledger", "SKILL.md"), "utf8"),
+      await readFile(path.join(packagedSkillDirectory, "SKILL.md"), "utf8"),
+    );
+    const claudeCreated = await execFileAsync(
+      process.execPath,
+      [cli, "connect", root, "--client", "claude-code", "--write"],
+      { cwd: process.cwd(), timeout: 5_000, maxBuffer: 64 * 1024, windowsHide: true },
+    );
+    assert.match(claudeCreated.stdout, /^CREATED: /u);
+    const claudeConfig = JSON.parse(await readFile(path.join(root, ".mcp.json"), "utf8")) as {
+      mcpServers: {
+        assertledger: { command: string; args: string[]; type: string };
+      };
+    };
+    assert.equal(claudeConfig.mcpServers.assertledger.type, "stdio");
     const unchanged = await execFileAsync(
       process.execPath,
       [cli, "connect", root, "--client", "codex", "--write"],
@@ -290,33 +550,52 @@ describe("developer entry points", () => {
     );
     assert.equal(await readFile(configPath, "utf8"), "[operator_owned]\n");
 
-    const transport = new StdioClientTransport({
-      command: values.get("command") as string,
-      args: values.get("args") as string[],
-      cwd: values.get("cwd") as string,
-      stderr: "pipe",
-    });
-    const client = new Client({ name: "assertledger-dx-test", version: "1.0.0" });
-    await client.connect(transport);
-    try {
-      assert.equal(client.getServerVersion()?.version, "9.8.7-dx-fixture");
-      const tools = await client.listTools();
-      assert.ok(tools.tools.some((tool) => tool.name === "assertledger_analyze"));
-      assert.ok(!tools.tools.some((tool) => tool.name === "assertledger_verify"));
-      const analyzed = await client.callTool({
-        name: "assertledger_analyze",
-        arguments: { root },
-      });
-      assert.equal(analyzed.isError, undefined);
-      const outside = await mkdtemp(path.join(os.tmpdir(), "assertledger-dx-forbidden-"));
-      temporaryDirectories.push(outside);
-      const forbidden = await client.callTool({
-        name: "assertledger_analyze",
-        arguments: { root: outside },
-      });
-      assert.equal(forbidden.isError, true);
-    } finally {
-      await client.close();
+    const connections = [
+      descriptor,
+      {
+        command: codexValues.get("command") as string,
+        args: codexValues.get("args") as string[],
+        cwd: codexValues.get("cwd") as string,
+      },
+      { ...claudeConfig.mcpServers.assertledger, cwd: canonicalRoot },
+    ];
+    for (const connection of connections) {
+      const transport = new StdioClientTransport({ ...connection, stderr: "pipe" });
+      const client = new Client({ name: "assertledger-dx-test", version: "1.0.0" });
+      await client.connect(transport);
+      try {
+        assert.equal(client.getServerVersion()?.version, "9.8.7-dx-fixture");
+        const tools = await client.listTools();
+        assert.ok(tools.tools.some((tool) => tool.name === "assertledger_analyze"));
+        assert.ok(!tools.tools.some((tool) => tool.name === "assertledger_verify"));
+        const analyzed = await client.callTool({
+          name: "assertledger_analyze",
+          arguments: { root },
+        });
+        assert.equal(analyzed.isError, undefined);
+        const outside = await mkdtemp(path.join(os.tmpdir(), "assertledger-dx-forbidden-"));
+        temporaryDirectories.push(outside);
+        const forbidden = await client.callTool({
+          name: "assertledger_analyze",
+          arguments: { root: outside },
+        });
+        assert.equal(forbidden.isError, true);
+      } finally {
+        await client.close();
+      }
     }
+    const disconnectPreview = await execFileAsync(
+      process.execPath,
+      [cli, "disconnect", root, "--client", "claude-code"],
+      { cwd: process.cwd(), timeout: 5_000, maxBuffer: 64 * 1024, windowsHide: true },
+    );
+    assert.match(disconnectPreview.stdout, /No files changed/u);
+    const disconnected = await execFileAsync(
+      process.execPath,
+      [cli, "disconnect", root, "--client", "claude-code", "--write"],
+      { cwd: process.cwd(), timeout: 5_000, maxBuffer: 64 * 1024, windowsHide: true },
+    );
+    assert.match(disconnected.stdout, /^REMOVED: /u);
+    await assert.rejects(readFile(path.join(root, ".mcp.json"), "utf8"), /ENOENT/u);
   });
 });

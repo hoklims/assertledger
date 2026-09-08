@@ -59,6 +59,7 @@ import {
 } from "./adapters/node-test-runtime.js";
 import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
+import { type RuntimeDoctorResult, runRuntimeDoctorChecks } from "./runtime-doctor.js";
 
 const DEFAULT_EXCLUDES = new Set([".git", ".testforge", "node_modules"]);
 const SHA256_PREFIX = "sha256:";
@@ -89,6 +90,10 @@ export interface RepositoryInitOptions {
   framework?: string;
   testCommand?: { executable: string; arguments: string[] };
   afterEvidenceSnapshot?: () => void | Promise<void>;
+}
+
+export interface RuntimeDoctorOptions {
+  allowUnsafeExecution: boolean;
 }
 
 async function removeTemporaryDirectory(directory: string): Promise<void> {
@@ -658,6 +663,13 @@ function initJavaScriptModuleSpecifiers(source: string): Set<string> {
   const scanner = createScanner(true, undefined, source);
   const templateExpressionBraceDepths: number[] = [];
   for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
+    const tokenStart = scanner.getTokenStart();
+    if (scanner.getTokenEnd() <= tokenStart) {
+      // Context-free scanning can leave a private identifier empty (for example '#' in a regex).
+      // Never collect a non-EOF token without consuming source text.
+      scanner.resetTokenState(Math.min(source.length, tokenStart + 1));
+      continue;
+    }
     const templateDepthIndex = templateExpressionBraceDepths.length - 1;
     if (
       kind === SyntaxKind.CloseBraceToken &&
@@ -1196,6 +1208,90 @@ export async function initializeRepository(
     }
   }
   return result;
+}
+
+async function probeRuntimeTemporaryWorkspace(): Promise<void> {
+  let temporaryRoot: string | undefined;
+  let failure: unknown;
+  try {
+    temporaryRoot = await realpath(
+      await mkdtemp(path.join(os.tmpdir(), "assertledger-runtime-doctor-")),
+    );
+    await writeFile(path.join(temporaryRoot, "permission-probe"), "assertledger\n", {
+      flag: "wx",
+    });
+  } catch (error) {
+    failure = error;
+  }
+  if (temporaryRoot !== undefined) {
+    try {
+      await removeTemporaryDirectory(temporaryRoot);
+      let removed = false;
+      try {
+        await lstat(temporaryRoot);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") removed = true;
+        else failure ??= error;
+      }
+      if (!removed) failure ??= new Error("RUNTIME_TEMPORARY_WORKSPACE_CLEANUP_FAILED");
+    } catch (error) {
+      failure ??= error;
+    }
+  }
+  if (failure !== undefined) throw failure;
+}
+
+export async function doctorRepositoryRuntime(
+  requestedRoot: string,
+  options: RuntimeDoctorOptions,
+): Promise<RuntimeDoctorResult> {
+  const repositoryRoot = path.resolve(requestedRoot);
+  let resolvedExecutable = process.execPath;
+  return runRuntimeDoctorChecks(repositoryRoot, options.allowUnsafeExecution, {
+    inspectConfiguration: () => initializeRepository(repositoryRoot, { dryRun: true }),
+    probeExecutable: async () => {
+      const identity = await probeNodeTestExecutable(
+        process.execPath,
+        repositoryRoot,
+        [],
+        5_000,
+        CONTROLLED_REPORT_MAXIMUM_BYTES,
+      );
+      resolvedExecutable = identity.resolvedExecutable;
+      return { nodeVersion: identity.nodeVersion };
+    },
+    probeDependencies: async () => {
+      const dependencyProbe = await runProcess({
+        executable: resolvedExecutable,
+        args: [
+          "-e",
+          'import("node:test").then(() => process.exit(0)).catch(() => process.exit(1))',
+        ],
+        cwd: repositoryRoot,
+        environment: environmentFromAllowlist([]),
+        timeoutMs: 5_000,
+        maximumOutputBytes: CONTROLLED_REPORT_MAXIMUM_BYTES,
+      });
+      if (
+        dependencyProbe.outcome !== "PASS" ||
+        dependencyProbe.stdout.totalBytes !== 0 ||
+        dependencyProbe.stderr.totalBytes !== 0
+      ) {
+        throw new Error("NODE_TEST_DEPENDENCY_UNAVAILABLE");
+      }
+    },
+    probeTemporaryWorkspace: probeRuntimeTemporaryWorkspace,
+    runSyntheticPreflight: async () => {
+      await runNodeTestRuntimePreflight({
+        executable: resolvedExecutable,
+        reporterSource: NODE_TEST_REPORTER_SOURCE,
+        environment: environmentFromAllowlist([]),
+        timeoutMs: 5_000,
+        maximumOutputBytes: CONTROLLED_REPORT_MAXIMUM_BYTES,
+        processRunner: runProcess,
+      });
+    },
+  });
 }
 
 function languageForFile(file: string): string | undefined {

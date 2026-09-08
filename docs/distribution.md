@@ -31,3 +31,10 @@ A successful local smoke proves that local tarball on the reported Node version
 and operating system. It does not establish npm publication, cross-platform CI
 success, hostile-code isolation, or adoption by external users. The example uses
 explicitly unsandboxed trusted-local execution.
+
+The installed `check` journey also evaluates a
+[real historical correction projected into a node:test fixture](../examples/git-history/README.md).
+It requires `VERIFIED` for the strong candidate, `REJECTED` for weak and generic-crash candidates,
+two correct target observations each, valid replay, and unchanged source bytes, index and HEAD.
+Each case retains its request, manifest and human summary. The upstream source snapshots,
+license, commit IDs, Git blob IDs and SHA-256 hashes are bundled and checked before use.

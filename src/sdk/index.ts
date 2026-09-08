@@ -1,7 +1,7 @@
 import {
-  type AgenticBenchmarkArtifact,
-  type AgenticBenchmarkAcquisitionResult,
   type AgenticBenchmarkAcquisitionReplayResult,
+  type AgenticBenchmarkAcquisitionResult,
+  type AgenticBenchmarkArtifact,
   type AgenticBenchmarkReplayResult,
   type AgenticCorpusAllocation,
   type AgenticCorpusAllocationCommitmentReplayResult,
@@ -12,18 +12,18 @@ import {
   type AgenticProfileReplayResultV2,
   type AgenticProfileReport,
   type AgenticProfileReportV2,
-  agenticBenchmarkArtifactJsonSchema,
-  agenticBenchmarkAcquisitionRequestJsonSchema,
   agenticBenchmarkAcquisitionReplayResultJsonSchema,
+  agenticBenchmarkAcquisitionRequestJsonSchema,
   agenticBenchmarkAcquisitionResultJsonSchema,
+  agenticBenchmarkArtifactJsonSchema,
   agenticBenchmarkReplayResultJsonSchema,
   agenticBenchmarkRequestJsonSchema,
-  agenticCorpusAllocationJsonSchema,
   agenticCorpusAllocationCommitmentJsonSchema,
   agenticCorpusAllocationCommitmentReplayResultJsonSchema,
+  agenticCorpusAllocationJsonSchema,
   agenticCorpusAllocationReplayResultJsonSchema,
-  agenticCorpusAllocationRevealJsonSchema,
   agenticCorpusAllocationRequestJsonSchema,
+  agenticCorpusAllocationRevealJsonSchema,
   agenticCorpusExperimentArtifactJsonSchema,
   agenticCorpusExperimentPlanJsonSchema,
   agenticCorpusExperimentPlanReplayResultJsonSchema,
@@ -38,10 +38,10 @@ import {
   agenticProfileRequestV2JsonSchema,
   type EvidenceManifestContract,
   evidenceManifestJsonSchema,
-  parseAgenticBenchmarkArtifact,
-  parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionReplayResult,
+  parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
+  parseAgenticBenchmarkArtifact,
   parseAgenticBenchmarkReplayResult,
   parseAgenticBenchmarkRequest,
   parseAgenticCorpusAllocation,
@@ -76,6 +76,7 @@ import {
   repositoryInitResultJsonSchema,
   verificationRequestJsonSchema,
 } from "../contracts/index.js";
+import { parseRuntimeDoctorResult, type RuntimeDoctorResult } from "../contracts/runtime-doctor.js";
 import {
   type AgenticCorpusExperimentReplayDependencies,
   createAgenticBenchmark,
@@ -92,14 +93,17 @@ import {
   replayAgenticProfileV2,
   replayEvidenceManifest,
 } from "../core/index.js";
+import { explainReasonCodes } from "../diagnostics.js";
 import { type GitRegressionOptions, qualifyGitRegression } from "../engine/git-regression.js";
 import {
   acquireAgenticBenchmark,
   analyzeRepository,
   auditRepository,
+  doctorRepositoryRuntime,
   initializeRepository,
-  type RepositoryInitOptions,
   type RepositoryAuditOptions,
+  type RepositoryInitOptions,
+  type RuntimeDoctorOptions,
   verifyCampaign,
 } from "../engine/index.js";
 import {
@@ -148,6 +152,10 @@ export type AgenticCorpusExperimentReplayOptions = Omit<
 
 /** Provider-neutral programmatic facade over AssertLedger's deterministic components. */
 export class AssertLedger {
+  explain(codes: readonly string[]) {
+    return explainReasonCodes(codes);
+  }
+
   async analyze(root: string): Promise<RepositoryAnalysis> {
     return parseRepositoryAnalysis(await analyzeRepository(root));
   }
@@ -162,6 +170,10 @@ export class AssertLedger {
 
   async doctor(root: string): Promise<RepositoryInitResult> {
     return this.init(root, { dryRun: true });
+  }
+
+  async doctorRuntime(root: string, options: RuntimeDoctorOptions): Promise<RuntimeDoctorResult> {
+    return parseRuntimeDoctorResult(await doctorRepositoryRuntime(root, options));
   }
 
   async verify(request: unknown): Promise<EvidenceManifestContract> {
@@ -420,10 +432,12 @@ export {
 } from "../core/index.js";
 export type { GitRegressionOptions } from "../engine/git-regression.js";
 export { qualifyGitRegression } from "../engine/git-regression.js";
+export type { RuntimeDoctorOptions } from "../engine/index.js";
 export {
   acquireAgenticBenchmark,
   analyzeRepository,
   auditRepository,
+  doctorRepositoryRuntime,
   initializeRepository,
   verifyCampaign,
 } from "../engine/index.js";

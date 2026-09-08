@@ -18,8 +18,8 @@ assertledger connect . --client codex
 assertledger connect . --client codex --write
 ```
 
-The first command prints the exact `.codex/config.toml` snippet. `--write` creates that file only
-when it is absent, accepts byte-identical content as unchanged, and refuses to overwrite different
+The first command previews `.codex/config.toml` and the packaged project skill. `--write` creates
+absent files, accepts byte-identical content as unchanged, and refuses to overwrite different
 operator-owned content. It never changes global configuration, authentication, hooks, or trust.
 Codex project trust and client restart or reload remain explicit user actions.
 
@@ -27,6 +27,9 @@ Use `--write` in a trusted local repository whose directory tree stays stable du
 Existing symlinks and junctions at the configuration path are refused. This check does not provide
 filesystem isolation against another process swapping directories concurrently; the default
 print-only command creates no files.
+
+The [client guide](client-connections.md) also covers Claude Code, a generic MCP descriptor and
+`disconnect`. Removal affects only byte-identical managed files; modified files cause a conflict.
 
 The generated server command uses the current Node executable, the installed compiled CLI entry,
 and `mcp --root` with the repository's real path. The server is read-only by default. Candidate
@@ -39,6 +42,10 @@ initialization result as `assertledger doctor . --json`, after enforcing the ser
 boundary. The tool writes no configuration and does not execute repository code. It reports
 configuration readiness only; dynamic dependency, reporter, permission and liveness diagnostics
 remain outside this static check.
+
+Use the separate [runtime doctor](runtime-doctor.md) after initialization to run controlled probes
+with explicit authorization. [Reason-code explanations](diagnostics.md) remain available without
+execution permission through the CLI, SDK and MCP.
 
 `init` and every static doctor entry point require `assertledger.config.json` and
 `assertledger.lock.json` to be regular files when they already exist. A symlink, dangling symlink,

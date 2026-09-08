@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import * as z from "zod";
 
+export * from "./runtime-doctor.js";
+
 export const SCHEMA_VERSION = "1.0.0" as const;
 export const POLICY_VERSION = "1.0.0" as const;
 

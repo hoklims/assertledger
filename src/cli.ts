@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
-import { createCodexProjectConfig } from "./engine/connection.js";
+import { renderDiagnostics } from "./diagnostics.js";
+import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { renderGitRegressionSummary } from "./engine/git-regression.js";
 import {
   AgenticCorpusError,
@@ -27,12 +28,18 @@ const USAGE = `Usage: assertledger <command> [arguments] [--json]
        (legacy alias: testforge <command> [arguments] [--json])
 
 Commands:
+  explain CODE [CODE ...] [--json]             Explain reason codes and safe next actions
   check [repository] --before REF [--after REF] --neutral REF --neutral-reason TEXT
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
         --allow-unsafe-execution                Qualify one committed node:test regression
   doctor [repository] [--json]                Inspect static repository readiness without writing
-  connect [repository] --client codex [--write]
-                                               Emit or create project-local Codex MCP configuration
+  doctor [repository] --runtime --allow-unsafe-execution [--json]
+                                               Run controlled trusted-local runtime probes
+  connect [repository] --client <codex|claude-code> [--write]
+                                               Preview or install project-local client integration
+  connect [repository] --client mcp            Emit a generic stdio descriptor as JSON
+  disconnect [repository] --client <codex|claude-code> [--write]
+                                               Preview or remove exact AssertLedger-owned artifacts
   analyze [repository]                         Analyze a repository
   init [repository] [--dry-run] [--adapter-config PATH] [--package-manager ID]
        [--framework ID] [--test-command-json PATH]
@@ -155,6 +162,51 @@ interface CheckArguments {
   test: string;
   baseTests: string[];
   out: string;
+}
+
+interface ClientArguments {
+  root: string;
+  client: ConnectionClient;
+  write: boolean;
+}
+
+function parseClientArguments(
+  argv: readonly string[],
+  cwd: string,
+  operation: "connect" | "disconnect",
+): ClientArguments | undefined {
+  let client: string | undefined;
+  let rootArgument = ".";
+  let rootSeen = false;
+  let clientSeen = false;
+  let writeSeen = false;
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if (argument === "--client") {
+      if (clientSeen) return undefined;
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("-")) return undefined;
+      client = value;
+      clientSeen = true;
+      index += 1;
+    } else if (argument === "--write") {
+      if (writeSeen) return undefined;
+      writeSeen = true;
+    } else if (argument.startsWith("-") || rootSeen) {
+      return undefined;
+    } else {
+      rootArgument = argument;
+      rootSeen = true;
+    }
+  }
+  if (!(["codex", "claude-code", "mcp"] as string[]).includes(client ?? "")) return undefined;
+  if (operation === "disconnect" && client === "mcp") return undefined;
+  if (client === "mcp" && writeSeen) return undefined;
+  return {
+    root: path.resolve(cwd, rootArgument),
+    client: client as ConnectionClient,
+    write: writeSeen,
+  };
 }
 
 function parseCheckArguments(argv: readonly string[], cwd: string): CheckArguments {
@@ -315,6 +367,7 @@ async function runCorpusCommand(
 }
 
 const VALIDATION_ERROR_CODES = new Set([
+  "DIAGNOSTIC_CODES_INVALID",
   "CANDIDATE_BUDGET_EXCEEDED",
   "CANDIDATE_BYTES_EXCEEDED",
   "DUPLICATE_BASE_TEST_FILE",
@@ -438,6 +491,21 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 
   try {
     switch (command) {
+      case "explain": {
+        const codes = argv.slice(1).filter((argument) => argument !== "--json");
+        if (
+          codes.length === 0 ||
+          codes.some((code) => code.startsWith("-")) ||
+          argv.filter((argument) => argument === "--json").length > 1
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const report = ledger.explain(codes);
+        if (argv.includes("--json")) writeJson(io, report);
+        else io.writeStdout(`${renderDiagnostics(codes)}\n`);
+        return 0;
+      }
       case "help":
       case "--help":
       case "-h":
@@ -457,17 +525,49 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.writeStdout(`assertledger ${ASSERTLEDGER_VERSION}\n`);
         return 0;
       case "doctor": {
-        const allowedFlags = new Set(["--json"]);
+        const allowedFlags = new Set(["--json", "--runtime", "--allow-unsafe-execution"]);
         const rootArguments = argv.slice(1).filter((argument) => !argument.startsWith("-"));
+        const runtime = argv.includes("--runtime");
+        const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
         if (
           rootArguments.length > 1 ||
-          argv.filter((argument) => argument === "--json").length > 1 ||
+          [...allowedFlags].some(
+            (flag) => argv.filter((argument) => argument === flag).length > 1,
+          ) ||
+          (allowUnsafeExecution && !runtime) ||
           argv.slice(1).some((argument) => argument.startsWith("-") && !allowedFlags.has(argument))
         ) {
           io.writeStderr(USAGE);
           return 64;
         }
         const root = path.resolve(io.cwd, rootArguments[0] ?? ".");
+        if (runtime) {
+          const runtimeResult = await ledger.doctorRuntime(root, { allowUnsafeExecution });
+          if (argv.includes("--json")) {
+            writeJson(io, runtimeResult);
+          } else {
+            const reasons =
+              runtimeResult.reasonCodes.length === 0
+                ? "none"
+                : runtimeResult.reasonCodes.join(", ");
+            io.writeStdout(
+              [
+                `Runtime status: ${runtimeResult.status}`,
+                `Execution mode: ${runtimeResult.executionMode}`,
+                `Adapter: ${runtimeResult.adapter ?? "not checked"}`,
+                `Node.js: ${runtimeResult.nodeVersion ?? "not checked"}`,
+                `Reason codes: ${reasons}`,
+                ...runtimeResult.checks.map(
+                  (check) =>
+                    `${check.status} ${check.id}: ${check.summary}${check.nextAction ? ` Next: ${check.nextAction}` : ""}`,
+                ),
+                ...runtimeResult.limitations.map((limitation) => `Limit: ${limitation}`),
+                "",
+              ].join("\n"),
+            );
+          }
+          return runtimeResult.status === "READY" ? 0 : 3;
+        }
         const result = await ledger.doctor(root);
         if (argv.includes("--json")) {
           writeJson(io, result);
@@ -478,6 +578,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
               `Status: ${result.status}`,
               `Reason codes: ${reasons}`,
               `Required operator inputs: ${result.requiredOperatorInputs.join(", ")}`,
+              renderDiagnostics(result.reasonCodes),
               `Next safe action: ${result.nextCommands[0]?.executable ?? "assertledger"} ${(result.nextCommands[0]?.arguments ?? []).join(" ")}`,
               "Execution limit: verification remains UNSANDBOXED trusted-local and requires explicit operator authorization.",
               "This static diagnostic does not prove campaign evidence or MCP connectivity.",
@@ -490,41 +591,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0;
       }
       case "connect": {
-        let client: string | undefined;
-        let rootArgument = ".";
-        let rootSeen = false;
-        let clientSeen = false;
-        let writeSeen = false;
-        for (let index = 1; index < argv.length; index += 1) {
-          const argument = argv[index] ?? "";
-          if (argument === "--client") {
-            if (clientSeen) {
-              io.writeStderr(USAGE);
-              return 64;
-            }
-            const value = argv[index + 1];
-            if (value === undefined || value.startsWith("-")) {
-              io.writeStderr(USAGE);
-              return 64;
-            }
-            client = value;
-            clientSeen = true;
-            index += 1;
-          } else if (argument === "--write") {
-            if (writeSeen) {
-              io.writeStderr(USAGE);
-              return 64;
-            }
-            writeSeen = true;
-          } else if (argument.startsWith("-") || rootSeen) {
-            io.writeStderr(USAGE);
-            return 64;
-          } else {
-            rootArgument = argument;
-            rootSeen = true;
-          }
-        }
-        if (client !== "codex") {
+        const parsed = parseClientArguments(argv, io.cwd, "connect");
+        if (parsed === undefined) {
           io.writeStderr(USAGE);
           return 64;
         }
@@ -536,22 +604,66 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr("CONNECT_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
           return 3;
         }
-        const result = await createCodexProjectConfig(
-          path.resolve(io.cwd, rootArgument),
-          currentEntry,
-          argv.includes("--write"),
-        );
-        if (result.status === "EMITTED") {
-          io.writeStdout(result.content);
+        const result = await connectClient(parsed.root, currentEntry, parsed.client, parsed.write);
+        if (parsed.client === "mcp") {
+          io.writeStdout(result.artifacts[0]?.content ?? "");
           return 0;
         }
         if (result.status === "CONFLICT") {
           io.writeStderr(
-            `CONFLICT: ${result.path} already contains different operator-owned content.\n`,
+            `CONFLICT: ${result.artifacts.map((artifact) => artifact.path).join(", ")} includes different operator-owned content; no files changed.\n`,
           );
           return 4;
         }
-        io.writeStdout(`${result.status}: ${result.path}\n`);
+        for (const artifact of result.artifacts) {
+          io.writeStdout(`${result.status}: ${artifact.path}\n`);
+          if (result.status === "EMITTED") {
+            const label = artifact.kind.toUpperCase();
+            io.writeStdout(`--- BEGIN ASSERTLEDGER ${label} ---\n`);
+            io.writeStdout(artifact.content);
+            if (!artifact.content.endsWith("\n")) io.writeStdout("\n");
+            io.writeStdout(`--- END ASSERTLEDGER ${label} ---\n`);
+          }
+        }
+        if (result.status === "EMITTED") {
+          io.writeStdout("No files changed. Re-run with --write to install these artifacts.\n");
+        }
+        return 0;
+      }
+      case "disconnect": {
+        const parsed = parseClientArguments(argv, io.cwd, "disconnect");
+        if (parsed === undefined || parsed.client === "mcp") {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const currentEntry = fileURLToPath(import.meta.url);
+        if (
+          path.basename(currentEntry) !== "cli.js" ||
+          path.basename(path.dirname(currentEntry)) !== "dist"
+        ) {
+          io.writeStderr("CONNECT_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
+          return 3;
+        }
+        const result = await disconnectClient(
+          parsed.root,
+          currentEntry,
+          parsed.client,
+          parsed.write,
+        );
+        if (result.status === "CONFLICT") {
+          io.writeStderr(
+            `CONFLICT: ${result.artifacts.map((artifact) => artifact.path).join(", ")} includes content AssertLedger does not own byte-for-byte; no files changed.\n`,
+          );
+          return 4;
+        }
+        for (const artifact of result.artifacts) {
+          io.writeStdout(`${result.status}: ${artifact.path}\n`);
+        }
+        if (result.status === "EMITTED") {
+          io.writeStdout(
+            "No files changed. Re-run with --write to remove only byte-identical AssertLedger artifacts.\n",
+          );
+        }
         return 0;
       }
       case "analyze": {

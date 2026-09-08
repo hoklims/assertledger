@@ -42,6 +42,11 @@ const required = [
   "examples/node-test/repository/package.json",
   "examples/node-test/repository/src/is-even.js",
   "examples/node-test/repository/tests/base.test.js",
+  "examples/git-history/create-demo.mjs",
+  "examples/git-history/escape-string-regexp/before.cjs.txt",
+  "examples/git-history/escape-string-regexp/fixed.cjs.txt",
+  "examples/git-history/escape-string-regexp/provenance.json",
+  "examples/git-history/escape-string-regexp/LICENSE",
   "conformance/v1/bundle.json",
   "conformance/v1/schemas/expected-digests.json",
   "integrations/skill/SKILL.md",
@@ -83,8 +88,13 @@ function inside(root: string, target: string): boolean {
 function jsonFile(target: string, value: unknown): void {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
 }
-function run(args: string[], cwd: string, env: NodeJS.ProcessEnv): CommandResult {
-  const result = spawnSync(process.execPath, args, {
+function run(
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  command = process.execPath,
+): CommandResult {
+  const result = spawnSync(command, args, {
     cwd,
     env,
     encoding: "utf8",
@@ -94,7 +104,7 @@ function run(args: string[], cwd: string, env: NodeJS.ProcessEnv): CommandResult
     maxBuffer: 16 * 1024 * 1024,
   });
   const record = {
-    command: process.execPath,
+    command,
     args,
     cwd,
     status: result.status,
@@ -384,6 +394,100 @@ function main(): void {
       decisionSemanticsValid: true,
     });
     jsonFile(path.join(artifacts, "replay.json"), replay);
+
+    // Main product journey, using installed code and byte-exact snapshots of a real correction.
+    const historical = parse(
+      run(
+        [
+          path.join(installed, "examples/git-history/create-demo.mjs"),
+          path.join(consumer, "historical regression"),
+        ],
+        consumer,
+        env,
+      ),
+    );
+    const historyRoot = historical.repository as string;
+    jsonFile(path.join(artifacts, "historical-provenance.json"), historical);
+    const sourceFiles = readdirSync(historyRoot).filter((name) => name !== ".git");
+    const beforeSources = sourceFiles.map((name) => [
+      name,
+      hash(readFileSync(path.join(historyRoot, name))),
+    ]);
+    const beforeIndex = hash(readFileSync(path.join(historyRoot, ".git/index")));
+    const beforeHead = run(["-C", historyRoot, "rev-parse", "HEAD"], consumer, env, "git");
+    successful(beforeHead);
+    for (const [candidate, expected] of [
+      ["strong", "VERIFIED"],
+      ["weak", "REJECTED"],
+      ["crash", "REJECTED"],
+    ] as const) {
+      const evidenceDirectory = `evidence-${candidate}`;
+      const observation = runBin("assertledger", [
+        "check",
+        historyRoot,
+        "--before",
+        historical.before,
+        "--after",
+        historical.after,
+        "--neutral",
+        historical.neutral,
+        "--neutral-reason",
+        historical.neutralReason,
+        "--test",
+        `${candidate}.test.mjs`,
+        "--base-test",
+        "base.test.mjs",
+        "--out",
+        evidenceDirectory,
+        "--allow-unsafe-execution",
+        "--json",
+      ]);
+      assert.equal(observation.error, null);
+      assert.equal(observation.signal, null);
+      assert.equal(observation.status, expected === "VERIFIED" ? 0 : 2, observation.stderr);
+      const evidence = JSON.parse(observation.stdout);
+      assert.equal(evidence.decision.status, expected);
+      const target = evidence.observations.filter(
+        (item: { worldId: string; candidateId: string }) =>
+          item.worldId === "known-bug" && item.candidateId === "git-regression-candidate",
+      );
+      assert.equal(target.length, 2);
+      assert.ok(
+        target.every(
+          (item: { outcome: string; attributed: boolean }) =>
+            item.outcome ===
+              (candidate === "strong"
+                ? "ASSERTION_FAILURE"
+                : candidate === "weak"
+                  ? "PASS"
+                  : "PROCESS_CRASH") && item.attributed === (candidate !== "crash"),
+        ),
+      );
+      const saved = path.join(historyRoot, evidenceDirectory);
+      const replayed = parse(runBin("assertledger", ["replay", path.join(saved, "manifest.json")]));
+      assert.equal(replayed.valid, true);
+      for (const file of ["manifest.json", "executed-request.json", "summary.md"]) {
+        copyFileSync(
+          path.join(saved, file),
+          path.join(artifacts, `historical-${candidate}-${file}`),
+        );
+      }
+      jsonFile(path.join(artifacts, `historical-${candidate}-replay.json`), replayed);
+    }
+    assert.deepEqual(
+      sourceFiles.map((name) => [name, hash(readFileSync(path.join(historyRoot, name)))]),
+      beforeSources,
+    );
+    assert.equal(hash(readFileSync(path.join(historyRoot, ".git/index"))), beforeIndex);
+    const afterHead = run(["-C", historyRoot, "rev-parse", "HEAD"], consumer, env, "git");
+    successful(afterHead);
+    assert.equal(afterHead.stdout, beforeHead.stdout);
+    jsonFile(path.join(artifacts, "historical-checkout-preserved.json"), {
+      head: beforeHead.stdout.trim(),
+      indexSha256: beforeIndex,
+      files: beforeSources,
+      preserved: true,
+    });
 
     const witness = (
       name: string,

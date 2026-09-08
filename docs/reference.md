@@ -233,12 +233,13 @@ server name reported to clients is `assertledger`. Every tool is registered twic
 `assertledger_*` name and a legacy `testforge_*` name bound to the same handler and the same tool
 configuration. The schema lookup pair has no single fixed output schema because its selected JSON
 Schema document varies; every other pair shares the same output-schema object. The default server
-exposes twenty-six read-only tools:
+exposes twenty-eight read-only tools:
 
 | Preferred tool | Legacy alias | Purpose |
 | --- | --- | --- |
 | `assertledger_analyze` | `testforge_analyze` | Produce repository context for test generation |
 | `assertledger_doctor` | `testforge_doctor` | Return a static repository initialization plan without writing files or executing repository code |
+| `assertledger_explain` | `testforge_explain` | Explain bounded reason codes with versioned guidance and safe next actions |
 | `assertledger_benchmark` | `testforge_benchmark` | Derive scoped cold/warm phase summaries from declared raw runs |
 | `assertledger_benchmark_replay` | `testforge_benchmark_replay` | Replay a self-contained benchmark artifact |
 | `assertledger_profile` | `testforge_profile` | Derive an Agentic Test Profile from replay-valid evidence |
@@ -256,7 +257,8 @@ operator-owned policy, commitment and plan pins cannot be supplied safely as sel
 input.
 
 `assertledger_verify`/`testforge_verify` and `assertledger_benchmark_acquire`/`testforge_benchmark_acquire`
-are absent by default. A server operator may register both pairs by starting
+are absent by default, as are `assertledger_check`/`testforge_check` and
+`assertledger_doctor_runtime`/`testforge_doctor_runtime`. A server operator may register these pairs by starting
 `assertledger mcp --allow-unsafe-execution`, or by calling `createAssertLedgerServer({
 allowUnsafeExecution: true })` (the deprecated `createTestForgeServer` alias calls the identical
 factory). The tool then accepts a verification request and executes it without a second per-call
@@ -269,6 +271,11 @@ The doctor pair accepts a strict `{ "root": "..." }` input and returns the exist
 `repository-init-result` contract. It is read-only in both the default and operator-enabled server;
 enabling unsafe execution does not change doctor behavior. Dynamic runtime and client diagnostics
 remain outside this static readiness result.
+
+`doctor_runtime` accepts the same strict root input and returns the separate
+[runtime diagnostic contract](runtime-doctor.md). `check` accepts the
+[high-level Git options](git-regression.md), without a permission field, and returns the existing
+evidence manifest. The operator's capability is required for both tools.
 
 ## Continuous integration
 
@@ -316,7 +323,7 @@ The [intent and restart assessment](project-intent.md) records the current imple
 adoption gaps, and proposed delivery order. It distinguishes local evidence from release and
 empirical claims.
 
-Version `0.1.0` is a development preview. The
+Version `1.0.0` qualifies the supported node:test workflow. The
 deterministic core and protocols are framework-independent; `node:test` is the first built-in
 framework adapter. Other frameworks integrate through the structured-command protocol described in
 [docs/adapter-protocol.md](adapter-protocol.md).

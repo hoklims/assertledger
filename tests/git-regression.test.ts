@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { runCli } from "../src/cli.js";
 import { replayEvidenceManifest } from "../src/core/index.js";
 import {
@@ -14,6 +15,7 @@ import {
   runBoundedProcessForTesting,
 } from "../src/engine/git-regression.js";
 import { runProcess } from "../src/engine/index.js";
+import { createAssertLedgerServer } from "../src/mcp/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const temporaryDirectories: string[] = [];
@@ -105,6 +107,53 @@ afterEach(async () => {
 });
 
 describe("Git regression qualification", () => {
+  it("offers a confined high-level MCP check only with the operator capability", async () => {
+    const value = await fixture();
+    const options = optionsFor(value, "mcp-evidence");
+    const { allowUnsafeExecution: _capability, ...request } = options;
+    const readOnly = createAssertLedgerServer({ allowedRepositoryRoots: [value.root] });
+    assert.equal(readOnly.toolInputSchemaJson("assertledger_check"), undefined);
+    const server = createAssertLedgerServer({
+      allowUnsafeExecution: true,
+      allowedRepositoryRoots: [value.root],
+    });
+    const schema = server.toolInputSchemaJson("assertledger_check");
+    assert.ok(schema);
+    assert.equal(schema.additionalProperties, false);
+    assert.equal((schema.properties as Record<string, unknown>).allowUnsafeExecution, undefined);
+    assert.deepEqual(server.toolInputSchemaJson("testforge_check"), schema);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "git-check-client", version: "1.0.0" });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const outside = await fixture();
+      const rejectedRoot = await client.callTool({
+        name: "assertledger_check",
+        arguments: { ...request, repository: outside.root },
+      });
+      assert.equal(rejectedRoot.isError, true);
+      assert.match(JSON.stringify(rejectedRoot.content), /MCP_REPOSITORY_ROOT_FORBIDDEN/);
+      const rejectedOutput = await client.callTool({
+        name: "assertledger_check",
+        arguments: { ...request, out: "../outside-evidence" },
+      });
+      assert.equal(rejectedOutput.isError, true);
+      const result = await client.callTool({ name: "assertledger_check", arguments: request });
+      assert.notEqual(result.isError, true, JSON.stringify(result.content));
+      const manifest = JSON.parse((result.content[0] as { text: string }).text);
+      assert.equal(manifest.decision.status, "VERIFIED");
+      assert.equal(replayEvidenceManifest(manifest).valid, true);
+      assert.equal(
+        (await stat(path.join(value.root, "mcp-evidence/manifest.json"))).isFile(),
+        true,
+      );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("rejects portable directory-prefix collisions and preserves BOM bytes while decoding Git data", () => {
     const oid = "a".repeat(40);
     const record = (entryPath: Buffer) =>

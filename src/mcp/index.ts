@@ -22,8 +22,10 @@ import {
   ReplayResultSchema,
   RepositoryAnalysisSchema,
   RepositoryInitResultSchema,
+  RuntimeDoctorResultSchema,
   VerificationRequestSchema,
 } from "../contracts/index.js";
+import { DiagnosticCodesSchema, DiagnosticReportSchema } from "../diagnostics.js";
 import { AssertLedger } from "../sdk/index.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
 
@@ -74,6 +76,24 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
   );
 
   const analyzeInputSchema = z.strictObject({ root: z.string().min(1) });
+  const explainInputSchema = z.strictObject({ codes: DiagnosticCodesSchema });
+  const explainConfig = {
+    title: "Explain evidence reason codes",
+    description:
+      "Return versioned guidance and safe next actions without changing any verdict or executing code.",
+    inputSchema: explainInputSchema,
+    outputSchema: DiagnosticReportSchema,
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: true,
+    },
+  };
+  const explainHandler = async ({ codes }: z.infer<typeof explainInputSchema>) =>
+    jsonResult(assertLedger.explain(codes));
+  server.registerTool("assertledger_explain", explainConfig, explainHandler);
+  server.registerTool("testforge_explain", explainConfig, explainHandler);
   const analyzeConfig = {
     title: "Analyze a repository",
     description: "Produce deterministic repository context for test generation.",
@@ -105,6 +125,65 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
   server.registerTool("testforge_doctor", doctorConfig, doctorHandler);
 
   if (options.allowUnsafeExecution === true) {
+    const runtimeDoctorConfig = {
+      title: "Check the controlled Node runtime",
+      description:
+        "UNSANDBOXED trusted-local: check the generated node:test runtime with controlled synthetic probes. Does not run repository tests or prove campaign evidence. Available only with server-operator authorization.",
+      inputSchema: doctorInputSchema,
+      outputSchema: RuntimeDoctorResultSchema,
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+        readOnlyHint: false,
+      },
+    };
+    const runtimeDoctorHandler = async ({ root }: z.infer<typeof doctorInputSchema>) =>
+      jsonResult(
+        await assertLedger.doctorRuntime(await confinedRepositoryRoot(root), {
+          allowUnsafeExecution: true,
+        }),
+      );
+    server.registerTool("assertledger_doctor_runtime", runtimeDoctorConfig, runtimeDoctorHandler);
+    server.registerTool("testforge_doctor_runtime", runtimeDoctorConfig, runtimeDoctorHandler);
+
+    const checkInputSchema = z.strictObject({
+      repository: z.string().min(1),
+      before: z.string().min(1),
+      after: z.string().min(1).optional(),
+      neutral: z.string().min(1),
+      neutralReason: z.string().min(1),
+      test: z.string().min(1),
+      baseTests: z.array(z.string().min(1)).min(1),
+      out: z.string().min(1),
+    });
+    const checkConfig = {
+      title: "Qualify a committed regression test",
+      description:
+        "UNSANDBOXED trusted-local: execute the same node:test candidate on fixed, buggy and declared neutral Git revisions. Publish evidence in a new repository-relative directory. Available only with server-operator authorization.",
+      inputSchema: checkInputSchema,
+      outputSchema: EvidenceManifestSchema,
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+        readOnlyHint: false,
+      },
+    };
+    const checkHandler = async (input: z.infer<typeof checkInputSchema>) => {
+      const { after, ...required } = input;
+      return jsonResult(
+        await assertLedger.checkGitRegression({
+          ...required,
+          ...(after === undefined ? {} : { after }),
+          repository: await confinedRepositoryRoot(input.repository),
+          allowUnsafeExecution: true,
+        }),
+      );
+    };
+    server.registerTool("assertledger_check", checkConfig, checkHandler);
+    server.registerTool("testforge_check", checkConfig, checkHandler);
+
     const verifyInputSchema = z.strictObject({ request: VerificationRequestSchema });
     const verifyConfig = {
       title: "Verify candidate tests",
