@@ -3,10 +3,10 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import {
-  AgenticBenchmarkArtifactSchema,
-  AgenticBenchmarkAcquisitionRequestSchema,
   AgenticBenchmarkAcquisitionReplayResultSchema,
+  AgenticBenchmarkAcquisitionRequestSchema,
   AgenticBenchmarkAcquisitionResultSchema,
+  AgenticBenchmarkArtifactSchema,
   AgenticBenchmarkReplayResultSchema,
   AgenticBenchmarkRequestSchema,
   AgenticCorpusAllocationReplayResultSchema,
@@ -21,6 +21,7 @@ import {
   EvidenceManifestSchema,
   ReplayResultSchema,
   RepositoryAnalysisSchema,
+  RepositoryInitResultSchema,
   VerificationRequestSchema,
 } from "../contracts/index.js";
 import { AssertLedger } from "../sdk/index.js";
@@ -83,6 +84,25 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     jsonResult(await assertLedger.analyze(await confinedRepositoryRoot(root)));
   server.registerTool("assertledger_analyze", analyzeConfig, analyzeHandler);
   server.registerTool("testforge_analyze", analyzeConfig, analyzeHandler);
+
+  const doctorInputSchema = z.strictObject({ root: z.string().min(1) });
+  const doctorConfig = {
+    title: "Inspect repository readiness",
+    description:
+      "Return a static AssertLedger initialization plan without writing files or executing repository code.",
+    inputSchema: doctorInputSchema,
+    outputSchema: RepositoryInitResultSchema,
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: true,
+    },
+  };
+  const doctorHandler = async ({ root }: z.infer<typeof doctorInputSchema>) =>
+    jsonResult(await assertLedger.doctor(await confinedRepositoryRoot(root)));
+  server.registerTool("assertledger_doctor", doctorConfig, doctorHandler);
+  server.registerTool("testforge_doctor", doctorConfig, doctorHandler);
 
   if (options.allowUnsafeExecution === true) {
     const verifyInputSchema = z.strictObject({ request: VerificationRequestSchema });

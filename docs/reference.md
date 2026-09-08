@@ -233,11 +233,12 @@ server name reported to clients is `assertledger`. Every tool is registered twic
 `assertledger_*` name and a legacy `testforge_*` name bound to the same handler and the same tool
 configuration. The schema lookup pair has no single fixed output schema because its selected JSON
 Schema document varies; every other pair shares the same output-schema object. The default server
-exposes twenty-four read-only tools:
+exposes twenty-six read-only tools:
 
 | Preferred tool | Legacy alias | Purpose |
 | --- | --- | --- |
 | `assertledger_analyze` | `testforge_analyze` | Produce repository context for test generation |
+| `assertledger_doctor` | `testforge_doctor` | Return a static repository initialization plan without writing files or executing repository code |
 | `assertledger_benchmark` | `testforge_benchmark` | Derive scoped cold/warm phase summaries from declared raw runs |
 | `assertledger_benchmark_replay` | `testforge_benchmark_replay` | Replay a self-contained benchmark artifact |
 | `assertledger_profile` | `testforge_profile` | Derive an Agentic Test Profile from replay-valid evidence |
@@ -263,6 +264,11 @@ authorization field. Run that server only inside the intended isolation boundary
 caller decide whether the capability exists. The server resolves repository roots to real paths and
 confines them to the server process's current working directory by default. Programmatic operators
 may supply a different `allowedRepositoryRoots` allowlist.
+
+The doctor pair accepts a strict `{ "root": "..." }` input and returns the existing
+`repository-init-result` contract. It is read-only in both the default and operator-enabled server;
+enabling unsafe execution does not change doctor behavior. Dynamic runtime and client diagnostics
+remain outside this static readiness result.
 
 ## Continuous integration
 

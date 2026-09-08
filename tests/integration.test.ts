@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { parseRepositoryInitResult } from "../src/contracts/index.js";
 
 type IntegrationApi = {
   TestForge: new () => {
@@ -824,6 +825,7 @@ describe("MCP facade", () => {
     assert.ok(server);
     for (const tool of [
       "testforge_analyze",
+      "testforge_doctor",
       "testforge_benchmark",
       "testforge_benchmark_replay",
       "testforge_corpus_allocate",
@@ -839,6 +841,89 @@ describe("MCP facade", () => {
     }
     assert.equal(server.toolInputSchemaJson("testforge_verify"), undefined);
     assert.equal(server.toolInputSchemaJson("testforge_benchmark_acquire"), undefined);
+  });
+
+  it("exposes strict read-only doctor aliases with identical static results", async () => {
+    const allowed = await fixtureRepository();
+    await writeFile(
+      path.join(allowed, "package.json"),
+      JSON.stringify({
+        name: "fixture",
+        packageManager: "pnpm@11.0.0",
+        scripts: { test: "node --test test/*.test.js" },
+      }),
+    );
+    await writeFile(path.join(allowed, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await mkdir(path.join(allowed, "test"));
+    await writeFile(path.join(allowed, "test", "base.test.js"), "import test from 'node:test';\n");
+    const { client, server } = await connectServer({ allowedRepositoryRoots: [allowed] });
+
+    try {
+      const listed = await client.listTools();
+      const preferredTool = listed.tools.find((tool) => tool.name === "assertledger_doctor");
+      const legacyTool = listed.tools.find((tool) => tool.name === "testforge_doctor");
+      assert.ok(preferredTool?.outputSchema);
+      assert.ok(legacyTool?.outputSchema);
+      assert.deepEqual(preferredTool.inputSchema, legacyTool.inputSchema);
+      assert.deepEqual(preferredTool.outputSchema, legacyTool.outputSchema);
+      assert.deepEqual(preferredTool.annotations, {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+        readOnlyHint: true,
+      });
+      assert.deepEqual(legacyTool.annotations, preferredTool.annotations);
+
+      const inputSchema = server.toolInputSchemaJson("assertledger_doctor");
+      assert.equal(inputSchema.additionalProperties, false);
+      assert.deepEqual(inputSchema.required, ["root"]);
+
+      const beforePackage = await readFile(path.join(allowed, "package.json"), "utf8");
+      const preferred = await client.callTool({
+        name: "assertledger_doctor",
+        arguments: { root: allowed },
+      });
+      const legacy = await client.callTool({
+        name: "testforge_doctor",
+        arguments: { root: allowed },
+      });
+      assert.equal(preferred.isError, undefined);
+      assert.equal(legacy.isError, undefined);
+      assert.deepEqual(preferred.structuredContent, legacy.structuredContent);
+      const parsed = parseRepositoryInitResult(preferred.structuredContent);
+      assert.equal(parsed.schemaVersion, "1.0.0");
+      assert.deepEqual(parsed.requiredOperatorInputs, ["worlds", "candidates"]);
+      assert.equal(await readFile(path.join(allowed, "package.json"), "utf8"), beforePackage);
+      await assert.rejects(
+        readFile(path.join(allowed, "assertledger.config.json"), "utf8"),
+        /ENOENT/u,
+      );
+      await assert.rejects(
+        readFile(path.join(allowed, "assertledger.lock.json"), "utf8"),
+        /ENOENT/u,
+      );
+
+      const plannedConfig = parsed.files.find((file) => file.path === "assertledger.config.json");
+      assert(plannedConfig);
+      const external = await fixtureRepository();
+      const externalTarget = path.join(external, "external-config.json");
+      await writeFile(externalTarget, plannedConfig.content);
+      await symlink(externalTarget, path.join(allowed, plannedConfig.path), "file");
+      const unsafe = await client.callTool({
+        name: "assertledger_doctor",
+        arguments: { root: allowed },
+      });
+      assert.equal(unsafe.isError, undefined);
+      const unsafeResult = parseRepositoryInitResult(unsafe.structuredContent);
+      assert.equal(unsafeResult.status, "CONFLICT");
+      assert.deepEqual(unsafeResult.reasonCodes, ["INIT_MANAGED_PATH_UNSAFE"]);
+      assert.deepEqual(unsafeResult.actions, []);
+      assert.deepEqual(unsafeResult.files, []);
+      assert.equal(await readFile(externalTarget, "utf8"), plannedConfig.content);
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 
   it("registers verify only when the operator grants unsafe execution", () => {
@@ -862,6 +947,7 @@ describe("MCP facade", () => {
     const listed = await client.listTools();
     for (const tool of [
       "testforge_analyze",
+      "testforge_doctor",
       "testforge_verify",
       "testforge_replay",
       "testforge_benchmark",
@@ -973,6 +1059,13 @@ describe("MCP facade", () => {
       });
       assert.equal(rejected.isError, true);
       assert.match(JSON.stringify(rejected.content), /MCP_REPOSITORY_ROOT_FORBIDDEN/);
+
+      const doctorRejected = await client.callTool({
+        name: "testforge_doctor",
+        arguments: { root: forbidden },
+      });
+      assert.equal(doctorRejected.isError, true);
+      assert.match(JSON.stringify(doctorRejected.content), /MCP_REPOSITORY_ROOT_FORBIDDEN/);
 
       const verifyRejected = await client.callTool({
         name: "testforge_verify",

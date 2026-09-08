@@ -73,9 +73,9 @@ publiée. La qualification `node:test` HOK-570 reste `In Progress` dans Linear.
 ## Les écarts qui empêchent l’usage visé
 
 Le parcours Linear annoncé est `install → init → connect → doctor → check --changed → land → replay CI`.
-Aujourd’hui, `connect`, `doctor`, `check --changed` et `land` sont des travaux de backlog, pas des
-commandes utilisables. `init` produit une configuration et un lock ; il laisse explicitement les
-mondes et les candidats à fournir par l’opérateur ou le harness.
+`connect` est maintenant utilisable en CLI, et le diagnostic statique `doctor` en CLI, SDK et MCP ;
+`check --changed` et `land` restent des travaux de backlog. `init` produit une configuration et un
+lock ; il laisse explicitement les mondes et les candidats à fournir par l’opérateur ou le harness.
 
 Le premier obstacle d’adoption est donc le passage entre « dépôt initialisé » et « campagne
 pertinente ». Ajouter des adaptateurs aide à exécuter les tests, mais ne décide pas quelles fautes

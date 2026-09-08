@@ -1,23 +1,33 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { afterEach, describe, it } from "node:test";
-import { runCli, type CliIo } from "../src/cli.js";
+import { promisify } from "node:util";
+import { type CliIo, runCli } from "../src/cli.js";
 import {
   parseRepositoryInitConfig,
   parseRepositoryInitLock,
   parseRepositoryInitResult,
-  repositoryInitLockDigest,
   repositoryInitConfigJsonSchema,
+  repositoryInitLockDigest,
   repositoryInitLockJsonSchema,
   repositoryInitResultJsonSchema,
 } from "../src/contracts/index.js";
-import { initializeRepository } from "../src/engine/index.js";
 import { canonicalize } from "../src/core/index.js";
+import { initializeRepository } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const temporaryDirectories: string[] = [];
@@ -126,6 +136,49 @@ describe("repository init v1", () => {
     const unchanged = await initializeRepository(root);
     assert.equal(unchanged.status, "UNCHANGED");
     assert.deepEqual([(await stat(configPath)).mtimeMs, (await stat(lockPath)).mtimeMs], mtimes);
+  });
+
+  it("refuses managed-file symlinks and non-files without reading or changing external targets", async () => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+    });
+    const planned = await initializeRepository(root, { dryRun: true });
+    assert.equal(planned.status, "WOULD_CREATE");
+
+    for (const file of planned.files) {
+      const externalRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-external-"));
+      temporaryDirectories.push(externalRoot);
+      const externalTarget = path.join(externalRoot, file.path);
+      await writeFile(externalTarget, file.content);
+      await symlink(externalTarget, path.join(root, file.path), "file");
+
+      const result = await new AssertLedger().doctor(root);
+      assert.equal(result.status, "CONFLICT");
+      assert.deepEqual(result.reasonCodes, ["INIT_MANAGED_PATH_UNSAFE"]);
+      assert.deepEqual(result.actions, []);
+      assert.deepEqual(result.files, []);
+      assert.equal(await readFile(externalTarget, "utf8"), file.content);
+
+      await rm(path.join(root, file.path));
+    }
+
+    const configPath = path.join(root, "assertledger.config.json");
+    await symlink(path.join(root, "missing-config.json"), configPath, "file");
+    const dangling = await initializeRepository(root, { dryRun: true });
+    assert.equal(dangling.status, "CONFLICT");
+    assert.deepEqual(dangling.reasonCodes, ["INIT_MANAGED_PATH_UNSAFE"]);
+    assert.deepEqual(dangling.actions, []);
+    assert.deepEqual(dangling.files, []);
+    await rm(configPath);
+
+    const lockPath = path.join(root, "assertledger.lock.json");
+    await mkdir(lockPath);
+    const directory = await initializeRepository(root, { dryRun: true });
+    assert.equal(directory.status, "CONFLICT");
+    assert.deepEqual(directory.reasonCodes, ["INIT_MANAGED_PATH_UNSAFE"]);
+    assert.deepEqual(directory.actions, []);
+    assert.deepEqual(directory.files, []);
   });
 
   it("excludes candidate roots from controls, evidence, inference, and change detection", async () => {

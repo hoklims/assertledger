@@ -20,17 +20,17 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createScanner, SyntaxKind } from "typescript/unstable/ast";
 import {
+  AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
   type AgenticBenchmarkAcquisitionResult,
   type AgenticBenchmarkRun,
-  AdapterSchema,
-  parseRepositoryInitConfig,
-  parseRepositoryInitLock,
-  parseRepositoryInitResult,
   parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
   parseEvidenceManifest,
   parseRepositoryAudit,
+  parseRepositoryInitConfig,
+  parseRepositoryInitLock,
+  parseRepositoryInitResult,
   parseVerificationRequest,
   type RepositoryAudit,
   type RepositoryInitConfig,
@@ -1113,16 +1113,30 @@ export async function initializeRepository(
     );
   }
 
-  const readManaged = async (file: string): Promise<string | undefined> => {
+  const readManaged = async (
+    file: string,
+  ): Promise<{ kind: "ABSENT" } | { kind: "FILE"; content: string } | { kind: "UNSAFE" }> => {
+    const managedPath = path.join(root, file);
     try {
-      return await readFile(path.join(root, file), "utf8");
+      const metadata = await lstat(managedPath);
+      if (!metadata.isFile()) return { kind: "UNSAFE" };
+      return { kind: "FILE", content: await readFile(managedPath, "utf8") };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "ABSENT" };
       throw error;
     }
   };
-  const existingConfig = await readManaged(INIT_CONFIG_FILE);
-  const existingLock = await readManaged(INIT_LOCK_FILE);
+  const configRead = await readManaged(INIT_CONFIG_FILE);
+  const lockRead = await readManaged(INIT_LOCK_FILE);
+  if (configRead.kind === "UNSAFE" || lockRead.kind === "UNSAFE") {
+    return initTerminalResult(
+      "CONFLICT",
+      { ...detections, reasonCodes: ["INIT_MANAGED_PATH_UNSAFE"] },
+      ["INIT_MANAGED_PATH_UNSAFE"],
+    );
+  }
+  const existingConfig = configRead.kind === "FILE" ? configRead.content : undefined;
+  const existingLock = lockRead.kind === "FILE" ? lockRead.content : undefined;
   if (existingConfig !== undefined && existingConfig !== configContent) {
     return initTerminalResult("CONFLICT", { ...detections, reasonCodes: ["CONFIG_CONFLICT"] }, [
       "CONFIG_CONFLICT",

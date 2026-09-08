@@ -32,3 +32,17 @@ The generated server command uses the current Node executable, the installed com
 and `mcp --root` with the repository's real path. The server is read-only by default. Candidate
 execution remains unavailable unless an operator separately starts it with
 `--allow-unsafe-execution`; that mode is explicitly UNSANDBOXED trusted-local.
+
+On a connected read-only server, agents may call `assertledger_doctor` (or the legacy
+`testforge_doctor` alias) with `{ "root": "..." }`. It returns the same static repository
+initialization result as `assertledger doctor . --json`, after enforcing the server's allowed-root
+boundary. The tool writes no configuration and does not execute repository code. It reports
+configuration readiness only; dynamic dependency, reporter, permission and liveness diagnostics
+remain outside this static check.
+
+`init` and every static doctor entry point require `assertledger.config.json` and
+`assertledger.lock.json` to be regular files when they already exist. A symlink, dangling symlink,
+directory or other file type returns `CONFLICT` with `INIT_MANAGED_PATH_UNSAFE` before its content is
+read. Repositories that previously linked either managed file must replace the link with an
+operator-owned regular file. This check assumes the trusted repository tree remains stable during
+the operation; it is not a defense against a hostile concurrent path swap.
