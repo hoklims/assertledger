@@ -70,7 +70,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
     "typescript": "7.0.2",
-    "zod": "4.4.3"
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
