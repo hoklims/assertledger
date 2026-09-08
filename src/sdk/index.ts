@@ -92,6 +92,7 @@ import {
   replayAgenticProfileV2,
   replayEvidenceManifest,
 } from "../core/index.js";
+import { type GitRegressionOptions, qualifyGitRegression } from "../engine/git-regression.js";
 import {
   acquireAgenticBenchmark,
   analyzeRepository,
@@ -159,8 +160,16 @@ export class AssertLedger {
     return parseRepositoryInitResult(await initializeRepository(root, options));
   }
 
+  async doctor(root: string): Promise<RepositoryInitResult> {
+    return this.init(root, { dryRun: true });
+  }
+
   async verify(request: unknown): Promise<EvidenceManifestContract> {
     return parseEvidenceManifest(await verifyCampaign(parseVerificationRequest(request)));
+  }
+
+  async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
+    return qualifyGitRegression(options);
   }
 
   replay(manifest: unknown): ReplayResult {
@@ -409,6 +418,8 @@ export {
   verifyDecisionDigest,
   verifyManifestIntegrity,
 } from "../core/index.js";
+export type { GitRegressionOptions } from "../engine/git-regression.js";
+export { qualifyGitRegression } from "../engine/git-regression.js";
 export {
   acquireAgenticBenchmark,
   analyzeRepository,

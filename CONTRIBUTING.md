@@ -4,6 +4,10 @@ AssertLedger accepts small, reviewable changes backed by observable behavior.
 
 Use Node.js 22.15 or newer and pnpm 11.
 
+`pnpm test` and `pnpm test:coverage` build the package through their explicit pretest lifecycle
+scripts, enabled in `pnpm-workspace.yaml`. This supplies the compiled reporter even in a fresh
+checkout. `pnpm check` includes that same build and test path.
+
 1. Read `AGENTS.md`, `docs/architecture.md`, and `docs/proof-model.md`.
 2. Install the pinned toolchain with `pnpm install --frozen-lockfile`.
 3. Add a failing test for public behavior changes.

@@ -15,6 +15,9 @@ runtime files in the tarball and installed package.
 It also compiles a TypeScript consumer against the installed root/core exports
 using the checkout's pinned compiler and Node type definitions. Consumer imports
 resolve from the temporary project; no source-package alias is configured.
+Runtime module resolution is confined to that consumer, so a dependency installed
+elsewhere on the developer's machine cannot hide an incomplete package manifest.
+The existing pinned TypeScript scanner is a production dependency of static repository analysis.
 
 Three fault witnesses remove a runtime file and break runtime and TypeScript
 exports. Each must fail for the expected module or type error, then pass after byte-exact

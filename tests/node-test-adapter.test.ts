@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -7,6 +7,27 @@ import { replayEvidenceManifest } from "../src/core/index.js";
 import { runProcess, verifyCampaign } from "../src/engine/index.js";
 
 const temporaryDirectories: string[] = [];
+
+async function withAliasedTemporaryDirectory<T>(run: () => Promise<T>): Promise<T> {
+  const outer = await mkdtemp(path.join(os.tmpdir(), "assertledger-temp-alias-"));
+  const realRoot = path.join(outer, "real");
+  const aliasRoot = path.join(outer, "alias");
+  await mkdir(realRoot);
+  await symlink(realRoot, aliasRoot, process.platform === "win32" ? "junction" : "dir");
+  const names = ["TEMP", "TMP", "TMPDIR"] as const;
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of names) process.env[name] = aliasRoot;
+    return await run();
+  } finally {
+    for (const name of names) {
+      const value = previous[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(outer, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+}
 
 async function fixture(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-node-test-"));
@@ -146,6 +167,32 @@ function candidateObservations(manifest: NodeManifest) {
 }
 
 describe("official node:test adapter qualification", () => {
+  it("attributes candidates through an aliased temporary directory", async () => {
+    await withAliasedTemporaryDirectory(async () => {
+      const root = await fixture();
+      const manifest = await verifyNodeCampaign(
+        request(
+          root,
+          [
+            'import test from "node:test";',
+            'import assert from "node:assert/strict";',
+            'import { subject } from "../../src/subject.js";',
+            'test("subject remains true", () => assert.equal(subject(), true));',
+            "",
+          ].join("\n"),
+        ),
+      );
+
+      assert.equal(manifest.decision.status, "VERIFIED");
+      assert.ok(
+        candidateObservations(manifest).every(
+          (observation: { candidateTestsDiscovered: number }) =>
+            observation.candidateTestsDiscovered === 1,
+        ),
+      );
+    });
+  });
+
   it("verifies a pure candidate assertion failure and replays every integrity rail", async () => {
     const root = await fixture();
     const manifest = await verifyNodeCampaign(

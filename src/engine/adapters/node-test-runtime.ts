@@ -1,4 +1,4 @@
-import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -196,7 +196,9 @@ export async function runNodeTestRuntimePreflight(
   let result: NodeTestRuntimePreflight | undefined;
   let failure: unknown;
   try {
-    root = await mkdtemp(path.join(os.tmpdir(), "assertledger-node-test-preflight-"));
+    root = await realpath(
+      await mkdtemp(path.join(os.tmpdir(), "assertledger-node-test-preflight-")),
+    );
     const reporterPath = path.join(root, "reporter.mjs");
     const controlPath = path.join(root, "control.test.mjs");
     await writeFile(reporterPath, input.reporterSource, { flag: "wx" });

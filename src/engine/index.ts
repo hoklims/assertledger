@@ -2523,7 +2523,7 @@ async function executeObservation(
   attempt: number,
   nodeTestReporterPath: string | undefined,
 ): Promise<Observation> {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "testforge-run-"));
+  const temporaryRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-run-")));
   const workspace = path.join(temporaryRoot, "repository");
   try {
     await copyRepository(repositoryRoot, workspace, effectiveExcludes(request.repository.exclude));
@@ -2636,7 +2636,7 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
           processRunner: runProcess,
         })
       : undefined;
-  const campaignRoot = await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-"));
+  const campaignRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-")));
   const repositorySnapshot = path.join(campaignRoot, "repository");
   try {
     await copyRepository(repositoryRoot, repositorySnapshot, excludes);
@@ -2902,7 +2902,9 @@ async function executeBenchmarkMeasurement(
   role: "WARMUP" | "MEASUREMENT",
   ordinal: number,
 ): Promise<AgenticBenchmarkRun> {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "testforge-benchmark-run-"));
+  const temporaryRoot = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "testforge-benchmark-run-")),
+  );
   const workspace = path.join(temporaryRoot, "repository");
   const resultFile = path.join(temporaryRoot, "benchmark-result.json");
   const preparationStartedAt = process.hrtime.bigint();
@@ -3071,7 +3073,9 @@ export async function acquireAgenticBenchmark(
   if (sourceInventory.totalBytes > request.verificationRequest.budgets.maximumRepositoryBytes) {
     throw new Error("REPOSITORY_BYTES_BUDGET_EXCEEDED");
   }
-  const acquisitionRoot = await mkdtemp(path.join(os.tmpdir(), "testforge-benchmark-acquisition-"));
+  const acquisitionRoot = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "testforge-benchmark-acquisition-")),
+  );
   const snapshotRoot = path.join(acquisitionRoot, "repository");
   try {
     await copyRepository(repositoryRoot, snapshotRoot, excludes);

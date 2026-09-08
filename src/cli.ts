@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
+import { createCodexProjectConfig } from "./engine/connection.js";
+import { renderGitRegressionSummary } from "./engine/git-regression.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -12,6 +14,7 @@ import {
 } from "./evaluation/agentic-corpus.js";
 import { createAssertLedgerServer } from "./mcp/index.js";
 import { AssertLedger } from "./sdk/index.js";
+import { ASSERTLEDGER_VERSION } from "./version.js";
 
 export interface CliIo {
   cwd: string;
@@ -24,6 +27,12 @@ const USAGE = `Usage: assertledger <command> [arguments] [--json]
        (legacy alias: testforge <command> [arguments] [--json])
 
 Commands:
+  check [repository] --before REF [--after REF] --neutral REF --neutral-reason TEXT
+        --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
+        --allow-unsafe-execution                Qualify one committed node:test regression
+  doctor [repository] [--json]                Inspect static repository readiness without writing
+  connect [repository] --client codex [--write]
+                                               Emit or create project-local Codex MCP configuration
   analyze [repository]                         Analyze a repository
   init [repository] [--dry-run] [--adapter-config PATH] [--package-manager ID]
        [--framework ID] [--test-command-json PATH]
@@ -66,7 +75,7 @@ Commands:
   corpus-status [corpus-root]                  Check H1-H4 corpus readiness
   corpus-evaluate-public [corpus-root]         Evaluate the public corpus with feedback
   corpus-evaluate-holdout [corpus-root]        Evaluate holdout aggregates without leakage
-  mcp [--allow-unsafe-execution]               Serve MCP v2 over stdio (read-only by default)
+  mcp [--root PATH] [--allow-unsafe-execution] Serve MCP v2 over stdio (read-only by default)
 `;
 
 const MAXIMUM_JSON_INPUT_BYTES = 16 * 1024 * 1024;
@@ -135,6 +144,74 @@ function optionalFlag(argv: readonly string[], name: string): string | undefined
   if (value === undefined || value.startsWith("--"))
     throw new TypeError(`MISSING_${name.slice(2).toUpperCase().replaceAll("-", "_")}`);
   return value;
+}
+
+interface CheckArguments {
+  repository: string;
+  before: string;
+  after?: string;
+  neutral: string;
+  neutralReason: string;
+  test: string;
+  baseTests: string[];
+  out: string;
+}
+
+function parseCheckArguments(argv: readonly string[], cwd: string): CheckArguments {
+  const values = new Map<string, string[]>();
+  let repository = ".";
+  let repositorySeen = false;
+  const valueFlags = new Set([
+    "--before",
+    "--after",
+    "--neutral",
+    "--neutral-reason",
+    "--test",
+    "--base-test",
+    "--out",
+  ]);
+  const booleanFlags = new Set(["--allow-unsafe-execution", "--json"]);
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if (valueFlags.has(argument)) {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--"))
+        throw new TypeError(`MISSING_${argument.slice(2).toUpperCase().replaceAll("-", "_")}`);
+      const existing = values.get(argument) ?? [];
+      existing.push(value);
+      values.set(argument, existing);
+      index += 1;
+    } else if (!booleanFlags.has(argument) && !argument.startsWith("--") && !repositorySeen) {
+      repository = argument;
+      repositorySeen = true;
+    } else if (!booleanFlags.has(argument)) {
+      throw new TypeError("GIT_REGRESSION_ARGUMENT_INVALID");
+    }
+  }
+  const exactlyOne = (name: string): string => {
+    const found = values.get(name) ?? [];
+    if (found.length !== 1)
+      throw new TypeError(
+        found.length === 0
+          ? `MISSING_${name.slice(2).toUpperCase().replaceAll("-", "_")}`
+          : "GIT_REGRESSION_ARGUMENT_INVALID",
+      );
+    return found[0] as string;
+  };
+  const afterValues = values.get("--after") ?? [];
+  if (afterValues.length > 1) throw new TypeError("GIT_REGRESSION_ARGUMENT_INVALID");
+  const baseTests = values.get("--base-test") ?? [];
+  if (baseTests.length === 0) throw new TypeError("MISSING_BASE_TEST");
+  return {
+    repository: path.resolve(cwd, repository),
+    before: exactlyOne("--before"),
+    ...(afterValues[0] === undefined ? {} : { after: afterValues[0] }),
+    neutral: exactlyOne("--neutral"),
+    neutralReason: exactlyOne("--neutral-reason"),
+    test: exactlyOne("--test"),
+    baseTests,
+    out: exactlyOne("--out"),
+  };
 }
 
 function evidenceContentMap(value: unknown): Map<string, Uint8Array> {
@@ -343,6 +420,7 @@ function classifyError(error: unknown): number {
     (VALIDATION_ERROR_CODES.has(error.message) ||
       BOUNDARY_VALIDATION_MESSAGES.has(error.message) ||
       error.message.startsWith("MISSING_") ||
+      error.message.startsWith("GIT_") ||
       error.message === "EVIDENCE_CONTENTS_INVALID" ||
       error.message === "SUBJECT_EVIDENCE_INVALID")
   ) {
@@ -352,15 +430,133 @@ function classifyError(error: unknown): number {
 }
 
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
-  const testforge = new AssertLedger();
+  const ledger = new AssertLedger();
   const positional = argv.filter((argument) => !argument.startsWith("--"));
-  const command = positional[0];
+  const command = ["--help", "-h", "--version", "-v"].includes(argv[0] ?? "")
+    ? argv[0]
+    : positional[0];
 
   try {
     switch (command) {
+      case "help":
+      case "--help":
+      case "-h":
+        if (argv.length !== 1) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        io.writeStdout(USAGE);
+        return 0;
+      case "version":
+      case "--version":
+      case "-v":
+        if (argv.length !== 1) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        io.writeStdout(`assertledger ${ASSERTLEDGER_VERSION}\n`);
+        return 0;
+      case "doctor": {
+        const allowedFlags = new Set(["--json"]);
+        const rootArguments = argv.slice(1).filter((argument) => !argument.startsWith("-"));
+        if (
+          rootArguments.length > 1 ||
+          argv.filter((argument) => argument === "--json").length > 1 ||
+          argv.slice(1).some((argument) => argument.startsWith("-") && !allowedFlags.has(argument))
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const root = path.resolve(io.cwd, rootArguments[0] ?? ".");
+        const result = await ledger.doctor(root);
+        if (argv.includes("--json")) {
+          writeJson(io, result);
+        } else {
+          const reasons = result.reasonCodes.length === 0 ? "none" : result.reasonCodes.join(", ");
+          io.writeStdout(
+            [
+              `Status: ${result.status}`,
+              `Reason codes: ${reasons}`,
+              `Required operator inputs: ${result.requiredOperatorInputs.join(", ")}`,
+              `Next safe action: ${result.nextCommands[0]?.executable ?? "assertledger"} ${(result.nextCommands[0]?.arguments ?? []).join(" ")}`,
+              "Execution limit: verification remains UNSANDBOXED trusted-local and requires explicit operator authorization.",
+              "This static diagnostic does not prove campaign evidence or MCP connectivity.",
+              "",
+            ].join("\n"),
+          );
+        }
+        if (result.status === "BLOCKED") return 3;
+        if (result.status === "CONFLICT") return 4;
+        return 0;
+      }
+      case "connect": {
+        let client: string | undefined;
+        let rootArgument = ".";
+        let rootSeen = false;
+        let clientSeen = false;
+        let writeSeen = false;
+        for (let index = 1; index < argv.length; index += 1) {
+          const argument = argv[index] ?? "";
+          if (argument === "--client") {
+            if (clientSeen) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            const value = argv[index + 1];
+            if (value === undefined || value.startsWith("-")) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            client = value;
+            clientSeen = true;
+            index += 1;
+          } else if (argument === "--write") {
+            if (writeSeen) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            writeSeen = true;
+          } else if (argument.startsWith("-") || rootSeen) {
+            io.writeStderr(USAGE);
+            return 64;
+          } else {
+            rootArgument = argument;
+            rootSeen = true;
+          }
+        }
+        if (client !== "codex") {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const currentEntry = fileURLToPath(import.meta.url);
+        if (
+          path.basename(currentEntry) !== "cli.js" ||
+          path.basename(path.dirname(currentEntry)) !== "dist"
+        ) {
+          io.writeStderr("CONNECT_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
+          return 3;
+        }
+        const result = await createCodexProjectConfig(
+          path.resolve(io.cwd, rootArgument),
+          currentEntry,
+          argv.includes("--write"),
+        );
+        if (result.status === "EMITTED") {
+          io.writeStdout(result.content);
+          return 0;
+        }
+        if (result.status === "CONFLICT") {
+          io.writeStderr(
+            `CONFLICT: ${result.path} already contains different operator-owned content.\n`,
+          );
+          return 4;
+        }
+        io.writeStdout(`${result.status}: ${result.path}\n`);
+        return 0;
+      }
       case "analyze": {
         const root = path.resolve(io.cwd, positional[1] ?? ".");
-        writeJson(io, await testforge.analyze(root));
+        writeJson(io, await ledger.analyze(root));
         return 0;
       }
       case "init": {
@@ -397,7 +593,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const adapterConfigPath = optionalFlag(argv, "--adapter-config");
         const packageManager = optionalFlag(argv, "--package-manager");
         const framework = optionalFlag(argv, "--framework");
-        const result = await testforge.init(root, {
+        const result = await ledger.init(root, {
           dryRun: argv.includes("--dry-run"),
           ...(adapterConfigPath === undefined ? {} : { adapterConfigPath }),
           ...(packageManager === undefined ? {} : { packageManager }),
@@ -432,7 +628,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
             if (code !== "ENOENT") throw error;
           }
         }
-        const result = await testforge.audit(root, {
+        const result = await ledger.audit(root, {
           noGit: argv.includes("--no-git"),
           verificationRequest: request,
         });
@@ -443,6 +639,23 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         }
         writeJson(io, result);
         return 0;
+      }
+      case "check": {
+        if (!argv.includes("--allow-unsafe-execution")) {
+          io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
+          return 4;
+        }
+        const options = parseCheckArguments(argv, io.cwd);
+        const result = await ledger.checkGitRegression({
+          ...options,
+          allowUnsafeExecution: true,
+        });
+        if (argv.includes("--json")) writeJson(io, result);
+        else
+          io.writeStdout(
+            renderGitRegressionSummary(result, { ...options, allowUnsafeExecution: true }),
+          );
+        return decisionExitCode(result);
       }
       case "schema": {
         const name = positional[1];
@@ -483,7 +696,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr(USAGE);
           return 64;
         }
-        writeJson(io, testforge.schema(name));
+        writeJson(io, ledger.schema(name));
         return 0;
       }
       case "verify": {
@@ -492,42 +705,42 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
           return 4;
         }
-        const result = await testforge.verify(authorizeTrustedLocalExecution(request));
+        const result = await ledger.verify(authorizeTrustedLocalExecution(request));
         writeJson(io, result);
         return decisionExitCode(result);
       }
       case "replay": {
-        const result = testforge.replay(await readJsonInput(positional[1], io));
+        const result = ledger.replay(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
       }
       case "profile": {
-        const result = testforge.profile(await readJsonInput(positional[1], io));
+        const result = ledger.profile(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return profileExitCode(result);
       }
       case "profile-replay": {
-        const result = testforge.replayProfile(await readJsonInput(positional[1], io));
+        const result = ledger.replayProfile(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
       }
       case "profile-v2": {
-        const result = testforge.profileV2(await readJsonInput(positional[1], io));
+        const result = ledger.profileV2(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return profileExitCode(result);
       }
       case "profile-v2-replay": {
-        const result = testforge.replayProfileV2(await readJsonInput(positional[1], io));
+        const result = ledger.replayProfileV2(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
       }
       case "benchmark": {
-        const result = testforge.benchmark(await readJsonInput(positional[1], io));
+        const result = ledger.benchmark(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return benchmarkExitCode(result);
       }
       case "benchmark-replay": {
-        const result = testforge.replayBenchmark(await readJsonInput(positional[1], io));
+        const result = ledger.replayBenchmark(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
       }
@@ -537,22 +750,22 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
           return 4;
         }
-        const result = await testforge.acquireBenchmark(authorizeBenchmarkAcquisition(request));
+        const result = await ledger.acquireBenchmark(authorizeBenchmarkAcquisition(request));
         writeJson(io, result);
         return benchmarkAcquisitionExitCode(result);
       }
       case "benchmark-acquire-replay": {
-        const result = testforge.replayBenchmarkAcquisition(await readJsonInput(positional[1], io));
+        const result = ledger.replayBenchmarkAcquisition(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
       }
       case "corpus-allocate": {
-        const result = testforge.allocateCorpus(await readJsonInput(positional[1], io));
+        const result = ledger.allocateCorpus(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return 0;
       }
       case "corpus-allocation-replay": {
-        const result = testforge.replayCorpusAllocation(await readJsonInput(positional[1], io));
+        const result = ledger.replayCorpusAllocation(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
       }
@@ -571,7 +784,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const evidenceContents = evidenceContentMap(
           await readJsonInput(requiredFlag(argv, "--evidence-contents"), io),
         );
-        const result = testforge.replayCorpusExperiment(artifact, {
+        const result = ledger.replayCorpusExperiment(artifact, {
           expectedTrustPolicyDigest: requiredFlag(argv, "--trust-policy-digest"),
           expectedAllocationCommitmentDigest: requiredFlag(argv, "--allocation-commitment-digest"),
           expectedExperimentPlanDigest: requiredFlag(argv, "--experiment-plan-digest"),
@@ -615,12 +828,46 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           path.resolve(io.cwd, positional[1] ?? "benchmarks/agentic-profile"),
           io,
         );
-      case "mcp":
+      case "mcp": {
+        const allowedFlags = new Set(["--allow-unsafe-execution", "--root"]);
+        let rootSeen = false;
+        let unsafeSeen = false;
+        for (let index = 1; index < argv.length; index += 1) {
+          const argument = argv[index] ?? "";
+          if (!allowedFlags.has(argument)) {
+            io.writeStderr(USAGE);
+            return 64;
+          }
+          if (argument === "--root") {
+            if (rootSeen) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            const value = argv[index + 1];
+            if (value === undefined || value.startsWith("-")) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            rootSeen = true;
+            index += 1;
+          } else if (unsafeSeen) {
+            io.writeStderr(USAGE);
+            return 64;
+          } else {
+            unsafeSeen = true;
+          }
+        }
+        const requestedRoot = optionalFlag(argv, "--root");
+        const root =
+          requestedRoot === undefined
+            ? io.cwd
+            : await realpath(path.resolve(io.cwd, requestedRoot));
+        if (!(await stat(root)).isDirectory()) throw new Error("MCP_ROOT_NOT_DIRECTORY");
         serveStdio(
           () =>
             createAssertLedgerServer({
               allowUnsafeExecution: argv.includes("--allow-unsafe-execution"),
-              allowedRepositoryRoots: [io.cwd],
+              allowedRepositoryRoots: [root],
             }),
           {
             onerror(error) {
@@ -629,6 +876,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           },
         );
         return 0;
+      }
       default:
         io.writeStderr(USAGE);
         return 64;

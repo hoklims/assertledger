@@ -786,13 +786,10 @@ describe("repository init v1", () => {
   it("packs the built package and initializes a clean consumer through the installed entrypoint", {
     timeout: 120_000,
   }, async () => {
-    const packageManagerCli = path.join(
-      path.dirname(process.execPath),
-      "node_modules",
-      "corepack",
-      "dist",
-      "pnpm.js",
-    );
+    // The invoking pnpm supplies its actual CLI path on every supported platform.
+    // Node 24 no longer bundles Corepack alongside the Node executable.
+    const packageManagerCli = process.env.npm_execpath;
+    assert(packageManagerCli, "Run this package test through pnpm test or pnpm exec.");
     assert.equal((await stat(packageManagerCli)).isFile(), true);
     const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-package-smoke-"));
     temporaryDirectories.push(root);

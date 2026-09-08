@@ -102,7 +102,11 @@ async function copyRepositoryWithoutDependencies(destination: string): Promise<v
       !path
         .relative(repositoryRoot, sourcePath)
         .split(path.sep)
-        .some((segment) => [".git", "graphify-out", "node_modules"].includes(segment)),
+        .some((segment) =>
+          [".git", ".omx", ".testforge", "coverage", "graphify-out", "node_modules"].includes(
+            segment,
+          ),
+        ),
   });
 }
 

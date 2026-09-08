@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = realpathSync(path.resolve(fileURLToPath(import.meta.url), "..", ".."));
 const runId = randomUUID();
@@ -33,6 +33,8 @@ const required = [
   "dist/core/index.d.ts",
   "dist/engine/node-test-reporter.js",
   "README.md",
+  "README.fr.md",
+  "docs/reference.md",
   "LICENSE",
   "CONTRIBUTING.md",
   "SECURITY.md",
@@ -241,6 +243,28 @@ function main(): void {
         `INSTALLED_CONTENT_MISMATCH: ${filename}`,
       );
     }
+    const importGuard = path.join(consumer, "installed-import-guard.mjs");
+    writeFileSync(
+      importGuard,
+      [
+        'import { registerHooks } from "node:module";',
+        'import { realpathSync } from "node:fs";',
+        'import path from "node:path";',
+        'import { fileURLToPath } from "node:url";',
+        `const consumer = realpathSync(${JSON.stringify(consumer)});`,
+        'const inside = (value) => { const rel = path.relative(consumer, value); return rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)); };',
+        "registerHooks({ resolve(specifier, context, nextResolve) {",
+        "  const result = nextResolve(specifier, context);",
+        '  if (context.parentURL?.startsWith("file:") && result.url.startsWith("file:") && inside(fileURLToPath(context.parentURL)) && !inside(realpathSync(fileURLToPath(result.url)))) {',
+        '    throw new Error("PACKAGE_IMPORT_ESCAPES_CONSUMER: " + specifier);',
+        "  }",
+        "  return result;",
+        "} });",
+        "",
+      ].join("\n"),
+    );
+    // Only the verification processes receive this guard; npm install ran without it.
+    env.NODE_OPTIONS = `--import=${pathToFileURL(importGuard).href}`;
     const schema = parse(runBin("assertledger", ["schema", "replay-result"]));
     assert.equal(schema.$id, "https://testforge.dev/schemas/replay-result.v1.json");
     assert.deepEqual(parse(runBin("testforge", ["schema", "replay-result"])), schema);

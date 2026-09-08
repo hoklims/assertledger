@@ -24,6 +24,7 @@ import {
   VerificationRequestSchema,
 } from "../contracts/index.js";
 import { AssertLedger } from "../sdk/index.js";
+import { ASSERTLEDGER_VERSION } from "../version.js";
 
 function jsonResult(value: unknown) {
   const structuredContent =
@@ -67,7 +68,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
   }
 
   const server = new McpServer(
-    { name: "assertledger", version: "0.1.0" },
+    { name: "assertledger", version: ASSERTLEDGER_VERSION },
     { capabilities: { tools: {} } },
   );
 

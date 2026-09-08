@@ -1,6 +1,6 @@
-# TestForge contributor instructions
+# AssertLedger contributor instructions
 
-TestForge judges evidence. Changes to outcomes, gates, canonicalization, schemas, exit codes,
+AssertLedger judges evidence. Changes to outcomes, gates, canonicalization, schemas, exit codes,
 or manifest digests are public contract changes.
 
 ## Architecture boundaries

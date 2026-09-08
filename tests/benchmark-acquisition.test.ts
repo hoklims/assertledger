@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -23,6 +23,27 @@ import { createTestForgeServer } from "../src/mcp/index.js";
 import { TestForge } from "../src/sdk/index.js";
 
 const temporaryDirectories: string[] = [];
+
+async function withAliasedTemporaryDirectory<T>(run: () => Promise<T>): Promise<T> {
+  const outer = await mkdtemp(path.join(os.tmpdir(), "assertledger-temp-alias-"));
+  const realRoot = path.join(outer, "real");
+  const aliasRoot = path.join(outer, "alias");
+  await mkdir(realRoot);
+  await symlink(realRoot, aliasRoot, process.platform === "win32" ? "junction" : "dir");
+  const names = ["TEMP", "TMP", "TMPDIR"] as const;
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of names) process.env[name] = aliasRoot;
+    return await run();
+  } finally {
+    for (const name of names) {
+      const value = previous[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(outer, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -168,6 +189,16 @@ function request(root: string) {
 }
 
 describe("benchmark acquisition", () => {
+  it("resolves acquisition identity through an aliased temporary directory", async () => {
+    await withAliasedTemporaryDirectory(async () => {
+      const root = await fixtureRepository();
+      const result = await acquireAgenticBenchmark(request(root));
+
+      assert.equal(result.status, "COMPLETE");
+      assert.equal(replayAgenticBenchmarkAcquisition(result).valid, true);
+    });
+  });
+
   it("acquires a replay-valid artifact only for source-selected eligible candidates", async () => {
     const root = await fixtureRepository();
     const result = await acquireAgenticBenchmark(request(root));

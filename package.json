@@ -1,7 +1,7 @@
 {
   "name": "assertledger",
   "version": "0.1.0",
-  "description": "AssertLedger (formerly TestForge): deterministic evidence harness for evaluating generated tests across declared code worlds.",
+  "description": "Verify that regression tests detect a declared bug, with deterministic verdicts and replayable evidence.",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -42,6 +42,7 @@
     "schemas",
     "integrations",
     "README.md",
+    "README.fr.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
     "LICENSE",
@@ -50,7 +51,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run check:schemas && pnpm run check:conformance && pnpm run typecheck && pnpm run test && pnpm run build",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run check:schemas && pnpm run check:conformance && pnpm run typecheck && pnpm run test",
     "smoke:package": "pnpm run build && pnpm run check:schemas && pnpm run check:conformance && tsx scripts/smoke-package.ts",
     "check:conformance": "tsx scripts/check-conformance-v1.ts",
     "witness:conformance": "tsx scripts/run-conformance-negative-witnesses.ts",
@@ -60,20 +61,22 @@
     "generate:schemas": "tsx scripts/generate-schemas.ts",
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
+    "pretest": "pnpm run build",
     "test": "tsx --test --test-concurrency=2 tests/*.test.ts",
+    "pretest:coverage": "pnpm run build",
     "test:coverage": "tsx --test --test-concurrency=2 --experimental-test-coverage tests/*.test.ts",
     "prepack": "pnpm run build && pnpm run check:schemas"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
+    "typescript": "7.0.2",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "22.20.1",
-    "tsx": "4.23.5",
-    "typescript": "7.0.2"
+    "tsx": "4.23.5"
   },
   "directories": {
     "doc": "docs",
