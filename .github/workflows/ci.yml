@@ -31,8 +31,13 @@ jobs:
       - run: pnpm check
 
   package:
-    name: Package smoke test
-    runs-on: ubuntu-latest
+    name: Package smoke test / Node ${{ matrix.node }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [22.15.0, 24]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -41,8 +46,7 @@ jobs:
           run_install: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: npm pack --dry-run
+      - run: pnpm run smoke:package

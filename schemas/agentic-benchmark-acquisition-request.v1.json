@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "verificationRequest": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "referenceWorldId": {
+      "$ref": "#/$defs/__schema10"
+    },
+    "policy": {
+      "$ref": "#/$defs/__schema13"
+    },
+    "protocol": {
+      "$ref": "#/$defs/__schema14"
+    },
+    "environment": {
+      "$ref": "#/$defs/__schema15"
+    },
+    "identityFiles": {
+      "$ref": "#/$defs/__schema16"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "verificationRequest",
+    "referenceWorldId",
+    "policy",
+    "protocol",
+    "environment",
+    "identityFiles"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge Agentic Benchmark acquisition request",
+  "description": "A fresh verification campaign plus strict phase-aware acquisition policy and identity bindings.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "repository": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "minLength": 1
+            },
+            "exclude": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema2"
+              }
+            }
+          },
+          "required": ["root", "exclude"],
+          "additionalProperties": false
+        },
+        "adapter": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "node-test"
+                },
+                "executable": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "baseTestFiles": {
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema3"
+                  }
+                },
+                "extraArguments": {
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema4"
+                  }
+                }
+              },
+              "required": ["kind", "executable", "baseTestFiles"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "testforge-command"
+                },
+                "executable": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "arguments": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema5"
+                  }
+                },
+                "protocolVersion": {
+                  "type": "string",
+                  "const": "1.0.0"
+                }
+              },
+              "required": ["kind", "executable", "arguments", "protocolVersion"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "isolation": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "trusted-local"
+            },
+            "acknowledgedUnsafeExecution": {
+              "type": "boolean"
+            },
+            "environmentAllowlist": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema6"
+              }
+            }
+          },
+          "required": ["kind", "acknowledgedUnsafeExecution", "environmentAllowlist"],
+          "additionalProperties": false
+        },
+        "candidateRoots": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema7"
+          }
+        },
+        "budgets": {
+          "type": "object",
+          "properties": {
+            "maximumCandidates": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "maximumWorlds": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 1000
+            },
+            "maximumExecutions": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "maximumRepositoryFiles": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "maximumRepositoryBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000000000
+            },
+            "maximumWorldOverlayBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000000000
+            },
+            "maximumCandidateBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000
+            },
+            "maximumTotalCandidateBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000000
+            },
+            "timeoutMsPerExecution": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 86400000
+            },
+            "maximumOutputBytes": {
+              "type": "integer",
+              "minimum": 128,
+              "maximum": 100000000
+            }
+          },
+          "required": [
+            "maximumCandidates",
+            "maximumWorlds",
+            "maximumExecutions",
+            "maximumRepositoryFiles",
+            "maximumRepositoryBytes",
+            "maximumWorldOverlayBytes",
+            "maximumCandidateBytes",
+            "maximumTotalCandidateBytes",
+            "timeoutMsPerExecution",
+            "maximumOutputBytes"
+          ],
+          "additionalProperties": false
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "policyVersion": {
+              "type": "string",
+              "const": "1.0.0"
+            },
+            "requiredAttempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "minimumTargetWeightPermille": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "maximumSelectedCandidates": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "acceptedTargetOutcomes": {
+              "minItems": 1,
+              "maxItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema8"
+              }
+            }
+          },
+          "required": [
+            "policyVersion",
+            "requiredAttempts",
+            "minimumTargetWeightPermille",
+            "maximumSelectedCandidates",
+            "acceptedTargetOutcomes"
+          ],
+          "additionalProperties": false
+        },
+        "worlds": {
+          "minItems": 1,
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema9"
+          }
+        },
+        "candidates": {
+          "minItems": 1,
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema12"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repository",
+        "adapter",
+        "isolation",
+        "candidateRoots",
+        "budgets",
+        "policy",
+        "worlds",
+        "candidates"
+      ],
+      "additionalProperties": false
+    },
+    "__schema2": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema4": {
+      "type": "string"
+    },
+    "__schema5": {
+      "type": "string"
+    },
+    "__schema6": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!(?:[Nn][Oo][Dd][Ee]_[Oo][Pp][Tt][Ii][Oo][Nn][Ss]$|[Tt][Ee][Ss][Tt][Ff][Oo][Rr][Gg][Ee]_|[Nn][Oo][Dd][Ee]_[Tt][Ee][Ss][Tt]_)).+$"
+    },
+    "__schema7": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema8": {
+      "type": "string",
+      "const": "ASSERTION_FAILURE"
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["REFERENCE", "TARGET", "NEUTRAL"]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "provenance": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "files": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema11"
+          }
+        }
+      },
+      "required": ["id", "kind", "required", "weight", "provenance", "files"],
+      "additionalProperties": false
+    },
+    "__schema10": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema11": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": ["path", "content"],
+      "additionalProperties": false
+    },
+    "__schema12": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "files": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema11"
+          }
+        }
+      },
+      "required": ["id", "files"],
+      "additionalProperties": false
+    },
+    "__schema13": {
+      "type": "object",
+      "properties": {
+        "benchmarkVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "minimumMeasuredSamplesPerRegime": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "coldMeasuredSamples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "warmupSamples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "warmMeasuredSamples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maximumExecutions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "benchmarkVersion",
+        "minimumMeasuredSamplesPerRegime",
+        "coldMeasuredSamples",
+        "warmupSamples",
+        "warmMeasuredSamples",
+        "maximumExecutions"
+      ],
+      "additionalProperties": false
+    },
+    "__schema14": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "clock": {
+          "type": "string",
+          "const": "MONOTONIC"
+        },
+        "unit": {
+          "type": "string",
+          "const": "MICROSECOND"
+        },
+        "quantile": {
+          "type": "string",
+          "const": "NEAREST_RANK"
+        },
+        "phases": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "PREPARATION"
+            },
+            {
+              "type": "string",
+              "const": "STARTUP"
+            },
+            {
+              "type": "string",
+              "const": "COMPILE_OR_COLLECTION"
+            },
+            {
+              "type": "string",
+              "const": "EXECUTION"
+            }
+          ]
+        },
+        "coldDefinition": {
+          "type": "string",
+          "const": "FRESH_WORKSPACE_FRESH_PROCESS_RESET_DECLARED_CACHES"
+        },
+        "warmDefinition": {
+          "type": "string",
+          "const": "FRESH_WORKSPACE_FRESH_PROCESS_RETAIN_DECLARED_CACHES"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "clock",
+        "unit",
+        "quantile",
+        "phases",
+        "coldDefinition",
+        "warmDefinition"
+      ],
+      "additionalProperties": false
+    },
+    "__schema15": {
+      "type": "object",
+      "properties": {
+        "environmentId": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "logicalCpuLimit": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memoryLimitBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["environmentId", "logicalCpuLimit", "memoryLimitBytes"],
+      "additionalProperties": false
+    },
+    "__schema16": {
+      "type": "object",
+      "properties": {
+        "phaseReporter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "dependencyGraph": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema17"
+          }
+        }
+      },
+      "required": ["phaseReporter", "dependencyGraph"],
+      "additionalProperties": false
+    },
+    "__schema17": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-benchmark-acquisition-request.v1.json"
+}

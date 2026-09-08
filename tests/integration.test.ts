@@ -16,6 +16,12 @@ type IntegrationApi = {
       artifactDigestValid: boolean;
       decisionSemanticsValid: boolean;
     };
+    profile(request: unknown): any;
+    replayProfile(report: unknown): any;
+    benchmark(request: unknown): any;
+    replayBenchmark(artifact: unknown): any;
+    profileV2(request: unknown): any;
+    replayProfileV2(report: unknown): any;
   };
   runCli(
     argv: string[],
@@ -31,18 +37,29 @@ type IntegrationApi = {
     allowedRepositoryRoots?: string[];
   }): any;
   decideEvidence(input: unknown): any;
+  sealManifestArtifact(input: unknown): any;
 };
 
 async function loadIntegration(): Promise<IntegrationApi> {
   try {
-    const [{ TestForge }, { runCli }, { createTestForgeServer }, { decideEvidence }] =
-      await Promise.all([
-        import("../src/sdk/index.js"),
-        import("../src/cli.js"),
-        import("../src/mcp/index.js"),
-        import("../src/core/index.js"),
-      ]);
-    return { TestForge, runCli, createTestForgeServer, decideEvidence } as IntegrationApi;
+    const [
+      { TestForge },
+      { runCli },
+      { createTestForgeServer },
+      { decideEvidence, sealManifestArtifact },
+    ] = await Promise.all([
+      import("../src/sdk/index.js"),
+      import("../src/cli.js"),
+      import("../src/mcp/index.js"),
+      import("../src/core/index.js"),
+    ]);
+    return {
+      TestForge,
+      runCli,
+      createTestForgeServer,
+      decideEvidence,
+      sealManifestArtifact,
+    } as IntegrationApi;
   } catch {
     return {
       TestForge: class {
@@ -58,10 +75,29 @@ async function loadIntegration(): Promise<IntegrationApi> {
             decisionSemanticsValid: false,
           };
         }
+        profile() {
+          return undefined;
+        }
+        replayProfile() {
+          return undefined;
+        }
+        benchmark() {
+          return undefined;
+        }
+        replayBenchmark() {
+          return undefined;
+        }
+        profileV2() {
+          return undefined;
+        }
+        replayProfileV2() {
+          return undefined;
+        }
       },
       runCli: async () => 99,
       createTestForgeServer: () => undefined,
       decideEvidence: () => undefined,
+      sealManifestArtifact: () => undefined,
     };
   }
 }
@@ -173,6 +209,187 @@ function verificationRequest(
   };
 }
 
+function agenticProfileRequest() {
+  const worlds = [
+    { id: "reference", kind: "REFERENCE", required: true, weight: 0 },
+    { id: "target", kind: "TARGET", required: true, weight: 1 },
+    { id: "neutral", kind: "NEUTRAL", required: true, weight: 0 },
+  ];
+  const observations = worlds.flatMap((world) => [
+    {
+      runId: `control:${world.id}:1`,
+      candidateId: null,
+      worldId: world.id,
+      attempt: 1,
+      outcome: "PASS",
+      testsDiscovered: 1,
+      candidateTestsDiscovered: 0,
+      attributed: false,
+      durationMs: 1,
+    },
+    {
+      runId: `candidate:${world.id}:1`,
+      candidateId: "candidate",
+      worldId: world.id,
+      attempt: 1,
+      outcome: world.kind === "TARGET" ? "ASSERTION_FAILURE" : "PASS",
+      testsDiscovered: 2,
+      candidateTestsDiscovered: 1,
+      attributed: true,
+      durationMs: world.kind === "REFERENCE" ? 10 : 1,
+    },
+  ]);
+  const decided = integration.decideEvidence({
+    schemaVersion: "1.0.0",
+    repositoryDigest: `sha256:${"a".repeat(64)}`,
+    evidenceContext: {
+      engine: { name: "testforge", version: "0.1.0" },
+      adapter: {
+        name: "node-test",
+        version: process.versions.node,
+        configuration: { kind: "node-test" },
+      },
+      execution: {
+        isolation: "UNSANDBOXED",
+        environmentAllowlist: [],
+        budgets: {},
+        candidateRoots: ["tests/candidates"],
+      },
+      worlds: worlds.map((world) => ({
+        id: world.id,
+        provenance: "integration-test",
+        digest: `sha256:${"b".repeat(64)}`,
+      })),
+    },
+    policy: {
+      policyVersion: "1.0.0",
+      requiredAttempts: 1,
+      minimumTargetWeightPermille: 1_000,
+      maximumSelectedCandidates: 1,
+      acceptedTargetOutcomes: ["ASSERTION_FAILURE"],
+    },
+    worlds,
+    candidates: [{ id: "candidate", digest: `sha256:${"c".repeat(64)}`, sizeBytes: 1 }],
+    observations,
+  });
+  const manifest = integration.sealManifestArtifact({
+    ...decided,
+    adapter: { kind: "node-test" },
+    isolation: {
+      kind: "trusted-local",
+      level: "UNSANDBOXED",
+      acknowledgedUnsafeExecution: true,
+    },
+    limitations: ["integration fixture"],
+  });
+  return {
+    schemaVersion: "1.0.0",
+    manifest,
+    policy: {
+      profileVersion: "1.0.0",
+      profileId: "integration/default",
+      mode: "HARDENING",
+      minimumTimingSamples: 1,
+      lanes: [{ id: "loop", maximumReferenceP95Ms: 100 }],
+    },
+  };
+}
+
+function agenticBenchmarkRequest() {
+  const sourceManifest = agenticProfileRequest().manifest;
+  const candidateDigest = sourceManifest.candidates[0].digest;
+  const completeRun = (
+    regime: "COLD" | "WARM",
+    role: "WARMUP" | "MEASUREMENT",
+    ordinal: number,
+    executionUs: number,
+  ) => ({
+    candidateId: "candidate",
+    candidateDigest,
+    regime,
+    role,
+    ordinal,
+    status: "COMPLETE",
+    outcome: "PASS",
+    phases: [
+      { phase: "PREPARATION", durationUs: 1 },
+      { phase: "STARTUP", durationUs: 1 },
+      { phase: "COMPILE_OR_COLLECTION", durationUs: 1 },
+      { phase: "EXECUTION", durationUs: executionUs },
+    ],
+    totalUs: executionUs + 3,
+  });
+  return {
+    schemaVersion: "1.0.0",
+    sourceManifest,
+    referenceWorldId: "reference",
+    policy: {
+      benchmarkVersion: "1.0.0",
+      minimumMeasuredSamplesPerRegime: 1,
+      coldMeasuredSamples: 1,
+      warmupSamples: 1,
+      warmMeasuredSamples: 1,
+      maximumExecutions: 3,
+    },
+    protocol: {
+      protocolVersion: "1.0.0",
+      clock: "MONOTONIC",
+      unit: "MICROSECOND",
+      quantile: "NEAREST_RANK",
+      phases: ["PREPARATION", "STARTUP", "COMPILE_OR_COLLECTION", "EXECUTION"],
+      coldDefinition: "FRESH_WORKSPACE_FRESH_PROCESS_RESET_DECLARED_CACHES",
+      warmDefinition: "FRESH_WORKSPACE_FRESH_PROCESS_RETAIN_DECLARED_CACHES",
+    },
+    fingerprint: {
+      environmentId: "integration-environment",
+      os: { platform: "fixture", release: "fixture", arch: "x64" },
+      cpu: { arch: "x64", model: "fixture", logicalCores: 1 },
+      logicalCpuLimit: 1,
+      memoryLimitBytes: null,
+      executionBoundary: "UNSANDBOXED",
+      tools: [
+        {
+          role: "runtime",
+          name: "node",
+          version: process.versions.node,
+          digest: `sha256:${"d".repeat(64)}`,
+          configurationDigest: `sha256:${"e".repeat(64)}`,
+        },
+      ],
+      dependencyGraphDigest: `sha256:${"f".repeat(64)}`,
+      phaseReporterDigest: `sha256:${"1".repeat(64)}`,
+    },
+    runs: [
+      completeRun("COLD", "MEASUREMENT", 1, 100),
+      completeRun("WARM", "WARMUP", 1, 50),
+      completeRun("WARM", "MEASUREMENT", 1, 20),
+    ],
+  };
+}
+
+function agenticProfileV2Request() {
+  const benchmarkArtifact = new integration.TestForge().benchmark(agenticBenchmarkRequest());
+  return {
+    schemaVersion: "2.0.0",
+    benchmarkArtifact,
+    policy: {
+      profileVersion: "2.0.0",
+      profileId: "integration/hardening-v2",
+      mode: "HARDENING",
+      requiredComparisonScopeDigest: benchmarkArtifact.comparisonScopeDigest,
+      costBasis: {
+        regime: "WARM",
+        measure: "WALL",
+        aggregation: "TOTAL",
+        statistic: "P95",
+        unit: "MICROSECOND",
+        portfolioAggregation: "SUM_OF_INDIVIDUAL_P95",
+      },
+      lanes: [{ id: "fast", maximumWarmTotalWallP95Us: 23 }],
+    },
+  };
+}
+
 describe("SDK facade", () => {
   it("exposes repository analysis without any model or harness dependency", async () => {
     const root = await fixtureRepository();
@@ -278,6 +495,33 @@ describe("SDK facade", () => {
       decisionSemanticsValid: false,
     });
   });
+
+  it("derives and replays a self-contained agentic test profile", () => {
+    const sdk = new integration.TestForge();
+    const report = sdk.profile(agenticProfileRequest());
+
+    assert.equal(report.status, "QUALIFIED");
+    assert.equal(report.candidates[0].bestLaneId, "loop");
+    assert.equal(sdk.replayProfile(report).valid, true);
+  });
+
+  it("derives and replays a self-contained agentic benchmark", () => {
+    const sdk = new integration.TestForge();
+    const artifact = sdk.benchmark(agenticBenchmarkRequest());
+
+    assert.equal(artifact.summaries[0].wall.total.p95Us, 103);
+    assert.equal(artifact.summaries[1].wall.total.p95Us, 23);
+    assert.equal(sdk.replayBenchmark(artifact).valid, true);
+  });
+
+  it("derives and replays a benchmark-backed agentic profile v2", () => {
+    const sdk = new integration.TestForge();
+    const report = sdk.profileV2(agenticProfileV2Request());
+
+    assert.equal(report.status, "QUALIFIED");
+    assert.equal(report.candidates[0].cost.p95Us, 23);
+    assert.equal(sdk.replayProfileV2(report).valid, true);
+  });
 });
 
 describe("JSON CLI", () => {
@@ -358,13 +602,97 @@ describe("JSON CLI", () => {
     assert.equal(JSON.parse(capture.stdout()).fileCount, 2);
   });
 
+  it("derives and replays an agentic profile through JSON stdin", async () => {
+    const profileCapture = captureIo(process.cwd());
+    profileCapture.io.readStdin = async () => JSON.stringify(agenticProfileRequest());
+
+    const profileCode = await integration.runCli(["profile", "-", "--json"], profileCapture.io);
+    assert.equal(profileCode, 0, profileCapture.stderr());
+    const report = JSON.parse(profileCapture.stdout());
+    assert.equal(report.status, "QUALIFIED");
+
+    const replayCapture = captureIo(process.cwd());
+    replayCapture.io.readStdin = async () => JSON.stringify(report);
+    const replayCode = await integration.runCli(
+      ["profile-replay", "-", "--json"],
+      replayCapture.io,
+    );
+    assert.equal(replayCode, 0, replayCapture.stderr());
+    assert.equal(JSON.parse(replayCapture.stdout()).valid, true);
+  });
+
+  it("derives and replays an agentic benchmark through JSON stdin", async () => {
+    const benchmarkCapture = captureIo(process.cwd());
+    benchmarkCapture.io.readStdin = async () => JSON.stringify(agenticBenchmarkRequest());
+    const benchmarkCode = await integration.runCli(
+      ["benchmark", "-", "--json"],
+      benchmarkCapture.io,
+    );
+    assert.equal(benchmarkCode, 0, benchmarkCapture.stderr());
+    const artifact = JSON.parse(benchmarkCapture.stdout());
+
+    const replayCapture = captureIo(process.cwd());
+    replayCapture.io.readStdin = async () => JSON.stringify(artifact);
+    const replayCode = await integration.runCli(
+      ["benchmark-replay", "-", "--json"],
+      replayCapture.io,
+    );
+    assert.equal(replayCode, 0, replayCapture.stderr());
+    assert.equal(JSON.parse(replayCapture.stdout()).valid, true);
+  });
+
+  it("derives and replays an agentic profile v2 through JSON stdin", async () => {
+    const profileCapture = captureIo(process.cwd());
+    profileCapture.io.readStdin = async () => JSON.stringify(agenticProfileV2Request());
+    const profileCode = await integration.runCli(["profile-v2", "-", "--json"], profileCapture.io);
+    assert.equal(profileCode, 0, profileCapture.stderr());
+    const report = JSON.parse(profileCapture.stdout());
+    assert.equal(report.status, "QUALIFIED");
+
+    const replayCapture = captureIo(process.cwd());
+    replayCapture.io.readStdin = async () => JSON.stringify(report);
+    const replayCode = await integration.runCli(
+      ["profile-v2-replay", "-", "--json"],
+      replayCapture.io,
+    );
+    assert.equal(replayCode, 0, replayCapture.stderr());
+    assert.equal(JSON.parse(replayCapture.stdout()).valid, true);
+  });
+
+  it("classifies a replay-invalid Profile v2 benchmark as invalid input", async () => {
+    const request = agenticProfileV2Request();
+    request.benchmarkArtifact.artifactDigest = `sha256:${"0".repeat(64)}`;
+    const capture = captureIo(process.cwd());
+    capture.io.readStdin = async () => JSON.stringify(request);
+
+    const code = await integration.runCli(["profile-v2", "-", "--json"], capture.io);
+
+    assert.equal(code, 4);
+    assert.match(capture.stderr(), /AGENTIC_PROFILE_V2_BENCHMARK_INVALID/);
+    assert.equal(capture.stdout(), "");
+  });
+
+  it("reports corpus readiness with the native deterministic exit code", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "testforge-corpus-cli-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "public"), { recursive: true });
+    await mkdir(path.join(root, "private"), { recursive: true });
+    const capture = captureIo(process.cwd());
+
+    const code = await integration.runCli(["corpus-status", root, "--json"], capture.io);
+
+    assert.equal(code, 3, capture.stderr());
+    assert.equal(JSON.parse(capture.stdout()).status, "NOT_READY");
+  });
+
   it("uses a stable usage exit code for unknown commands", async () => {
     const capture = captureIo(process.cwd());
 
     const code = await integration.runCli(["unknown"], capture.io);
 
     assert.equal(code, 64);
-    assert.match(capture.stderr(), /Usage: testforge/);
+    assert.match(capture.stderr(), /Usage: assertledger/);
+    assert.match(capture.stderr(), /legacy alias: testforge/);
     assert.equal(capture.stdout(), "");
   });
 
@@ -431,7 +759,24 @@ describe("JSON CLI", () => {
         capture.io,
       );
 
-      assert.equal(exitCode, 4);
+      assert.equal(exitCode, 4, capture.stderr());
+      assert.equal(capture.stderr(), `${code}\n`);
+      assert.equal(capture.stdout(), "");
+    });
+
+    it(`rejects ${code} before probing an unavailable runtime`, async () => {
+      const root = await fixtureRepository();
+      const capture = captureIo(root);
+      const request = verificationRequest(root, { budgetOverrides });
+      request.adapter.executable = path.join(root, "unavailable-node-runtime");
+      capture.io.readStdin = async () => JSON.stringify(request);
+
+      const exitCode = await integration.runCli(
+        ["verify", "-", "--allow-unsafe-execution", "--json"],
+        capture.io,
+      );
+
+      assert.equal(exitCode, 4, capture.stderr());
       assert.equal(capture.stderr(), `${code}\n`);
       assert.equal(capture.stdout(), "");
     });
@@ -477,10 +822,23 @@ describe("MCP facade", () => {
     const server = integration.createTestForgeServer();
 
     assert.ok(server);
-    for (const tool of ["testforge_analyze", "testforge_replay", "testforge_schema"]) {
+    for (const tool of [
+      "testforge_analyze",
+      "testforge_benchmark",
+      "testforge_benchmark_replay",
+      "testforge_corpus_allocate",
+      "testforge_corpus_allocation_replay",
+      "testforge_profile",
+      "testforge_profile_replay",
+      "testforge_profile_v2",
+      "testforge_profile_v2_replay",
+      "testforge_replay",
+      "testforge_schema",
+    ]) {
       assert.ok(server.toolInputSchemaJson(tool), `missing MCP tool ${tool}`);
     }
     assert.equal(server.toolInputSchemaJson("testforge_verify"), undefined);
+    assert.equal(server.toolInputSchemaJson("testforge_benchmark_acquire"), undefined);
   });
 
   it("registers verify only when the operator grants unsafe execution", () => {
@@ -498,11 +856,25 @@ describe("MCP facade", () => {
     assert.ok(requestDefinition.properties.isolation);
   });
 
-  it("publishes strict output schemas and all four public schema names", async () => {
+  it("publishes strict output schemas and all twenty-eight facade schema names", async () => {
     const { client } = await connectServer({ allowUnsafeExecution: true });
     const server = integration.createTestForgeServer({ allowUnsafeExecution: true });
     const listed = await client.listTools();
-    for (const tool of ["testforge_analyze", "testforge_verify", "testforge_replay"]) {
+    for (const tool of [
+      "testforge_analyze",
+      "testforge_verify",
+      "testforge_replay",
+      "testforge_benchmark",
+      "testforge_benchmark_replay",
+      "testforge_benchmark_acquire",
+      "testforge_benchmark_acquire_replay",
+      "testforge_corpus_allocate",
+      "testforge_corpus_allocation_replay",
+      "testforge_profile",
+      "testforge_profile_replay",
+      "testforge_profile_v2",
+      "testforge_profile_v2_replay",
+    ]) {
       assert.ok(
         listed.tools.find((candidate) => candidate.name === tool)?.outputSchema,
         `missing output schema for ${tool}`,
@@ -515,11 +887,68 @@ describe("MCP facade", () => {
 
     const schemaInput = server.toolInputSchemaJson("testforge_schema");
     assert.deepEqual(schemaInput.properties.name.enum, [
+      "agentic-corpus-allocation-request",
+      "agentic-corpus-allocation",
+      "agentic-corpus-allocation-replay-result",
+      "agentic-corpus-allocation-commitment",
+      "agentic-corpus-allocation-reveal",
+      "agentic-corpus-allocation-commitment-replay-result",
+      "agentic-corpus-experiment-plan",
+      "agentic-corpus-experiment-plan-replay-result",
+      "agentic-corpus-experiment-request",
+      "agentic-corpus-experiment-artifact",
+      "agentic-corpus-experiment-replay-request",
+      "agentic-corpus-experiment-replay-result",
+      "agentic-benchmark-request",
+      "agentic-benchmark-artifact",
+      "agentic-benchmark-replay-result",
+      "agentic-benchmark-acquisition-request",
+      "agentic-benchmark-acquisition-result",
+      "agentic-benchmark-acquisition-replay-result",
+      "agentic-profile-request",
+      "agentic-profile-report",
+      "agentic-profile-replay-result",
+      "agentic-profile-request-v2",
+      "agentic-profile-report-v2",
+      "agentic-profile-replay-result-v2",
       "verification-request",
       "repository-analysis",
       "evidence-manifest",
       "replay-result",
     ]);
+    const profiled = await client.callTool({
+      name: "testforge_profile",
+      arguments: { request: agenticProfileRequest() },
+    });
+    assert.equal(profiled.isError, undefined);
+    const replayed = await client.callTool({
+      name: "testforge_profile_replay",
+      arguments: { report: profiled.structuredContent },
+    });
+    assert.equal(replayed.isError, undefined);
+    assert.equal((replayed.structuredContent as Record<string, unknown>).valid, true);
+    const benchmarked = await client.callTool({
+      name: "testforge_benchmark",
+      arguments: { request: agenticBenchmarkRequest() },
+    });
+    assert.equal(benchmarked.isError, undefined);
+    const benchmarkReplayed = await client.callTool({
+      name: "testforge_benchmark_replay",
+      arguments: { artifact: benchmarked.structuredContent },
+    });
+    assert.equal(benchmarkReplayed.isError, undefined);
+    assert.equal((benchmarkReplayed.structuredContent as Record<string, unknown>).valid, true);
+    const profiledV2 = await client.callTool({
+      name: "testforge_profile_v2",
+      arguments: { request: agenticProfileV2Request() },
+    });
+    assert.equal(profiledV2.isError, undefined);
+    const replayedV2 = await client.callTool({
+      name: "testforge_profile_v2_replay",
+      arguments: { report: profiledV2.structuredContent },
+    });
+    assert.equal(replayedV2.isError, undefined);
+    assert.equal((replayedV2.structuredContent as Record<string, unknown>).valid, true);
     await client.close();
   });
 

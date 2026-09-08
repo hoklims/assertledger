@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "policyId": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "keys": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "sources": {
+      "$ref": "#/$defs/__schema6"
+    },
+    "policyDigest": {
+      "$ref": "#/$defs/__schema4"
+    }
+  },
+  "required": ["schemaVersion", "policyId", "keys", "sources", "policyDigest"],
+  "additionalProperties": false,
+  "title": "TestForge agentic corpus trust policy",
+  "description": "An externally pinned Ed25519 trust root for agentic corpus provenance.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema2": {
+      "minItems": 2,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema3"
+      }
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "keyId": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "subjectId": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "roles": {
+          "minItems": 1,
+          "maxItems": 2,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema5"
+          }
+        },
+        "publicKey": {
+          "type": "object",
+          "properties": {
+            "algorithm": {
+              "type": "string",
+              "const": "Ed25519"
+            },
+            "format": {
+              "type": "string",
+              "const": "SPKI_DER_BASE64URL"
+            },
+            "data": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          "required": ["algorithm", "format", "data"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["keyId", "subjectId", "roles", "publicKey"],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema5": {
+      "type": "string",
+      "enum": ["AUTHOR", "REVIEWER"]
+    },
+    "__schema6": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema7"
+      }
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "sourceIdentityDigest": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "authorizedAuthorSubjectIds": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema1"
+          }
+        },
+        "authorizedReviewerSubjectIds": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema1"
+          }
+        }
+      },
+      "required": [
+        "sourceId",
+        "sourceIdentityDigest",
+        "authorizedAuthorSubjectIds",
+        "authorizedReviewerSubjectIds"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-corpus-trust-policy.v1.json"
+}

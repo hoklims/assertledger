@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "schemaValid": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "sourceManifestValid": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "policyDigestValid": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "reportDigestValid": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "semanticsValid": {
+      "$ref": "#/$defs/__schema5"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "sourceManifestValid",
+    "policyDigestValid",
+    "reportDigestValid",
+    "semanticsValid"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge Agentic Test Profile replay result",
+  "description": "Independent schema, source, digest, and semantic replay verdicts for a profile.",
+  "$defs": {
+    "__schema0": {
+      "type": "boolean"
+    },
+    "__schema1": {
+      "type": "boolean"
+    },
+    "__schema2": {
+      "type": "boolean"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "boolean"
+    },
+    "__schema5": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-profile-replay-result.v1.json"
+}

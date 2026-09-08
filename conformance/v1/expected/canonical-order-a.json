@@ -1,0 +1,4 @@
+{
+  "canonical": "{\"a\":\"value\",\"nested\":{\"a\":[3,2,1],\"b\":true},\"z\":1}",
+  "digest": "sha256:7cb0873c19c99b87bf7d6679928296bf68fdf53e20ca63c50bb8969f13c1056d"
+}

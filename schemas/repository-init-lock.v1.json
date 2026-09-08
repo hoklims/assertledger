@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "configDigest": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "detector": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "evidence": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "detections": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "lockDigest": {
+      "$ref": "#/$defs/__schema1"
+    }
+  },
+  "required": ["schemaVersion", "configDigest", "detector", "evidence", "detections", "lockDigest"],
+  "additionalProperties": false,
+  "title": "AssertLedger repository init lock",
+  "description": "Deterministic evidence lock binding an initialized repository configuration.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema2": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "assertledger-init"
+        },
+        "version": {
+          "type": "string",
+          "const": "1.0.0"
+        }
+      },
+      "required": ["name", "version"],
+      "additionalProperties": false
+    },
+    "__schema3": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "digest": {
+            "$ref": "#/$defs/__schema1"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["PACKAGE_MANIFEST", "LOCKFILE", "TEST_SOURCE", "CI_CONFIG", "ADAPTER_CONFIG"]
+          }
+        },
+        "required": ["path", "digest", "kind"],
+        "additionalProperties": false
+      }
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "packageManager": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["pnpm", "npm", "yarn", "bun", "uv", "poetry", "pip"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "framework": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["node:test", "vitest", "jest", "bun:test", "pytest"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "testCommand": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "executable": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "arguments": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema5"
+                  }
+                }
+              },
+              "required": ["executable", "arguments"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ciProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["github-actions", "gitlab-ci", "azure-pipelines", "circleci"]
+          }
+        },
+        "adapterRecommendation": {
+          "type": "string",
+          "enum": ["node-test", "operator-supplied", "unavailable"]
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          }
+        }
+      },
+      "required": [
+        "packageManager",
+        "framework",
+        "testCommand",
+        "ciProviders",
+        "adapterRecommendation",
+        "reasonCodes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "string",
+      "maxLength": 1024
+    }
+  },
+  "$id": "https://testforge.dev/schemas/repository-init-lock.v1.json"
+}

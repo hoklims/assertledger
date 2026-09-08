@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "type": "boolean"
+    },
+    "schemaValid": {
+      "type": "boolean"
+    },
+    "artifactDigestValid": {
+      "type": "boolean"
+    },
+    "externalTrustAnchorValid": {
+      "type": "boolean"
+    },
+    "externalCommitmentAnchorValid": {
+      "type": "boolean"
+    },
+    "commitmentRevealValid": {
+      "type": "boolean"
+    },
+    "allocationReplayValid": {
+      "type": "boolean"
+    },
+    "allocationBindingValid": {
+      "type": "boolean"
+    },
+    "externalPlanAnchorValid": {
+      "type": "boolean"
+    },
+    "planDigestValid": {
+      "type": "boolean"
+    },
+    "planSemanticsValid": {
+      "type": "boolean"
+    },
+    "subjectDigestsValid": {
+      "type": "boolean"
+    },
+    "provenanceReplayValid": {
+      "type": "boolean"
+    },
+    "scheduleValid": {
+      "type": "boolean"
+    },
+    "budgetValid": {
+      "type": "boolean"
+    },
+    "evidenceSetDigestValid": {
+      "type": "boolean"
+    },
+    "receiptBindingsValid": {
+      "type": "boolean"
+    },
+    "candidateEvidenceValid": {
+      "type": "boolean"
+    },
+    "outputBytesResolved": {
+      "type": "boolean"
+    },
+    "structuredResultsValid": {
+      "type": "boolean"
+    },
+    "payloadSupported": {
+      "type": "boolean"
+    },
+    "payloadDigestValid": {
+      "type": "boolean"
+    },
+    "observationSemanticsValid": {
+      "type": "boolean"
+    },
+    "resultSemanticsValid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "artifactDigestValid",
+    "externalTrustAnchorValid",
+    "externalCommitmentAnchorValid",
+    "commitmentRevealValid",
+    "allocationReplayValid",
+    "allocationBindingValid",
+    "externalPlanAnchorValid",
+    "planDigestValid",
+    "planSemanticsValid",
+    "subjectDigestsValid",
+    "provenanceReplayValid",
+    "scheduleValid",
+    "budgetValid",
+    "evidenceSetDigestValid",
+    "receiptBindingsValid",
+    "candidateEvidenceValid",
+    "outputBytesResolved",
+    "structuredResultsValid",
+    "payloadSupported",
+    "payloadDigestValid",
+    "observationSemanticsValid",
+    "resultSemanticsValid"
+  ],
+  "additionalProperties": false,
+  "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-replay-result.v1.json"
+}

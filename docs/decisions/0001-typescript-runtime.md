@@ -4,7 +4,7 @@ Status: accepted for v0.1
 
 ## Decision
 
-Implement the first complete TestForge release in strict TypeScript on maintained Node.js releases.
+Implement the first complete AssertLedger release in strict TypeScript on maintained Node.js releases.
 
 ## Rationale
 

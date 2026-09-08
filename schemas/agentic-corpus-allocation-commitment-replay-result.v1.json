@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "type": "boolean"
+    },
+    "schemaValid": {
+      "type": "boolean"
+    },
+    "externalTrustAnchorValid": {
+      "type": "boolean"
+    },
+    "externalCommitmentAnchorValid": {
+      "type": "boolean"
+    },
+    "commitmentDigestValid": {
+      "type": "boolean"
+    },
+    "caseSetValid": {
+      "type": "boolean"
+    },
+    "commitmentSignaturesValid": {
+      "type": "boolean"
+    },
+    "principalsDistinct": {
+      "type": "boolean"
+    },
+    "revealValid": {
+      "type": "boolean"
+    },
+    "finalSeedDigestValid": {
+      "type": "boolean"
+    },
+    "allocationReplayValid": {
+      "type": "boolean"
+    },
+    "allocationBindingValid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "externalTrustAnchorValid",
+    "externalCommitmentAnchorValid",
+    "commitmentDigestValid",
+    "caseSetValid",
+    "commitmentSignaturesValid",
+    "principalsDistinct",
+    "revealValid",
+    "finalSeedDigestValid",
+    "allocationReplayValid",
+    "allocationBindingValid"
+  ],
+  "additionalProperties": false,
+  "$id": "https://testforge.dev/schemas/agentic-corpus-allocation-commitment-replay-result.v1.json"
+}

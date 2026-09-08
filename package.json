@@ -1,7 +1,7 @@
 {
-  "name": "testforge",
+  "name": "assertledger",
   "version": "0.1.0",
-  "description": "Deterministic evidence harness for evaluating generated tests across declared code worlds.",
+  "description": "AssertLedger (formerly TestForge): deterministic evidence harness for evaluating generated tests across declared code worlds.",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -9,8 +9,17 @@
     "node": ">=22.15.0"
   },
   "packageManager": "pnpm@11.1.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hoklims/assertledger.git"
+  },
+  "homepage": "https://github.com/hoklims/assertledger#readme",
+  "bugs": {
+    "url": "https://github.com/hoklims/assertledger/issues"
+  },
   "bin": {
-    "testforge": "./dist/cli.js"
+    "assertledger": "dist/cli.js",
+    "testforge": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,24 +37,31 @@
     "dist",
     "docs",
     "examples",
+    "benchmarks",
+    "conformance",
     "schemas",
     "integrations",
     "README.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "LICENSE"
+    "LICENSE",
+    "!benchmarks/agentic-profile/private",
+    "!benchmarks/**/RESULT-*.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run check:schemas && pnpm run typecheck && pnpm run test && pnpm run build",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run check:schemas && pnpm run check:conformance && pnpm run typecheck && pnpm run test && pnpm run build",
+    "smoke:package": "pnpm run build && pnpm run check:schemas && pnpm run check:conformance && tsx scripts/smoke-package.ts",
+    "check:conformance": "tsx scripts/check-conformance-v1.ts",
+    "witness:conformance": "tsx scripts/run-conformance-negative-witnesses.ts",
     "check:schemas": "tsx scripts/check-schemas.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "generate:schemas": "tsx scripts/generate-schemas.ts",
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "test:coverage": "tsx --test --experimental-test-coverage tests/*.test.ts",
+    "test": "tsx --test --test-concurrency=2 tests/*.test.ts",
+    "test:coverage": "tsx --test --test-concurrency=2 --experimental-test-coverage tests/*.test.ts",
     "prepack": "pnpm run build && pnpm run check:schemas"
   },
   "dependencies": {
@@ -58,5 +74,12 @@
     "@types/node": "22.20.1",
     "tsx": "4.23.5",
     "typescript": "7.0.2"
-  }
+  },
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "keywords": [],
+  "author": ""
 }

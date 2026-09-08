@@ -30,7 +30,7 @@ describe("MCP 2026 stdio transport", () => {
     return { client, stderr };
   }
 
-  it("starts read-only by default and calls a TestForge tool", {
+  it("starts read-only by default and calls an AssertLedger tool", {
     timeout: 15_000,
   }, async () => {
     const { client, stderr } = await connect(["src/mcp/stdio.ts"]);
@@ -38,21 +38,50 @@ describe("MCP 2026 stdio transport", () => {
     try {
       const listed = await client.listTools();
       assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [
+        "assertledger_analyze",
+        "assertledger_benchmark",
+        "assertledger_benchmark_acquire_replay",
+        "assertledger_benchmark_replay",
+        "assertledger_corpus_allocate",
+        "assertledger_corpus_allocation_replay",
+        "assertledger_profile",
+        "assertledger_profile_replay",
+        "assertledger_profile_v2",
+        "assertledger_profile_v2_replay",
+        "assertledger_replay",
+        "assertledger_schema",
         "testforge_analyze",
+        "testforge_benchmark",
+        "testforge_benchmark_acquire_replay",
+        "testforge_benchmark_replay",
+        "testforge_corpus_allocate",
+        "testforge_corpus_allocation_replay",
+        "testforge_profile",
+        "testforge_profile_replay",
+        "testforge_profile_v2",
+        "testforge_profile_v2_replay",
         "testforge_replay",
         "testforge_schema",
       ]);
+      assert.ok(listed.tools.find((tool) => tool.name === "assertledger_analyze")?.outputSchema);
+      assert.ok(listed.tools.find((tool) => tool.name === "assertledger_replay")?.outputSchema);
       assert.ok(listed.tools.find((tool) => tool.name === "testforge_analyze")?.outputSchema);
       assert.ok(listed.tools.find((tool) => tool.name === "testforge_replay")?.outputSchema);
 
-      const result = await client.callTool({
+      const preferred = await client.callTool({
+        name: "assertledger_schema",
+        arguments: { name: "verification-request" },
+      });
+      const legacy = await client.callTool({
         name: "testforge_schema",
         arguments: { name: "verification-request" },
       });
-      assert.equal(result.isError, undefined, stderr.join(""));
-      assert.ok(result.structuredContent);
+      assert.equal(preferred.isError, undefined, stderr.join(""));
+      assert.equal(legacy.isError, undefined, stderr.join(""));
+      assert.ok(preferred.structuredContent);
+      assert.deepEqual(preferred.structuredContent, legacy.structuredContent);
       assert.equal(
-        (result.structuredContent as Record<string, unknown>).$id,
+        (preferred.structuredContent as Record<string, unknown>).$id,
         "https://testforge.dev/schemas/verification-request.v1.json",
       );
     } finally {
@@ -68,17 +97,46 @@ describe("MCP 2026 stdio transport", () => {
     try {
       const listed = await client.listTools();
       assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [
+        "assertledger_analyze",
+        "assertledger_benchmark",
+        "assertledger_benchmark_acquire",
+        "assertledger_benchmark_acquire_replay",
+        "assertledger_benchmark_replay",
+        "assertledger_corpus_allocate",
+        "assertledger_corpus_allocation_replay",
+        "assertledger_profile",
+        "assertledger_profile_replay",
+        "assertledger_profile_v2",
+        "assertledger_profile_v2_replay",
+        "assertledger_replay",
+        "assertledger_schema",
+        "assertledger_verify",
         "testforge_analyze",
+        "testforge_benchmark",
+        "testforge_benchmark_acquire",
+        "testforge_benchmark_acquire_replay",
+        "testforge_benchmark_replay",
+        "testforge_corpus_allocate",
+        "testforge_corpus_allocation_replay",
+        "testforge_profile",
+        "testforge_profile_replay",
+        "testforge_profile_v2",
+        "testforge_profile_v2_replay",
         "testforge_replay",
         "testforge_schema",
         "testforge_verify",
       ]);
-      const verify = listed.tools.find((tool) => tool.name === "testforge_verify");
-      assert.ok(verify);
-      assert.ok(verify.outputSchema);
-      assert.deepEqual(verify.inputSchema.required, ["request"]);
-      assert.equal(verify.inputSchema.properties?.allowUnsafeExecution, undefined);
-      assert.deepEqual(verify.annotations, {
+      const preferredVerify = listed.tools.find((tool) => tool.name === "assertledger_verify");
+      const legacyVerify = listed.tools.find((tool) => tool.name === "testforge_verify");
+      assert.ok(preferredVerify);
+      assert.ok(legacyVerify);
+      assert.ok(preferredVerify.outputSchema);
+      assert.deepEqual(preferredVerify.inputSchema, legacyVerify.inputSchema);
+      assert.deepEqual(preferredVerify.outputSchema, legacyVerify.outputSchema);
+      assert.deepEqual(preferredVerify.annotations, legacyVerify.annotations);
+      assert.deepEqual(preferredVerify.inputSchema.required, ["request"]);
+      assert.equal(preferredVerify.inputSchema.properties?.allowUnsafeExecution, undefined);
+      assert.deepEqual(preferredVerify.annotations, {
         destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,
@@ -96,6 +154,7 @@ describe("MCP 2026 stdio transport", () => {
 
     try {
       const listed = await client.listTools();
+      assert.ok(listed.tools.some((tool) => tool.name === "assertledger_verify"));
       assert.ok(listed.tools.some((tool) => tool.name === "testforge_verify"));
     } finally {
       await client.close();

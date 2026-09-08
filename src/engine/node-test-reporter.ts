@@ -16,18 +16,6 @@ function normalizeFile(value) {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-function errorChainHas(error, predicate) {
-  const seen = new Set();
-  let current = error;
-  for (let depth = 0; depth < 16 && current && typeof current === "object"; depth += 1) {
-    if (seen.has(current)) break;
-    seen.add(current);
-    if (predicate(current)) return true;
-    current = current.cause;
-  }
-  return false;
-}
-
 const candidateFiles = new Set(
   JSON.parse(process.env.TESTFORGE_NODE_CANDIDATE_FILES ?? "[]")
     .map(normalizeFile)
@@ -61,11 +49,11 @@ export default async function* testforgeReporter(source) {
     }
 
     candidateFailureCount += 1;
-    const error = data?.details?.error;
-    const assertion = errorChainHas(error, (item) => item.code === "ERR_ASSERTION");
-    const syntax = errorChainHas(error, (item) => item.name === "SyntaxError");
+    const wrapper = data?.details?.error;
+    const immediateCause = wrapper?.cause;
+    const assertion =
+      wrapper?.failureType === "testCodeFailure" && immediateCause?.code === "ERR_ASSERTION";
     if (!assertion) candidateFailuresAllAssertions = false;
-    if (syntax) candidateSyntaxFailureCount += 1;
   }
 
   yield JSON.stringify({

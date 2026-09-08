@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "schemaValid": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "sourceManifestValid": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "sourceBindingValid": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "policyDigestValid": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "protocolDigestValid": {
+      "$ref": "#/$defs/__schema5"
+    },
+    "fingerprintDigestValid": {
+      "$ref": "#/$defs/__schema6"
+    },
+    "comparisonScopeDigestValid": {
+      "$ref": "#/$defs/__schema7"
+    },
+    "artifactDigestValid": {
+      "$ref": "#/$defs/__schema8"
+    },
+    "summarySemanticsValid": {
+      "$ref": "#/$defs/__schema9"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "sourceManifestValid",
+    "sourceBindingValid",
+    "policyDigestValid",
+    "protocolDigestValid",
+    "fingerprintDigestValid",
+    "comparisonScopeDigestValid",
+    "artifactDigestValid",
+    "summarySemanticsValid"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge Agentic Benchmark replay result",
+  "description": "Independent integrity and semantic replay rails for a benchmark artifact.",
+  "$defs": {
+    "__schema0": {
+      "type": "boolean"
+    },
+    "__schema1": {
+      "type": "boolean"
+    },
+    "__schema2": {
+      "type": "boolean"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "boolean"
+    },
+    "__schema5": {
+      "type": "boolean"
+    },
+    "__schema6": {
+      "type": "boolean"
+    },
+    "__schema7": {
+      "type": "boolean"
+    },
+    "__schema8": {
+      "type": "boolean"
+    },
+    "__schema9": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-benchmark-replay-result.v1.json"
+}

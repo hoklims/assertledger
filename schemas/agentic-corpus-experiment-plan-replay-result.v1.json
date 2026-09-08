@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "type": "boolean"
+    },
+    "schemaValid": {
+      "type": "boolean"
+    },
+    "externalPlanAnchorValid": {
+      "type": "boolean"
+    },
+    "planDigestValid": {
+      "type": "boolean"
+    },
+    "allocationBindingValid": {
+      "type": "boolean"
+    },
+    "subjectSetValid": {
+      "type": "boolean"
+    },
+    "armsValid": {
+      "type": "boolean"
+    },
+    "commandsValid": {
+      "type": "boolean"
+    },
+    "scheduleValid": {
+      "type": "boolean"
+    },
+    "budgetValid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "externalPlanAnchorValid",
+    "planDigestValid",
+    "allocationBindingValid",
+    "subjectSetValid",
+    "armsValid",
+    "commandsValid",
+    "scheduleValid",
+    "budgetValid"
+  ],
+  "additionalProperties": false,
+  "$id": "https://testforge.dev/schemas/agentic-corpus-experiment-plan-replay-result.v1.json"
+}

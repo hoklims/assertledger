@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "schemaValid": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "sourceBenchmarkValid": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "sourceBindingValid": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "policyDigestValid": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "reportDigestValid": {
+      "$ref": "#/$defs/__schema5"
+    },
+    "semanticsValid": {
+      "$ref": "#/$defs/__schema6"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "sourceBenchmarkValid",
+    "sourceBindingValid",
+    "policyDigestValid",
+    "reportDigestValid",
+    "semanticsValid"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge Agentic Test Profile v2 replay result",
+  "description": "Independent benchmark, binding, digest, and semantic replay rails for Profile v2.",
+  "$defs": {
+    "__schema0": {
+      "type": "boolean"
+    },
+    "__schema1": {
+      "type": "boolean"
+    },
+    "__schema2": {
+      "type": "boolean"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "boolean"
+    },
+    "__schema5": {
+      "type": "boolean"
+    },
+    "__schema6": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-profile-replay-result.v2.json"
+}

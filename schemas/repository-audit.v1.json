@@ -1,0 +1,811 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "root": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "repositoryDigest": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "fileCount": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "repositoryBytes": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "reasonCodes": {
+      "$ref": "#/$defs/__schema5"
+    },
+    "git": {
+      "$ref": "#/$defs/__schema6"
+    },
+    "files": {
+      "$ref": "#/$defs/__schema7"
+    },
+    "modules": {
+      "$ref": "#/$defs/__schema9"
+    },
+    "cost": {
+      "$ref": "#/$defs/__schema10"
+    },
+    "verificationRequest": {
+      "$ref": "#/$defs/__schema11"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "root",
+    "repositoryDigest",
+    "fileCount",
+    "repositoryBytes",
+    "reasonCodes",
+    "git",
+    "files",
+    "modules",
+    "cost",
+    "verificationRequest"
+  ],
+  "additionalProperties": false,
+  "title": "AssertLedger repository audit",
+  "description": "A deterministic static repository audit and campaign cost projection.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema2": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema3": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema4": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema5": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        },
+        "headTimestamp": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "windowDays": {
+          "type": "number",
+          "const": 90
+        },
+        "maximumCommits": {
+          "type": "number",
+          "const": 1000
+        },
+        "shallow": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "truncated": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "supported",
+        "headTimestamp",
+        "windowDays",
+        "maximumCommits",
+        "shallow",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "decisionPoints": {
+            "$ref": "#/$defs/__schema8"
+          },
+          "declaredExports": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "noObservedTestReference": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "associatedTests": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          "sourceChangedAfterAssociatedTest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commitsInWindow": {
+            "$ref": "#/$defs/__schema8"
+          },
+          "fixCommitsInWindow": {
+            "$ref": "#/$defs/__schema8"
+          },
+          "weakAssertions": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "TRUTHINESS_ONLY",
+                        "CONSTANT_BOOLEAN_EQUALITY",
+                        "DEFINEDNESS_ONLY",
+                        "NON_THROW_ONLY",
+                        "TYPE_ONLY"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["category", "count"],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "language",
+          "supported",
+          "bytes",
+          "decisionPoints",
+          "declaredExports",
+          "noObservedTestReference",
+          "associatedTests",
+          "sourceChangedAfterAssociatedTest",
+          "commitsInWindow",
+          "fixCommitsInWindow",
+          "weakAssertions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema8": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema9": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pathPrefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "files": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "factualTuple": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            ]
+          }
+        },
+        "required": ["pathPrefix", "rank", "files", "factualTuple"],
+        "additionalProperties": false
+      }
+    },
+    "__schema10": {
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "executions": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "controlExecutions": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "candidateExecutions": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "overlayBytes": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "materializationBytes": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "timeoutLimitMs": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "capturedStreamLimitBytes": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        }
+      },
+      "required": [
+        "candidates",
+        "worlds",
+        "attempts",
+        "executions",
+        "controlExecutions",
+        "candidateExecutions",
+        "overlayBytes",
+        "materializationBytes",
+        "timeoutLimitMs",
+        "capturedStreamLimitBytes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema11": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/https://testforge.dev/schemas/verification-request.v1.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "https://testforge.dev/schemas/verification-request.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "repository": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "isolation": {
+          "$ref": "#/$defs/__schema19"
+        },
+        "candidateRoots": {
+          "$ref": "#/$defs/__schema21"
+        },
+        "budgets": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema24"
+        },
+        "worlds": {
+          "$ref": "#/$defs/__schema26"
+        },
+        "candidates": {
+          "$ref": "#/$defs/__schema30"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repository",
+        "adapter",
+        "isolation",
+        "candidateRoots",
+        "budgets",
+        "policy",
+        "worlds",
+        "candidates"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge verification request",
+      "description": "A versioned campaign describing operator-owned worlds, candidate test overlays, budgets, and evidence policy."
+    },
+    "__schema12": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema13": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exclude": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema14"
+          }
+        }
+      },
+      "required": ["root", "exclude"],
+      "additionalProperties": false
+    },
+    "__schema14": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema15": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "node-test"
+            },
+            "executable": {
+              "type": "string",
+              "minLength": 1
+            },
+            "baseTestFiles": {
+              "minItems": 1,
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema16"
+              }
+            },
+            "extraArguments": {
+              "maxItems": 0,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema17"
+              }
+            }
+          },
+          "required": ["kind", "executable", "baseTestFiles"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "testforge-command"
+            },
+            "executable": {
+              "type": "string",
+              "minLength": 1
+            },
+            "arguments": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema18"
+              }
+            },
+            "protocolVersion": {
+              "type": "string",
+              "const": "1.0.0"
+            }
+          },
+          "required": ["kind", "executable", "arguments", "protocolVersion"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema16": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema17": {
+      "type": "string"
+    },
+    "__schema18": {
+      "type": "string"
+    },
+    "__schema19": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "trusted-local"
+        },
+        "acknowledgedUnsafeExecution": {
+          "type": "boolean"
+        },
+        "environmentAllowlist": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema20"
+          }
+        }
+      },
+      "required": ["kind", "acknowledgedUnsafeExecution", "environmentAllowlist"],
+      "additionalProperties": false
+    },
+    "__schema20": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!(?:[Nn][Oo][Dd][Ee]_[Oo][Pp][Tt][Ii][Oo][Nn][Ss]$|[Tt][Ee][Ss][Tt][Ff][Oo][Rr][Gg][Ee]_|[Nn][Oo][Dd][Ee]_[Tt][Ee][Ss][Tt]_)).+$"
+    },
+    "__schema21": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema22"
+      }
+    },
+    "__schema22": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema23": {
+      "type": "object",
+      "properties": {
+        "maximumCandidates": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maximumWorlds": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 1000
+        },
+        "maximumExecutions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maximumRepositoryFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "maximumRepositoryBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "maximumWorldOverlayBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "maximumCandidateBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000000
+        },
+        "maximumTotalCandidateBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000000000
+        },
+        "timeoutMsPerExecution": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 86400000
+        },
+        "maximumOutputBytes": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 100000000
+        }
+      },
+      "required": [
+        "maximumCandidates",
+        "maximumWorlds",
+        "maximumExecutions",
+        "maximumRepositoryFiles",
+        "maximumRepositoryBytes",
+        "maximumWorldOverlayBytes",
+        "maximumCandidateBytes",
+        "maximumTotalCandidateBytes",
+        "timeoutMsPerExecution",
+        "maximumOutputBytes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema24": {
+      "type": "object",
+      "properties": {
+        "policyVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "requiredAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "minimumTargetWeightPermille": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maximumSelectedCandidates": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "acceptedTargetOutcomes": {
+          "minItems": 1,
+          "maxItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema25"
+          }
+        }
+      },
+      "required": [
+        "policyVersion",
+        "requiredAttempts",
+        "minimumTargetWeightPermille",
+        "maximumSelectedCandidates",
+        "acceptedTargetOutcomes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema25": {
+      "type": "string",
+      "const": "ASSERTION_FAILURE"
+    },
+    "__schema26": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema27"
+      }
+    },
+    "__schema27": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema28"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["REFERENCE", "TARGET", "NEUTRAL"]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "provenance": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "files": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema29"
+          }
+        }
+      },
+      "required": ["id", "kind", "required", "weight", "provenance", "files"],
+      "additionalProperties": false
+    },
+    "__schema28": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema29": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": ["path", "content"],
+      "additionalProperties": false
+    },
+    "__schema30": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema31"
+      }
+    },
+    "__schema31": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema28"
+        },
+        "files": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema29"
+          }
+        }
+      },
+      "required": ["id", "files"],
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://testforge.dev/schemas/repository-audit.v1.json"
+}

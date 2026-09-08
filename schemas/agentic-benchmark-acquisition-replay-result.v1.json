@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "schemaValid": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "sourceManifestValid": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "sourceBindingValid": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "artifactReplayValid": {
+      "$ref": "#/$defs/__schema4"
+    },
+    "contextBindingValid": {
+      "$ref": "#/$defs/__schema5"
+    },
+    "resultDigestValid": {
+      "$ref": "#/$defs/__schema6"
+    },
+    "statusSemanticsValid": {
+      "$ref": "#/$defs/__schema7"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "sourceManifestValid",
+    "sourceBindingValid",
+    "artifactReplayValid",
+    "contextBindingValid",
+    "resultDigestValid",
+    "statusSemanticsValid"
+  ],
+  "additionalProperties": false,
+  "title": "TestForge Agentic Benchmark acquisition replay result",
+  "description": "Independent source, artifact, context, digest, and status replay rails for benchmark acquisition.",
+  "$defs": {
+    "__schema0": {
+      "type": "boolean"
+    },
+    "__schema1": {
+      "type": "boolean"
+    },
+    "__schema2": {
+      "type": "boolean"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "boolean"
+    },
+    "__schema5": {
+      "type": "boolean"
+    },
+    "__schema6": {
+      "type": "boolean"
+    },
+    "__schema7": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/agentic-benchmark-acquisition-replay-result.v1.json"
+}

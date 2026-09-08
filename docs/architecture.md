@@ -1,6 +1,6 @@
 # Architecture
 
-TestForge separates proposal, integration, orchestration, and decision authority. The separation
+AssertLedger separates proposal, integration, orchestration, and decision authority. The separation
 keeps model-specific behavior out of the evidence policy and process I/O out of the deterministic
 core.
 
@@ -10,7 +10,7 @@ core.
 | --- | --- | --- |
 | Agent or harness | Analyze context, propose candidate test files, submit requests | Decide that its own tests are valid |
 | Integration facade | Translate Skill, MCP, JSON CLI, or SDK calls into shared use cases | Reimplement gates or selection |
-| TestForge orchestrator | Snapshot repositories, enforce budgets, create workspaces, run adapters, normalize observations | Grant target credit outside the core |
+| AssertLedger orchestrator | Snapshot repositories, enforce budgets, create workspaces, run adapters, normalize observations | Grant target credit outside the core |
 | Deterministic core | Canonicalize evidence, evaluate gates, select candidates, seal manifests | Read files, spawn processes, use the network, clock, randomness, or a model |
 
 Dependencies point downward:
@@ -64,6 +64,10 @@ The engine copies the source repository once into a campaign snapshot. Every exe
 fresh copy of that snapshot. World overlays apply first; candidate overlays apply second. Candidate
 files must remain under a configured `candidateRoots` path.
 
+After request parsing and repository-root resolution, the engine validates source file and byte
+budgets before any runtime probe or preflight. It validates the copied snapshot again before
+campaign execution. See [validation error precedence](migration-repository-validation-order.md).
+
 The request separates budget scopes:
 
 - campaign-wide: `maximumCandidates`, `maximumWorlds`, `maximumExecutions`,
@@ -88,13 +92,13 @@ The engine runs every world without a candidate. All controls must complete, rem
 `PASS`, discover no candidate tests, and claim no candidate attribution. Invalid controls make the
 campaign `INCONCLUSIVE`; a candidate cannot receive credit for a world that was already broken.
 
-TestForge does not generate mutants in v0.1. Mutant generators may produce operator-reviewed target
+AssertLedger does not generate mutants in v0.1. Mutant generators may produce operator-reviewed target
 worlds, but they never gain decision authority.
 
 ## Determinism boundary
 
 Process execution is not deterministic by construction. Scheduling, timing, caches, filesystem
-behavior, dependencies, and the host can change observed runs. TestForge guarantees a narrower
+behavior, dependencies, and the host can change observed runs. AssertLedger guarantees a narrower
 invariant:
 
 ```text
@@ -124,6 +128,17 @@ The repository digest covers regular files visited by the analyzer. The analyzer
 `.testforge`, `node_modules`, and operator-excluded path segments. It rejects any encountered
 symbolic link instead of silently excluding it. Candidate contents and world overlays have separate
 digests. Preserve the snapshot and resolved dependency identities for stronger provenance.
+
+`detectedTestFrameworks` remains a sorted string array in repository-analysis v1 so this correction
+does not change the schema or existing wire consumers. Detection is deliberately conservative:
+JavaScript frameworks require a dependency declaration or dedicated config file, pytest requires a
+Python dependency/config declaration, and `node:test` requires an import in a file below a recognized
+test directory or in a colocated `*.test.*`/`*.spec.*` file. A lightweight lexer ignores comments,
+quoted examples, and template literals; config filenames must use a supported JavaScript,
+TypeScript, or JSON extension. These rules favor precision over recall, so an unrecognized manifest
+layout or naming convention can yield a false negative. The field does not expose per-framework
+provenance in v1; when evidence is absent, an empty list is more truthful than an inference. A future
+provenance-bearing shape requires an additive schema version.
 
 The decision digest covers decision-relevant evidence. The artifact digest covers the emitted
 manifest, including operational fields and disclosure metadata. Both are integrity checks, not

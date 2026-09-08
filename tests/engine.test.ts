@@ -70,6 +70,16 @@ async function createFixtureRepository(): Promise<string> {
   return root;
 }
 
+async function createAnalysisRepository(files: Record<string, string>): Promise<string> {
+  const root = await temporaryDirectory("assertledger-analysis-");
+  for (const [relativePath, content] of Object.entries(files)) {
+    const destination = path.join(root, ...relativePath.split("/"));
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, content);
+  }
+  return root;
+}
+
 function verificationRequest(root: string) {
   return {
     schemaVersion: "1.0.0",
@@ -178,6 +188,144 @@ function verificationRequest(root: string) {
   };
 }
 
+describe("runtime fact normalization", () => {
+  it("exposes an official identity and capability declaration for the node:test profile", async () => {
+    const { NODE_TEST_ADAPTER_PROFILE } = await import(
+      "../src/engine/adapters/node-test-profile.js"
+    );
+
+    assert.equal(NODE_TEST_ADAPTER_PROFILE.profileId, "node-test");
+    assert.equal(NODE_TEST_ADAPTER_PROFILE.official, true);
+    assert.equal(typeof NODE_TEST_ADAPTER_PROFILE.profileVersion, "string");
+    assert.equal(NODE_TEST_ADAPTER_PROFILE.capabilities.detectsCompileFailure, false);
+    assert.equal(NODE_TEST_ADAPTER_PROFILE.capabilities.attributesPerAssertionFailure, true);
+    assert.equal(NODE_TEST_ADAPTER_PROFILE.capabilities.detectsCollectionFailure, false);
+  });
+
+  it("normalizes candidate runtime facts through a fail-closed priority ladder", async () => {
+    const { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } = await import(
+      "../src/engine/adapters/runtime-facts.js"
+    );
+
+    const base = {
+      factsVersion: RUNTIME_FACTS_VERSION,
+      reportValid: true,
+      hasCandidate: true,
+      processExitedZero: true,
+      candidateTestsDiscovered: 1,
+      nonCandidateFailureCount: 0,
+      candidateCollectionFailureCount: 0,
+      candidateCompileFailureCount: 0,
+      candidateFailureCount: 0,
+      candidateFailuresAllAssertions: true,
+    };
+    const failed = { ...base, processExitedZero: false };
+
+    // An invalid or infrastructure-failed report is never attributed, regardless of any other fact.
+    assert.deepEqual(
+      normalizeRuntimeFacts({ ...base, reportValid: false, candidateFailureCount: 1 }),
+      { outcome: "INFRA_ERROR", attributed: false },
+    );
+
+    // A control observation with zero candidate tests discovered can never be attributed, even on a
+    // clean exit.
+    assert.deepEqual(
+      normalizeRuntimeFacts({ ...base, hasCandidate: false, candidateTestsDiscovered: 0 }),
+      { outcome: "PASS", attributed: false },
+    );
+    assert.deepEqual(
+      normalizeRuntimeFacts({
+        ...base,
+        hasCandidate: false,
+        candidateTestsDiscovered: 0,
+        processExitedZero: false,
+      }),
+      { outcome: "PROCESS_CRASH", attributed: false },
+    );
+
+    // A candidate that discovers no tests of its own can never be attributed.
+    assert.deepEqual(normalizeRuntimeFacts({ ...base, candidateTestsDiscovered: 0 }), {
+      outcome: "NO_TEST_DISCOVERED",
+      attributed: false,
+    });
+    assert.deepEqual(
+      normalizeRuntimeFacts({ ...failed, candidateTestsDiscovered: 0, candidateFailureCount: 1 }),
+      { outcome: "PROCESS_CRASH", attributed: false },
+    );
+    assert.deepEqual(
+      normalizeRuntimeFacts({
+        ...failed,
+        candidateTestsDiscovered: 0,
+        candidateCollectionFailureCount: 1,
+      }),
+      { outcome: "COLLECTION_FAILURE", attributed: false },
+    );
+    assert.deepEqual(
+      normalizeRuntimeFacts({
+        ...failed,
+        candidateTestsDiscovered: 0,
+        candidateCompileFailureCount: 1,
+      }),
+      { outcome: "COMPILE_FAILURE", attributed: false },
+    );
+
+    // A pure candidate assertion failure is the only attributable, killable outcome.
+    assert.deepEqual(normalizeRuntimeFacts({ ...failed, candidateFailureCount: 1 }), {
+      outcome: "ASSERTION_FAILURE",
+      attributed: true,
+    });
+
+    // A reporter that claims a failure while its process exits successfully is contradictory.
+    assert.deepEqual(normalizeRuntimeFacts({ ...base, candidateFailureCount: 1 }), {
+      outcome: "INFRA_ERROR",
+      attributed: false,
+    });
+
+    // Mixing a candidate assertion failure with any other kind of failure must never be attributed
+    // or reported as a kill: collection and compilation outrank crash, which outranks assertion.
+    assert.deepEqual(
+      normalizeRuntimeFacts({
+        ...failed,
+        candidateFailureCount: 1,
+        candidateCollectionFailureCount: 1,
+      }),
+      { outcome: "COLLECTION_FAILURE", attributed: false },
+    );
+    assert.deepEqual(
+      normalizeRuntimeFacts({
+        ...failed,
+        candidateFailureCount: 1,
+        candidateCompileFailureCount: 1,
+      }),
+      { outcome: "COMPILE_FAILURE", attributed: false },
+    );
+    assert.deepEqual(
+      normalizeRuntimeFacts({ ...failed, candidateFailureCount: 1, nonCandidateFailureCount: 1 }),
+      { outcome: "PROCESS_CRASH", attributed: false },
+    );
+    assert.deepEqual(
+      normalizeRuntimeFacts({
+        ...failed,
+        candidateFailureCount: 1,
+        candidateFailuresAllAssertions: false,
+      }),
+      { outcome: "PROCESS_CRASH", attributed: false },
+    );
+
+    // A clean, fully-discovered candidate run is attributed PASS.
+    assert.deepEqual(normalizeRuntimeFacts(base), { outcome: "PASS", attributed: true });
+    assert.deepEqual(normalizeRuntimeFacts({ ...base, processExitedZero: false }), {
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    });
+
+    assert.throws(
+      () => normalizeRuntimeFacts({ ...base, factsVersion: "0.0.0" as never }),
+      TypeError,
+    );
+  });
+});
+
 describe("repository analysis", () => {
   it("returns deterministic structured context for an agent", async () => {
     const root = await createFixtureRepository();
@@ -193,6 +341,66 @@ describe("repository analysis", () => {
     assert.equal(first.capabilities.canExecuteCandidates, true);
     assert.deepEqual(first.capabilities.supportedAdapters, ["node-test", "testforge-command"]);
   });
+
+  it("does not infer test frameworks from prose and detects only node:test in this repository", async () => {
+    const proseOnly = await createAnalysisRepository({
+      "package.json": JSON.stringify({ name: "prose-only", type: "module" }),
+      "README.md": "Examples may use jest, @vitest, node:test, or pytest.\n",
+      "docs/jest.config.md": "This is documentation, not configuration.\n",
+      "docs/vitest.config.md": "This is documentation, not configuration.\n",
+      "pyproject.toml": '[project]\ndescription = "A pytest migration guide"\n',
+      "src/test-helper.js": 'import test from "node:test";\n',
+      "tests/commented.test.ts": '/*\nimport test from "node:test";\n*/\n',
+      "tests/regex.test.ts": 'const pattern = /import test from "node:test"/u;\n',
+      "tests/string.test.ts": 'const example = `\nimport test from "node:test";\n`;\n',
+    });
+
+    assert.deepEqual((await engine.analyzeRepository(proseOnly)).detectedTestFrameworks, []);
+    assert.deepEqual((await engine.analyzeRepository(process.cwd())).detectedTestFrameworks, [
+      "node:test",
+    ]);
+  });
+
+  for (const fixture of [
+    {
+      framework: "node:test",
+      files: {
+        "package.json": JSON.stringify({ name: "node-test-fixture", type: "module" }),
+        "src/example.test.ts": 'import test from "node:test";\n',
+      },
+    },
+    {
+      framework: "vitest",
+      files: {
+        "package.json": JSON.stringify({
+          name: "vitest-fixture",
+          devDependencies: { vitest: "3.0.0" },
+        }),
+      },
+    },
+    {
+      framework: "jest",
+      files: {
+        "package.json": JSON.stringify({
+          name: "jest-fixture",
+          devDependencies: { jest: "30.0.0" },
+        }),
+      },
+    },
+    {
+      framework: "pytest",
+      files: {
+        "pyproject.toml": '[project]\ndependencies = [\n  "pytest[asyncio]>=8",\n]\n',
+      },
+    },
+  ] satisfies Array<{ framework: string; files: Record<string, string> }>) {
+    it(`detects ${fixture.framework} from framework-specific evidence`, async () => {
+      const root = await createAnalysisRepository(fixture.files);
+      assert.deepEqual((await engine.analyzeRepository(root)).detectedTestFrameworks, [
+        fixture.framework,
+      ]);
+    });
+  }
 
   it("rejects repository symlinks instead of omitting them from the digest", async (context) => {
     const root = await createFixtureRepository();
@@ -333,6 +541,17 @@ describe("campaign orchestration", () => {
       /^sha256:[a-f0-9]{64}$/,
     );
     assert.equal(manifest.evidenceContext.adapter.configuration.nodeVersion, process.versions.node);
+    const nodeTestProfile = manifest.evidenceContext.adapter.configuration.profile;
+    assert.equal(nodeTestProfile.profileId, "node-test");
+    assert.equal(nodeTestProfile.official, true);
+    assert.equal(typeof nodeTestProfile.profileVersion, "string");
+    assert.equal(nodeTestProfile.capabilities.attributesPerAssertionFailure, true);
+    const { createHash } = await import("node:crypto");
+    const { NODE_TEST_REPORTER_SOURCE } = await import("../src/engine/node-test-reporter.js");
+    assert.equal(
+      nodeTestProfile.reporterDigest,
+      `sha256:${createHash("sha256").update(NODE_TEST_REPORTER_SOURCE).digest("hex")}`,
+    );
     assert.deepEqual(manifest.evidenceContext.adapter.configuration.arguments, [
       "--test",
       "--",
@@ -812,6 +1031,120 @@ describe("campaign orchestration", () => {
       if (previousSourceRoot === undefined) delete process.env.SOURCE_ROOT_FOR_TEST;
       else process.env.SOURCE_ROOT_FOR_TEST = previousSourceRoot;
     }
+  });
+
+  it("refuses an impossible attribution on a structured-command PASS with zero candidate discovery", async () => {
+    const root = await createFixtureRepository();
+    await writeFile(
+      path.join(root, "runner.mjs"),
+      [
+        'import { writeFile } from "node:fs/promises";',
+        "const resultPath = process.env.TESTFORGE_RESULT_FILE;",
+        "await writeFile(resultPath, JSON.stringify({",
+        '  protocolVersion: "1.0.0",',
+        '  outcome: "PASS",',
+        "  testsDiscovered: 1,",
+        "  candidateTestsDiscovered: 0,",
+        "  attributed: true,",
+        "}));",
+        "process.exitCode = 0;",
+        "",
+      ].join("\n"),
+    );
+    const request = verificationRequest(root);
+    request.candidates = [request.candidates[0] as (typeof request.candidates)[number]];
+    request.adapter = {
+      kind: "testforge-command",
+      executable: process.execPath,
+      arguments: ["runner.mjs"],
+      protocolVersion: "1.0.0",
+    } as any;
+
+    const manifest = await engine.verifyCampaign(request);
+
+    assert.notEqual(manifest.decision.status, "VERIFIED");
+    assert.ok(
+      manifest.observations.every(
+        (observation: { outcome: string; attributed: boolean }) =>
+          observation.outcome === "INFRA_ERROR" && observation.attributed === false,
+      ),
+    );
+  });
+
+  it("refuses an attributed operational outcome from a structured command", async () => {
+    const root = await createFixtureRepository();
+    await writeFile(
+      path.join(root, "runner.mjs"),
+      [
+        'import { writeFile } from "node:fs/promises";',
+        "const resultPath = process.env.TESTFORGE_RESULT_FILE;",
+        "await writeFile(resultPath, JSON.stringify({",
+        '  protocolVersion: "1.0.0",',
+        '  outcome: "PROCESS_CRASH",',
+        "  testsDiscovered: 2,",
+        "  candidateTestsDiscovered: 1,",
+        "  attributed: true,",
+        "}));",
+        "process.exitCode = 1;",
+        "",
+      ].join("\n"),
+    );
+    const request = verificationRequest(root);
+    request.candidates = [request.candidates[0] as (typeof request.candidates)[number]];
+    request.adapter = {
+      kind: "testforge-command",
+      executable: process.execPath,
+      arguments: ["runner.mjs"],
+      protocolVersion: "1.0.0",
+    } as any;
+
+    const manifest = await engine.verifyCampaign(request);
+
+    assert.notEqual(manifest.decision.status, "VERIFIED");
+    assert.ok(
+      manifest.observations.every(
+        (observation: { outcome: string; attributed: boolean }) =>
+          observation.outcome === "INFRA_ERROR" && observation.attributed === false,
+      ),
+    );
+  });
+
+  it("refuses an adapter-declared timeout when the engine deadline did not expire", async () => {
+    const root = await createFixtureRepository();
+    await writeFile(
+      path.join(root, "runner.mjs"),
+      [
+        'import { writeFile } from "node:fs/promises";',
+        "const resultPath = process.env.TESTFORGE_RESULT_FILE;",
+        "await writeFile(resultPath, JSON.stringify({",
+        '  protocolVersion: "1.0.0",',
+        '  outcome: "TIMEOUT",',
+        "  testsDiscovered: 2,",
+        "  candidateTestsDiscovered: 1,",
+        "  attributed: false,",
+        "}));",
+        "process.exitCode = 1;",
+        "",
+      ].join("\n"),
+    );
+    const request = verificationRequest(root);
+    request.candidates = [request.candidates[0] as (typeof request.candidates)[number]];
+    request.adapter = {
+      kind: "testforge-command",
+      executable: process.execPath,
+      arguments: ["runner.mjs"],
+      protocolVersion: "1.0.0",
+    } as any;
+
+    const manifest = await engine.verifyCampaign(request);
+
+    assert.notEqual(manifest.decision.status, "VERIFIED");
+    assert.ok(
+      manifest.observations.every(
+        (observation: { outcome: string; attributed: boolean }) =>
+          observation.outcome === "INFRA_ERROR" && observation.attributed === false,
+      ),
+    );
   });
 
   it("rejects an oversized structured-command result before parsing it", async () => {

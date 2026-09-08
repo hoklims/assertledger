@@ -2,7 +2,7 @@
 
 ## Execution boundary
 
-TestForge executes repository code, world overlays, adapter code, and candidate tests. The
+AssertLedger executes repository code, world overlays, adapter code, and candidate tests. The
 `trusted-local` backend is explicitly `UNSANDBOXED`: temporary workspaces, a reduced environment,
 bounded output, and process timeouts reduce accidental damage, but they do not contain hostile code.
 Timeout enforcement and process-tree termination are best effort and depend on local host facilities.
@@ -10,20 +10,20 @@ Timeout enforcement and process-tree termination are best effort and depend on l
 Do not run untrusted or adversarial candidates with `trusted-local` on a developer workstation or a
 CI runner containing secrets. Use a separately administered container or VM boundary with network
 disabled, no host sockets, no credentials, a non-root user, a read-only base image, and CPU, memory,
-PID, disk, and time limits. TestForge v0.1 records the achieved isolation level; it does not claim to
+PID, disk, and time limits. AssertLedger v0.1 records the achieved isolation level; it does not claim to
 provide an OS sandbox.
 
 Candidate files are restricted to configured test roots. Absolute paths, traversal segments, path
 segments ending in a dot or space, and NTFS alternate data stream syntax are rejected. Repository
-symlinks are not silently omitted: TestForge rejects a symlink unless an excluded path segment keeps
+symlinks are not silently omitted: AssertLedger rejects a symlink unless an excluded path segment keeps
 it outside the inventory and snapshot. Overlay writes also reject symlink destinations discovered in
 the workspace. Commands run from executable and argument arrays with `shell: false`.
 
 Environment allowlists cannot include `NODE_OPTIONS` or names beginning with `TESTFORGE_` or
-`NODE_TEST_`, using case-insensitive comparison. TestForge reserves these names for runner custody.
+`NODE_TEST_`, using case-insensitive comparison. AssertLedger reserves these names for runner custody.
 
 These checks protect the intended write boundary; they do not make execution safe. The source
-repository, operator-supplied worlds and policy, dependencies, runner adapter, host, and TestForge
+repository, operator-supplied worlds and policy, dependencies, runner adapter, host, and AssertLedger
 engine remain part of the trusted computing base.
 
 ## Semantic boundary

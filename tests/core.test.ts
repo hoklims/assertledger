@@ -602,8 +602,9 @@ describe("manifest integrity", () => {
     assert.equal(integrity.valid, false);
   });
 
-  it("replays an authentic manifest from its reduced evidence input", () => {
+  it("replays an authentic legacy node-test manifest without official profile metadata", () => {
     const manifest = core.decideEvidence(campaign());
+    assert.equal("profile" in manifest.evidenceContext.adapter.configuration, false);
 
     assert.deepEqual(core.replayEvidenceManifest(manifest), {
       valid: true,

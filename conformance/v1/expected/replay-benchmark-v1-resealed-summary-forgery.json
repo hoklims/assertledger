@@ -1,0 +1,12 @@
+{
+  "valid": false,
+  "schemaValid": true,
+  "sourceManifestValid": true,
+  "sourceBindingValid": true,
+  "policyDigestValid": true,
+  "protocolDigestValid": true,
+  "fingerprintDigestValid": true,
+  "comparisonScopeDigestValid": true,
+  "artifactDigestValid": true,
+  "summarySemanticsValid": false
+}

@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "testforge-conformance-v1",
+  "cases": [
+    {
+      "id": "canonical-order-a",
+      "operation": "CANONICALIZE",
+      "inputPath": "inputs/canonical-order-a.json",
+      "expectedPath": "expected/canonical-order-a.json",
+      "outcome": "GREEN"
+    },
+    {
+      "id": "canonical-order-b",
+      "operation": "CANONICALIZE",
+      "inputPath": "inputs/canonical-order-b.json",
+      "expectedPath": "expected/canonical-order-b.json",
+      "outcome": "GREEN"
+    },
+    {
+      "id": "decide-verified",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-verified.json",
+      "expectedPath": "expected/decide-verified.json",
+      "outcome": "GREEN"
+    },
+    {
+      "id": "decide-compile-failure-non-kill",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-compile-failure-non-kill.json",
+      "expectedPath": "expected/decide-compile-failure-non-kill.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "decide-collection-failure-non-kill",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-collection-failure-non-kill.json",
+      "expectedPath": "expected/decide-collection-failure-non-kill.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "decide-timeout-non-kill",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-timeout-non-kill.json",
+      "expectedPath": "expected/decide-timeout-non-kill.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "decide-process-crash-non-kill",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-process-crash-non-kill.json",
+      "expectedPath": "expected/decide-process-crash-non-kill.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "decide-infra-error-non-kill",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-infra-error-non-kill.json",
+      "expectedPath": "expected/decide-infra-error-non-kill.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "decide-no-test-discovered-non-kill",
+      "operation": "DECIDE_EVIDENCE",
+      "inputPath": "inputs/decide-no-test-discovered-non-kill.json",
+      "expectedPath": "expected/decide-no-test-discovered-non-kill.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "replay-evidence-raw-tamper",
+      "operation": "REPLAY_EVIDENCE",
+      "inputPath": "inputs/replay-evidence-raw-tamper.json",
+      "expectedPath": "expected/replay-evidence-raw-tamper.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "replay-evidence-resealed-semantic-forgery",
+      "operation": "REPLAY_EVIDENCE",
+      "inputPath": "inputs/replay-evidence-resealed-semantic-forgery.json",
+      "expectedPath": "expected/replay-evidence-resealed-semantic-forgery.json",
+      "outcome": "RED"
+    },
+    {
+      "id": "create-profile-v1-qualified",
+      "operation": "CREATE_PROFILE_V1",
+      "inputPath": "inputs/create-profile-v1-qualified.json",
+      "expectedPath": "expected/create-profile-v1-qualified.json",
+      "outcome": "GREEN"
+    },
+    {
+      "id": "create-benchmark-v1-measured",
+      "operation": "CREATE_BENCHMARK_V1",
+      "inputPath": "inputs/create-benchmark-v1-measured.json",
+      "expectedPath": "expected/create-benchmark-v1-measured.json",
+      "outcome": "GREEN"
+    },
+    {
+      "id": "replay-benchmark-v1-resealed-summary-forgery",
+      "operation": "REPLAY_BENCHMARK_V1",
+      "inputPath": "inputs/replay-benchmark-v1-resealed-summary-forgery.json",
+      "expectedPath": "expected/replay-benchmark-v1-resealed-summary-forgery.json",
+      "outcome": "RED"
+    }
+  ]
+}

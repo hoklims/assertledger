@@ -3,6 +3,17 @@ import { describe, it } from "node:test";
 
 type ContractsApi = {
   SCHEMA_VERSION: string;
+  agenticCorpusTrustPolicyJsonSchema(): Record<string, unknown>;
+  agenticCorpusProvenanceJsonSchema(): Record<string, unknown>;
+  agenticBenchmarkArtifactJsonSchema(): Record<string, unknown>;
+  agenticBenchmarkReplayResultJsonSchema(): Record<string, unknown>;
+  agenticBenchmarkRequestJsonSchema(): Record<string, unknown>;
+  agenticProfileReplayResultJsonSchema(): Record<string, unknown>;
+  agenticProfileReplayResultV2JsonSchema(): Record<string, unknown>;
+  agenticProfileReportJsonSchema(): Record<string, unknown>;
+  agenticProfileReportV2JsonSchema(): Record<string, unknown>;
+  agenticProfileRequestJsonSchema(): Record<string, unknown>;
+  agenticProfileRequestV2JsonSchema(): Record<string, unknown>;
   parseRepositoryAnalysis(value: unknown): any;
   parseEvidenceManifest(value: unknown): any;
   parseReplayResult(value: unknown): any;
@@ -19,6 +30,17 @@ async function loadContracts(): Promise<ContractsApi> {
   } catch {
     return {
       SCHEMA_VERSION: "UNIMPLEMENTED",
+      agenticCorpusTrustPolicyJsonSchema: () => ({}),
+      agenticCorpusProvenanceJsonSchema: () => ({}),
+      agenticBenchmarkArtifactJsonSchema: () => ({}),
+      agenticBenchmarkReplayResultJsonSchema: () => ({}),
+      agenticBenchmarkRequestJsonSchema: () => ({}),
+      agenticProfileReplayResultJsonSchema: () => ({}),
+      agenticProfileReplayResultV2JsonSchema: () => ({}),
+      agenticProfileReportJsonSchema: () => ({}),
+      agenticProfileReportV2JsonSchema: () => ({}),
+      agenticProfileRequestJsonSchema: () => ({}),
+      agenticProfileRequestV2JsonSchema: () => ({}),
       parseRepositoryAnalysis: () => undefined,
       parseEvidenceManifest: () => undefined,
       parseReplayResult: () => undefined,
@@ -375,6 +397,26 @@ describe("published JSON Schema", () => {
   it("publishes every public result contract under a stable versioned identifier", () => {
     const schemas = [
       [
+        contracts.agenticCorpusTrustPolicyJsonSchema(),
+        "https://testforge.dev/schemas/agentic-corpus-trust-policy.v1.json",
+      ],
+      [
+        contracts.agenticCorpusProvenanceJsonSchema(),
+        "https://testforge.dev/schemas/agentic-corpus-provenance.v1.json",
+      ],
+      [
+        contracts.agenticBenchmarkRequestJsonSchema(),
+        "https://testforge.dev/schemas/agentic-benchmark-request.v1.json",
+      ],
+      [
+        contracts.agenticBenchmarkArtifactJsonSchema(),
+        "https://testforge.dev/schemas/agentic-benchmark-artifact.v1.json",
+      ],
+      [
+        contracts.agenticBenchmarkReplayResultJsonSchema(),
+        "https://testforge.dev/schemas/agentic-benchmark-replay-result.v1.json",
+      ],
+      [
         contracts.repositoryAnalysisJsonSchema(),
         "https://testforge.dev/schemas/repository-analysis.v1.json",
       ],
@@ -383,6 +425,30 @@ describe("published JSON Schema", () => {
         "https://testforge.dev/schemas/evidence-manifest.v1.json",
       ],
       [contracts.replayResultJsonSchema(), "https://testforge.dev/schemas/replay-result.v1.json"],
+      [
+        contracts.agenticProfileRequestJsonSchema(),
+        "https://testforge.dev/schemas/agentic-profile-request.v1.json",
+      ],
+      [
+        contracts.agenticProfileReportJsonSchema(),
+        "https://testforge.dev/schemas/agentic-profile-report.v1.json",
+      ],
+      [
+        contracts.agenticProfileReplayResultJsonSchema(),
+        "https://testforge.dev/schemas/agentic-profile-replay-result.v1.json",
+      ],
+      [
+        contracts.agenticProfileRequestV2JsonSchema(),
+        "https://testforge.dev/schemas/agentic-profile-request.v2.json",
+      ],
+      [
+        contracts.agenticProfileReportV2JsonSchema(),
+        "https://testforge.dev/schemas/agentic-profile-report.v2.json",
+      ],
+      [
+        contracts.agenticProfileReplayResultV2JsonSchema(),
+        "https://testforge.dev/schemas/agentic-profile-replay-result.v2.json",
+      ],
     ] as const;
 
     for (const [schema, id] of schemas) {
@@ -419,6 +485,16 @@ describe("evidence manifest contract", () => {
     assert.equal(parsed.decision.status, "VERIFIED");
     assert.equal(parsed.candidates[0].gates[0].name, "TARGET_STRENGTH");
     assert.equal(parsed.observations[0].stdoutDigest, `sha256:${"f".repeat(64)}`);
+  });
+
+  it("keeps legacy node-test manifests without official profile metadata compatible", () => {
+    const legacyManifest = validEvidenceManifest();
+    assert.equal("profile" in legacyManifest.evidenceContext.adapter.configuration, false);
+
+    const parsed = contracts.parseEvidenceManifest(legacyManifest);
+
+    assert.equal(parsed.decision.status, "VERIFIED");
+    assert.equal(parsed.adapter.kind, "node-test");
   });
 
   it("rejects unknown final-manifest fields", () => {
