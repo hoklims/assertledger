@@ -378,7 +378,12 @@ describe("developer entry points", () => {
     };
     assert.equal(descriptor.transport, "stdio");
     assert.equal(descriptor.command, process.execPath);
-    assert.deepEqual(descriptor.args, [builtEntry, "mcp", "--root", await realpath(root)]);
+    assert.deepEqual(descriptor.args, [
+      await realpath(builtEntry),
+      "mcp",
+      "--root",
+      await realpath(root),
+    ]);
     assert.equal(descriptor.cwd, await realpath(root));
   });
 
