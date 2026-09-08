@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -215,7 +215,11 @@ describe("developer entry points", () => {
   it("uses generated Node argv and the explicit root in a fresh read-only MCP handshake", {
     timeout: 30_000,
   }, async () => {
-    const root = await fixtureRepository();
+    const canonicalRoot = await realpath(await fixtureRepository());
+    const aliasDirectory = await mkdtemp(path.join(os.tmpdir(), "assertledger-dx-root-alias-"));
+    temporaryDirectories.push(aliasDirectory);
+    const root = path.join(aliasDirectory, "repository");
+    await symlink(canonicalRoot, root, process.platform === "win32" ? "junction" : "dir");
     await mkdir(path.join(process.cwd(), ".omx"), { recursive: true });
     const buildRoot = await mkdtemp(path.join(process.cwd(), ".omx", "assertledger-dx-build-"));
     temporaryDirectories.push(buildRoot);
@@ -253,8 +257,8 @@ describe("developer entry points", () => {
         }),
     );
     assert.equal(values.get("command"), process.execPath);
-    assert.equal(values.get("cwd"), root);
-    assert.deepEqual(values.get("args"), [cli, "mcp", "--root", root]);
+    assert.equal(values.get("cwd"), canonicalRoot);
+    assert.deepEqual(values.get("args"), [cli, "mcp", "--root", canonicalRoot]);
 
     const created = await execFileAsync(
       process.execPath,
