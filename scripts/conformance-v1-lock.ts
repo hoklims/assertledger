@@ -70,3 +70,7 @@ export const CONFORMANCE_V1_PUBLIC_DIGESTS = {
   benchmarkArtifactDigest:
     "sha256:60c55617fd1a951cec452f67523df92ab0d7ec935f1a0b45629631192ddc6ce8",
 } as const;
+
+// Schemas published after conformance v1 are locked additively: the v1 bundle bytes stay frozen.
+export const PUBLISHED_SCHEMA_EXTENSIONS_DIGEST =
+  "sha256:4ccd9494a8a44c80603e5ef64b304834ea1092c97bd1b48dfb9aad9e73b910e9";

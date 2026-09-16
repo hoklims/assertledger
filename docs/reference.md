@@ -19,6 +19,9 @@ assertledger analyze . --json
 assertledger schema verification-request --json
 assertledger verify assertledger.request.json --allow-unsafe-execution --json
 assertledger replay assertledger.manifest.json --json
+assertledger provider --json
+assertledger export assertledger.export-request.json --json
+assertledger export-replay assertledger.evidence-export.json --json
 assertledger profile assertledger.profile-request.json --json
 assertledger profile-replay assertledger.profile-report.json --json
 assertledger profile-v2 assertledger.profile-v2-request.json --json
@@ -45,7 +48,8 @@ directory or in a colocated `*.test.*`/`*.spec.*` source file. Comments, string 
 documentation-like config filenames do not count; no evidence produces an empty list. Detection is
 intentionally incomplete: an unrecognized manifest layout or test-file convention yields no claim.
 
-`verify`, `replay`, `profile`, `profile-replay`, `profile-v2`, `profile-v2-replay`, `benchmark`, and
+`verify`, `replay`, `export`, `export-replay`, `profile`, `profile-replay`, `profile-v2`,
+`profile-v2-replay`, `benchmark`, and
 `benchmark-replay`, `benchmark-acquire`, and `benchmark-acquire-replay` also accept `-`
 or an omitted file argument and
 then read JSON from stdin. The CLI rejects file and stdin JSON inputs larger than 16 MiB. JSON
@@ -62,6 +66,12 @@ report, prints its reason code such as `AGENTIC_PROFILE_SOURCE_INVALID` to stder
 `profile-v2` has no `NOT_QUALIFIED` status; it uses the same codes for the statuses it shares with
 v1 and `4` for `OBSERVED_BENCHMARK_FAILURE` and `COMPARISON_SCOPE_MISMATCH`, and
 `profile-v2-replay` follows `profile-replay`. Unexpected engine errors exit with `5`.
+
+`provider` prints the evidence provider manifest and exits with `0`. `export` exits with `0` after
+writing an [evidence export](evidence-export.md), whatever its detection result; a malformed request
+or a replay-invalid source manifest writes no export, prints `EVIDENCE_EXPORT_REQUEST_INVALID` or
+`EVIDENCE_EXPORT_SOURCE_INVALID` to stderr, and exits with `4`. `export-replay` exits with `0` only
+when every replay rail is valid and with `4` otherwise.
 
 Versioned JSON Schemas are published for the
 [`verification request`](../schemas/verification-request.v1.json),
@@ -86,8 +96,12 @@ Versioned JSON Schemas are published for the
 [`corpus trust policy`](../schemas/agentic-corpus-trust-policy.v1.json) and paired
 [`corpus provenance`](../schemas/agentic-corpus-provenance.v1.json), six corpus allocation and
 two-party [`commitment/reveal`](../schemas/agentic-corpus-allocation-commitment.v1.json) contracts,
-plus six pre-declared [`H3 experiment`](../schemas/agentic-corpus-experiment-plan.v1.json) contracts.
-The main CLI `schema` command prints the thirty-one facade schemas by name; the corpus evaluator consumes
+plus six pre-declared [`H3 experiment`](../schemas/agentic-corpus-experiment-plan.v1.json) contracts,
+and the [`evidence provider manifest`](../schemas/evidence-provider-manifest.v1.json),
+[`evidence export request`](../schemas/evidence-export-request.v1.json),
+[`evidence export`](../schemas/evidence-export.v1.json), and
+[`evidence export replay result`](../schemas/evidence-export-replay-result.v1.json).
+The main CLI `schema` command prints the thirty-six facade schemas by name; the corpus evaluator consumes
 the two trust/provenance schemas directly.
 A complete runnable verification request
 is available at
@@ -104,8 +118,8 @@ campaign wall-time proxy with an exact scoped warm-total-wall p95 cost basis. It
 artifacts and commands remain supported.
 
 The checked-in [`conformance v1 bundle`](conformance-v1.md) locks autonomous inputs, complete
-expected outputs, negative replay witnesses, all published schema bytes, and selected public
-digests. `pnpm check` validates this static oracle without regenerating it.
+expected outputs, negative replay witnesses, the v1 schema bytes, and selected public digests; an
+additive lock covers the schemas published after v1. `pnpm check` validates this static oracle without regenerating it.
 
 ## TypeScript SDK
 
@@ -135,6 +149,14 @@ const profile = assertLedger.profile({
   },
 });
 const profileIntegrity = assertLedger.replayProfile(profile);
+
+const provider = assertLedger.providerManifest();
+const evidenceExport = assertLedger.exportEvidence({
+  schemaVersion: "1.0.0",
+  manifest,
+  consumerRequest: null,
+});
+const exportIntegrity = assertLedger.replayEvidenceExport(evidenceExport);
 
 const benchmarkRequest = JSON.parse(await readFile("assertledger.benchmark-request.json", "utf8"));
 const benchmark = assertLedger.benchmark(benchmarkRequest);
@@ -241,7 +263,7 @@ server name reported to clients is `assertledger`. Every tool is registered twic
 `assertledger_*` name and a legacy `testforge_*` name bound to the same handler and the same tool
 configuration. The schema lookup pair has no single fixed output schema because its selected JSON
 Schema document varies; every other pair shares the same output-schema object. The default server
-exposes twenty-eight read-only tools:
+exposes thirty-four read-only tools:
 
 | Preferred tool | Legacy alias | Purpose |
 | --- | --- | --- |
@@ -255,6 +277,9 @@ exposes twenty-eight read-only tools:
 | `assertledger_profile_v2` | `testforge_profile_v2` | Derive a benchmark-backed strength and warm-cost profile |
 | `assertledger_profile_v2_replay` | `testforge_profile_v2_replay` | Replay a self-contained Profile v2 report |
 | `assertledger_schema` | `testforge_schema` | Return any of the published JSON Schemas |
+| `assertledger_provider` | `testforge_provider` | Describe the evidence provider, its announced capabilities, cost model, and limits |
+| `assertledger_export` | `testforge_export` | Export replay-valid evidence for an external consumer |
+| `assertledger_export_replay` | `testforge_export_replay` | Replay a self-contained evidence export |
 | `assertledger_replay` | `testforge_replay` | Validate and replay a manifest's schema, digests, and decision semantics |
 | `assertledger_benchmark_acquire_replay` | `testforge_benchmark_acquire_replay` | Replay acquisition source, artifact, context, digest, and status bindings |
 | `assertledger_corpus_allocate` | `testforge_corpus_allocate` | Create a deterministic calibration/holdout allocation |

@@ -43,6 +43,7 @@ const required = [
   "examples/node-test/repository/src/is-even.js",
   "examples/node-test/repository/tests/base.test.js",
   "examples/agentic-profile/profile-manifest.mjs",
+  "examples/evidence-export/consumer.mjs",
   "examples/git-history/create-demo.mjs",
   "examples/git-history/escape-string-regexp/before.cjs.txt",
   "examples/git-history/escape-string-regexp/fixed.cjs.txt",
@@ -50,6 +51,8 @@ const required = [
   "examples/git-history/escape-string-regexp/LICENSE",
   "conformance/v1/bundle.json",
   "conformance/v1/schemas/expected-digests.json",
+  "conformance/schema-extensions.json",
+  "dist/build-info.json",
   "integrations/skill/SKILL.md",
   "benchmarks/agentic-profile/public/README.md",
   ...readdirSync(path.join(ROOT, "schemas"))
@@ -479,6 +482,88 @@ function main(): void {
     jsonFile(path.join(artifacts, "profile-replay.json"), profileReplay);
     jsonFile(path.join(artifacts, "profile-example-report.json"), exampleReport);
 
+    // Evidence export: provider identity, deterministic export and replay, independent consumer.
+    const provider = parse(runBin("assertledger", ["provider", "--json"]));
+    assert.equal(provider.provider.name, "assertledger");
+    assert.equal(
+      provider.provider.version,
+      JSON.parse(readFileSync(path.join(installed, "package.json"), "utf8")).version,
+    );
+    assert.deepEqual(
+      provider.provider.sourceRevision,
+      JSON.parse(readFileSync(path.join(installed, "dist/build-info.json"), "utf8")).sourceRevision,
+    );
+    const sourceHead = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    if (sourceHead.status === 0) {
+      assert.equal(provider.provider.sourceRevision.status, "RECORDED");
+      assert.equal(provider.provider.sourceRevision.commit, sourceHead.stdout.trim());
+    } else {
+      assert.deepEqual(provider.provider.sourceRevision, { status: "UNKNOWN" });
+    }
+    const exportRequest = {
+      schemaVersion: "1.0.0",
+      manifest,
+      consumerRequest: {
+        reference: "package-smoke",
+        profileId: null,
+        obligations: [
+          { id: "detect", control: "REGRESSION_DETECTION" },
+          { id: "sandbox", control: "SANDBOXED_EXECUTION" },
+        ],
+      },
+    };
+    const exportRequestPath = path.join(consumer, "evidence-export-request.json");
+    jsonFile(exportRequestPath, exportRequest);
+    const evidenceExport = parse(runBin("assertledger", ["export", exportRequestPath, "--json"]));
+    assert.equal(evidenceExport.result.detection, "OBSERVED");
+    assert.equal(evidenceExport.sourceArtifactDigest, manifest.artifactDigest);
+    assert.equal(evidenceExport.controls.requested.status, "PARTIAL");
+    const exportPath = path.join(consumer, "evidence-export.json");
+    jsonFile(exportPath, evidenceExport);
+    const exportReplay = parse(runBin("assertledger", ["export-replay", exportPath, "--json"]));
+    assert.equal(exportReplay.valid, true);
+    const sdkExportScript = path.join(consumer, "consumer-export.mjs");
+    writeFileSync(
+      sdkExportScript,
+      [
+        'import { readFileSync } from "node:fs";',
+        'import { AssertLedger } from "assertledger";',
+        `const request = JSON.parse(readFileSync(${JSON.stringify(exportRequestPath)}, "utf8"));`,
+        "const exported = new AssertLedger().exportEvidence(request);",
+        "console.log(JSON.stringify({ exportDigest: exported.exportDigest }));",
+        "",
+      ].join("\n"),
+    );
+    assert.deepEqual(parse(run([sdkExportScript], consumer, env)), {
+      exportDigest: evidenceExport.exportDigest,
+    });
+    const consumerExample = path.join(installed, "examples/evidence-export/consumer.mjs");
+    const consumerDecision = parse(run([consumerExample, exportPath], consumer, env));
+    assert.equal(consumerDecision.decision, "DEGRADE");
+    assert.ok(consumerDecision.reasons.includes("EVIDENCE_UNAUTHENTICATED"));
+    const forgedExportPath = path.join(consumer, "evidence-export-forged.json");
+    jsonFile(forgedExportPath, {
+      ...evidenceExport,
+      result: { ...evidenceExport.result, detection: "NOT_OBSERVED" },
+    });
+    const forgedExportReplay = runBin("assertledger", [
+      "export-replay",
+      forgedExportPath,
+      "--json",
+    ]);
+    assert.equal(forgedExportReplay.status, 4, forgedExportReplay.stderr);
+    assert.equal(JSON.parse(forgedExportReplay.stdout).valid, false);
+    const forgedDecision = parse(run([consumerExample, forgedExportPath], consumer, env));
+    assert.equal(forgedDecision.decision, "REJECT");
+    assert.deepEqual(parse(runBin("assertledger", ["replay", manifestPath])), replay);
+    jsonFile(path.join(artifacts, "provider-manifest.json"), provider);
+    jsonFile(path.join(artifacts, "evidence-export.json"), evidenceExport);
+    jsonFile(path.join(artifacts, "evidence-export-replay.json"), exportReplay);
+
     // Main product journey, using installed code and byte-exact snapshots of a real correction.
     const historical = parse(
       run(
@@ -670,6 +755,14 @@ function main(): void {
         replayValid: profileReplay.valid,
       },
       profileExample: { exitCode: example.status, status: exampleReport.status },
+      evidenceExport: {
+        sourceRevision: provider.provider.sourceRevision.status,
+        detection: evidenceExport.result.detection,
+        exportDigest: evidenceExport.exportDigest,
+        replayValid: exportReplay.valid,
+        consumerDecision: consumerDecision.decision,
+        forgedConsumerDecision: forgedDecision.decision,
+      },
     };
     jsonFile(path.join(artifacts, "report.json"), report);
     console.log(JSON.stringify(report));

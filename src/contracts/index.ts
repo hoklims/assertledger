@@ -1456,6 +1456,331 @@ export const AgenticCorpusExperimentReplayResultSchema = z.strictObject({
   resultSemanticsValid: z.boolean(),
 });
 
+const GitObjectIdSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
+
+const EvidenceSourceRevisionSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("RECORDED"),
+    commit: GitObjectIdSchema,
+    worktree: z.enum(["CLEAN", "DIRTY"]),
+  }),
+  z.strictObject({ status: z.literal("UNKNOWN") }),
+]);
+
+const EvidenceFormatSchema = z.strictObject({
+  schemaId: z.string().min(1).max(512),
+  schemaVersion: z.string().min(1).max(128),
+});
+
+export const EvidenceProviderManifestSchema = z
+  .strictObject({
+    schemaVersion: z.literal("1.0.0"),
+    provider: z.strictObject({
+      name: z.literal("assertledger"),
+      version: z.string().min(1).max(128),
+      sourceRevision: EvidenceSourceRevisionSchema,
+    }),
+    scope: z.string().min(1).max(2_048),
+    formats: z.strictObject({
+      accepts: z.array(EvidenceFormatSchema).max(100),
+      emits: z.array(EvidenceFormatSchema).max(100),
+    }),
+    capabilities: z
+      .array(
+        z.strictObject({
+          id: ReasonCodeSchema,
+          status: z.enum(["SUPPORTED", "SUPPORTED_WHEN_RECORDED", "UNSUPPORTED"]),
+          modality: z.enum(["TEST_OBSERVED", "RECORDED_METADATA", "NONE"]),
+          description: z.string().min(1).max(2_048),
+        }),
+      )
+      .max(100),
+    adapters: z
+      .array(
+        z.strictObject({
+          kind: z.enum(["node-test", "testforge-command"]),
+          profileId: z.string().min(1).max(128).nullable(),
+          profileVersion: z.string().min(1).max(128).nullable(),
+          official: z.boolean(),
+        }),
+      )
+      .max(100),
+    cost: z.strictObject({
+      unit: z.literal("PROCESS_EXECUTIONS"),
+      estimate: z.string().min(1).max(512),
+      assumptions: z.array(z.string().min(1).max(2_048)).max(100),
+    }),
+    limits: z.array(z.string().min(1).max(2_048)).max(100),
+    manifestDigest: Sha256DigestSchema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-provider-manifest.v1.json",
+    title: "AssertLedger evidence provider manifest",
+    description:
+      "Announced provider identity, capabilities, formats, cost model, and limits. An announced capability never proves that a control ran.",
+  });
+
+const EvidenceConsumerRequestSchema = z.strictObject({
+  reference: z.string().min(1).max(256).nullable(),
+  profileId: z.string().min(1).max(256).nullable(),
+  obligations: z
+    .array(z.strictObject({ id: IdentifierSchema, control: ReasonCodeSchema }))
+    .max(100),
+});
+
+export const EvidenceExportRequestSchema = z
+  .strictObject({
+    schemaVersion: z.literal("1.0.0"),
+    manifest: EmbeddedEvidenceManifestSchema,
+    consumerRequest: EvidenceConsumerRequestSchema.nullable(),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-export-request.v1.json",
+    title: "AssertLedger evidence export request",
+    description:
+      "A replay-valid evidence manifest and optional consumer references and requested controls.",
+  });
+
+const EvidenceWorldKindSchema = z.enum(["REFERENCE", "TARGET", "NEUTRAL"]);
+
+export const EvidenceExportSchema = z
+  .strictObject({
+    schemaVersion: z.literal("1.0.0"),
+    sourceManifest: EmbeddedEvidenceManifestSchema,
+    sourceArtifactDigest: Sha256DigestSchema,
+    consumerRequest: EvidenceConsumerRequestSchema.nullable(),
+    result: z.strictObject({
+      detection: z.enum(["OBSERVED", "NOT_OBSERVED", "NOT_ESTABLISHED"]),
+      modality: z.enum(["TEST_OBSERVED", "NONE"]),
+      reasonCode: z.enum([
+        "REGRESSION_ASSERTION_OBSERVED",
+        "TARGET_PASSED_WITHOUT_DETECTION",
+        "ENGINE_ERROR",
+        "CONTROL_EVIDENCE_INVALID",
+        "CANDIDATE_EVIDENCE_INCONCLUSIVE",
+        "CANDIDATE_EVIDENCE_INVALID",
+        "TARGET_STRENGTH_INSUFFICIENT",
+        "OPERATIONAL_OUTCOME_NOT_DETECTION",
+      ]),
+      decision: z.strictObject({
+        status: z.enum(["VERIFIED", "REJECTED", "INCONCLUSIVE", "ENGINE_ERROR"]),
+        selectedCandidateIds: z.array(IdentifierSchema),
+        reasonCodes: z.array(ReasonCodeSchema),
+      }),
+      candidates: z.array(
+        z.strictObject({
+          id: IdentifierSchema,
+          digest: Sha256DigestSchema,
+          status: z.enum(["ELIGIBLE", "UNSTABLE", "INCONCLUSIVE", "INVALID", "WEAK_ORACLE"]),
+          selected: z.boolean(),
+          reasonCodes: z.array(ReasonCodeSchema),
+          worlds: z.array(
+            z.strictObject({
+              worldId: IdentifierSchema,
+              kind: EvidenceWorldKindSchema,
+              required: z.boolean(),
+              weight: z.int().min(0).max(1_000_000),
+              outcome: z.enum([
+                "PASS",
+                "ASSERTION_FAILURE",
+                "COLLECTION_FAILURE",
+                "COMPILE_FAILURE",
+                "PROCESS_CRASH",
+                "TIMEOUT",
+                "INFRA_ERROR",
+                "NO_TEST_DISCOVERED",
+                "DIVERGENT",
+                "MISSING",
+              ]),
+              attempts: z.int().min(0),
+              signal: z.enum(["RED", "GREEN", "NONE"]),
+              detection: z.enum(["OBSERVED", "NOT_OBSERVED", "NOT_ESTABLISHED", "NOT_APPLICABLE"]),
+            }),
+          ),
+        }),
+      ),
+    }),
+    integrity: z.strictObject({
+      sourceReplay: z.literal("VALID"),
+      verifiedRails: z.tuple([
+        z.literal("SCHEMA"),
+        z.literal("DECISION_DIGEST"),
+        z.literal("ARTIFACT_DIGEST"),
+        z.literal("DECISION_SEMANTICS"),
+      ]),
+      bindings: z.strictObject({
+        artifactDigest: Sha256DigestSchema,
+        decisionDigest: Sha256DigestSchema,
+        repositoryDigest: z.union([Sha256DigestSchema, z.literal("invalid")]),
+        policyDigest: Sha256DigestSchema,
+        worldDigests: z.array(
+          z.strictObject({ worldId: IdentifierSchema, digest: Sha256DigestSchema }),
+        ),
+      }),
+    }),
+    authenticity: z.strictObject({
+      status: z.literal("UNAUTHENTICATED"),
+      attestation: z.literal("NONE"),
+      declaredProducer: z.strictObject({
+        name: z.string().min(1).max(128),
+        version: z.string().min(1).max(128),
+      }),
+    }),
+    environment: z.strictObject({
+      isolation: z.strictObject({
+        kind: z.literal("trusted-local"),
+        level: z.literal("UNSANDBOXED"),
+      }),
+      environmentAllowlist: z.array(z.string().min(1).max(128)).max(100),
+      adapter: z.strictObject({
+        kind: z.enum(["node-test", "testforge-command"]),
+        name: z.string().min(1).max(128),
+        version: z.string().min(1).max(128),
+        framework: z.discriminatedUnion("status", [
+          z.strictObject({
+            status: z.literal("RECORDED"),
+            profileId: z.string().min(1).max(128),
+            profileVersion: z.string().min(1).max(128),
+            official: z.boolean(),
+            nodeVersion: z.string().min(1).max(128).nullable(),
+            executableDigest: Sha256DigestSchema.nullable(),
+          }),
+          z.strictObject({ status: z.literal("UNKNOWN") }),
+        ]),
+      }),
+    }),
+    confidence: z.strictObject({
+      level: z.literal("REPLAY_CONSISTENT_UNAUTHENTICATED"),
+      established: z.array(
+        z.enum([
+          "SOURCE_SCHEMA_VALID",
+          "DECISION_DIGEST_RECOMPUTED",
+          "ARTIFACT_DIGEST_RECOMPUTED",
+          "DECISION_RECOMPUTED_FROM_RECORDED_OBSERVATIONS",
+        ]),
+      ),
+      notEstablished: z.array(
+        z.enum([
+          "PRODUCER_AUTHENTICITY",
+          "OBSERVATION_TRUTHFULNESS",
+          "EXECUTION_ISOLATION",
+          "EXECUTION_FRESHNESS",
+          "WORLD_SEMANTIC_RELEVANCE",
+        ]),
+      ),
+    }),
+    scope: z.strictObject({
+      requiredAttempts: z.int().min(1).max(1_000),
+      candidates: z.int().min(0),
+      observations: z.int().min(0),
+      gitRevisions: z.enum(["RECORDED", "PARTIAL", "NOT_RECORDED"]),
+      worlds: z.array(
+        z.strictObject({
+          id: IdentifierSchema,
+          kind: EvidenceWorldKindSchema,
+          required: z.boolean(),
+          weight: z.int().min(0).max(1_000_000),
+          digest: Sha256DigestSchema,
+          declaredProvenance: z.string().min(1).max(1_024),
+          git: z
+            .strictObject({
+              role: z.enum(["reference", "target", "neutral"]),
+              commit: GitObjectIdSchema,
+              tree: GitObjectIdSchema,
+              objectFormat: z.enum(["sha1", "sha256"]),
+            })
+            .nullable(),
+        }),
+      ),
+    }),
+    controls: z.strictObject({
+      executed: z.array(
+        z.strictObject({
+          control: z.enum([
+            "CONTROL_WITHOUT_CANDIDATE",
+            "REFERENCE_PASS",
+            "REGRESSION_DETECTION",
+            "NEUTRAL_PASS",
+            "STABILITY_REPETITION",
+          ]),
+          status: z.enum(["EXECUTED", "NOT_EXECUTED"]),
+          observations: z.int().min(0),
+        }),
+      ),
+      requested: z.union([
+        z.strictObject({ status: z.literal("NOT_SUPPLIED") }),
+        z.strictObject({
+          status: z.enum(["NO_OBLIGATIONS", "COVERED", "PARTIAL", "NOT_COVERED"]),
+          obligations: z.array(
+            z.strictObject({
+              id: IdentifierSchema,
+              control: ReasonCodeSchema,
+              coverage: z.enum(["EXECUTED", "NOT_EXECUTED", "UNSUPPORTED"]),
+            }),
+          ),
+        }),
+      ]),
+      omittedGates: z.array(
+        z.strictObject({
+          candidateId: IdentifierSchema,
+          gate: GateResultSchema.shape.name,
+          reasonCodes: z.array(ReasonCodeSchema),
+        }),
+      ),
+    }),
+    profile: z.union([
+      z.strictObject({ status: z.literal("NOT_REQUESTED") }),
+      z.strictObject({
+        status: z.literal("UNKNOWN_PROFILE"),
+        requestedProfileId: z.string().min(1).max(256),
+      }),
+    ]),
+    policy: z.strictObject({
+      policyVersion: z.string().min(1).max(128),
+      digest: Sha256DigestSchema,
+    }),
+    cost: z.strictObject({
+      estimated: z.strictObject({
+        unit: z.literal("PROCESS_EXECUTIONS"),
+        value: z.int().min(0),
+        basis: z.literal("RECORDED_CAMPAIGN_SHAPE"),
+        assumptions: z.array(z.string().min(1).max(2_048)),
+      }),
+      observed: z.strictObject({
+        unit: z.literal("PROCESS_EXECUTIONS"),
+        executions: z.int().min(0),
+        recordedWallTimeMs: z.number().finite().min(0).nullable(),
+        wallTimeCoverage: z.enum(["COMPLETE", "PARTIAL", "NOT_RECORDED"]),
+      }),
+      execution: z.strictObject({
+        freshness: z.literal("UNKNOWN"),
+        cache: z.literal("NOT_RECORDED"),
+      }),
+    }),
+    limitations: z.array(z.string().min(1).max(2_048)),
+    exportDigest: Sha256DigestSchema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-export.v1.json",
+    title: "AssertLedger evidence export",
+    description:
+      "A self-contained, replayable projection of replay-valid evidence that separates result, integrity, authenticity, environment, confidence, controls, and cost.",
+  });
+
+export const EvidenceExportReplayResultSchema = z
+  .strictObject({
+    valid: z.boolean(),
+    schemaValid: z.boolean(),
+    sourceManifestValid: z.boolean(),
+    exportDigestValid: z.boolean(),
+    semanticsValid: z.boolean(),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-export-replay-result.v1.json",
+    title: "AssertLedger evidence export replay result",
+    description: "Independent schema, source, digest, and semantic replay verdicts for an export.",
+  });
+
 export type ObservationOutcome = z.infer<typeof ObservationOutcomeSchema>;
 export type FileOverlay = z.infer<typeof FileOverlaySchema>;
 export type World = z.infer<typeof WorldSchema>;
@@ -1525,6 +1850,10 @@ export type AgenticCorpusExperimentReceipt = z.infer<typeof AgenticCorpusExperim
 export type AgenticCorpusExperimentStructuredResult = z.infer<
   typeof AgenticCorpusExperimentStructuredResultSchema
 >;
+export type EvidenceProviderManifest = z.infer<typeof EvidenceProviderManifestSchema>;
+export type EvidenceExportRequest = z.infer<typeof EvidenceExportRequestSchema>;
+export type EvidenceExport = z.infer<typeof EvidenceExportSchema>;
+export type EvidenceExportReplayResult = z.infer<typeof EvidenceExportReplayResultSchema>;
 
 export class ContractError extends Error {
   readonly code: string;
@@ -3103,6 +3432,66 @@ export function parseAgenticCorpusExperimentStructuredResult(
   return parsed.data;
 }
 
+export function parseEvidenceProviderManifest(value: unknown): EvidenceProviderManifest {
+  const parsed = EvidenceProviderManifestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_PROVIDER_MANIFEST_INVALID", z.prettifyError(parsed.error));
+  }
+  const capabilityIds = new Set(parsed.data.capabilities.map((capability) => capability.id));
+  if (capabilityIds.size !== parsed.data.capabilities.length) {
+    throw new ContractError("EVIDENCE_PROVIDER_MANIFEST_INCONSISTENT");
+  }
+  return parsed.data;
+}
+
+export function parseEvidenceExportRequest(value: unknown): EvidenceExportRequest {
+  const parsed = EvidenceExportRequestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_EXPORT_REQUEST_INVALID", z.prettifyError(parsed.error));
+  }
+  const request = parsed.data;
+  parseEvidenceManifest(request.manifest);
+  assertUniqueIdentifiers(
+    request.consumerRequest?.obligations ?? [],
+    "EVIDENCE_EXPORT_REQUEST_INVALID",
+  );
+  return request;
+}
+
+export function parseEvidenceExport(value: unknown): EvidenceExport {
+  const parsed = EvidenceExportSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_EXPORT_INVALID", z.prettifyError(parsed.error));
+  }
+  const evidenceExport = parsed.data;
+  parseEvidenceManifest(evidenceExport.sourceManifest);
+  assertUniqueIdentifiers(evidenceExport.result.candidates, "EVIDENCE_EXPORT_INCONSISTENT");
+  assertUniqueIdentifiers(evidenceExport.scope.worlds, "EVIDENCE_EXPORT_INCONSISTENT");
+  assertUniqueIdentifiers(
+    evidenceExport.consumerRequest?.obligations ?? [],
+    "EVIDENCE_EXPORT_INCONSISTENT",
+  );
+  return evidenceExport;
+}
+
+export function parseEvidenceExportReplayResult(value: unknown): EvidenceExportReplayResult {
+  const parsed = EvidenceExportReplayResultSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_EXPORT_REPLAY_RESULT_INVALID", z.prettifyError(parsed.error));
+  }
+  const result = parsed.data;
+  if (
+    result.valid !==
+    (result.schemaValid &&
+      result.sourceManifestValid &&
+      result.exportDigestValid &&
+      result.semanticsValid)
+  ) {
+    throw new ContractError("EVIDENCE_EXPORT_REPLAY_RESULT_INCONSISTENT");
+  }
+  return result;
+}
+
 function jsonSchemaFor(schema: z.ZodType, id: string): Record<string, unknown> {
   const generated = z.toJSONSchema(schema, {
     target: "draft-2020-12",
@@ -3347,5 +3736,33 @@ export function agenticCorpusExperimentReplayResultJsonSchema(): Record<string, 
   return jsonSchemaFor(
     AgenticCorpusExperimentReplayResultSchema,
     "https://testforge.dev/schemas/agentic-corpus-experiment-replay-result.v1.json",
+  );
+}
+
+export function evidenceProviderManifestJsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceProviderManifestSchema,
+    "https://testforge.dev/schemas/evidence-provider-manifest.v1.json",
+  );
+}
+
+export function evidenceExportRequestJsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceExportRequestSchema,
+    "https://testforge.dev/schemas/evidence-export-request.v1.json",
+  );
+}
+
+export function evidenceExportJsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceExportSchema,
+    "https://testforge.dev/schemas/evidence-export.v1.json",
+  );
+}
+
+export function evidenceExportReplayResultJsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceExportReplayResultSchema,
+    "https://testforge.dev/schemas/evidence-export-replay-result.v1.json",
   );
 }

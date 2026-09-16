@@ -50,8 +50,9 @@ référence, un monde neutre rouge, une observation instable ou une attribution 
 
 Le socle local comprend les contrats versionnés, le noyau déterministe, les digests, le replay
 sémantique, le moteur d’exécution, les façades CLI/SDK/MCP, l’audit statique et l’initialisation.
-Le registre contient 34 schémas JSON, tous présents dans le verrou de conformance. L’ancien
-décompte de 30 dans la roadmap était périmé.
+Le registre contient 38 schémas JSON : les 34 figés par le verrou de conformance v1 et les 4
+schémas d’export d’évidence, verrouillés par une extension additive qui ne modifie pas le bundle v1.
+L’ancien décompte de 30 dans la roadmap était périmé.
 
 L’adaptateur officiel intégré est `node:test`. Le protocole `testforge-command` permet d’intégrer
 un autre framework avec un adaptateur fourni par l’opérateur. Détecter Vitest, Jest, Bun ou pytest

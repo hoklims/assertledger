@@ -15,8 +15,12 @@ raw file SHA-256, and this root digest construction over ordinally sorted portab
 SHA256(path + NUL + "sha256:" + raw-hex-digest + newline)
 ```
 
-It then verifies the raw SHA-256 and `$id` of all 34 published schemas directly from `schemas/`,
-strictly parses `bundle.json`, dispatches an explicit operation allowlist to public AssertLedger APIs,
+It then verifies the raw SHA-256 and `$id` of the 34 schemas frozen by v1 directly from `schemas/`.
+Schemas published after v1 are locked additively in `conformance/schema-extensions.json`, whose own
+raw SHA-256 is pinned in `scripts/conformance-v1-lock.ts`; the checker verifies every listed schema,
+rejects an overlap with the v1 set, and requires `schemas/` to contain exactly the union. The v1
+bundle bytes and root digest do not change when a schema is added. The checker then strictly parses
+`bundle.json`, dispatches an explicit operation allowlist to public AssertLedger APIs,
 and deep-compares every complete expected output. Additional assertions ensure compilation,
 collection, timeout, process-crash, infrastructure-error, and no-test-discovered outcomes never
 become target kills, and that re-sealed semantic forgeries remain invalid even when their public
@@ -58,6 +62,11 @@ sequence:
 5. independently calculate and manually update raw file hashes, the root digest, and locked public
    decision/artifact/profile/benchmark digests;
 6. run `pnpm check` and review the final aggregate diff.
+
+Publishing a new schema never touches `conformance/v1`: generate and format the schema, add its
+path, raw SHA-256, and `$id` to `conformance/schema-extensions.json`, independently recalculate that
+file's raw SHA-256 into `PUBLISHED_SCHEMA_EXTENSIONS_DIGEST`, and obtain the same fresh review. The
+conformance generator only covers the frozen v1 set.
 
 Any fixture or lock change is a public compatibility migration and must be documented. Do not
 accept a regenerated lock merely because the new checker is green: the checked-in oracle is an

@@ -7,7 +7,8 @@ regression-test qualification workflow, acceptance criteria, and evidence bounda
 ## Implemented locally in v0.1
 
 - deterministic repository analysis;
-- thirty-four versioned public JSON Schemas, all frozen by conformance v1;
+- thirty-eight versioned public JSON Schemas: thirty-four frozen by conformance v1 and four
+  evidence-export schemas locked by the additive schema-extension lock;
 - reference, target, and neutral overlay worlds;
 - one campaign snapshot and disposable execution workspaces;
 - built-in `node:test` runtime reporter and structured-command adapter;
@@ -28,10 +29,12 @@ regression-test qualification workflow, acceptance criteria, and evidence bounda
   planned-process and planned-timeout equality, content-addressed suites, per-source
   non-inferiority, and a shared frozen candidate universe;
 - a static conformance-v1 oracle locking canonicalization, decisions, replay witnesses, Profile v1,
-  Benchmark v1, and all 34 published schema bytes;
+  Benchmark v1, and all 34 v1 schema bytes, plus an additive lock for later schemas;
 - a pinned 24-case, three-source empirical corpus plan with signed admission and holdout rules,
   including eight receipt-linked TestExplora cases admitted only for curated calibration;
 - JSON CLI, TypeScript SDK, MCP v2 stdio server, and integration skill;
+- an interoperable evidence export with a provider manifest, separate result, integrity,
+  authenticity, environment, confidence, control, and cost sections, and deterministic replay;
 - `trusted-local`, explicitly recorded as `UNSANDBOXED`.
 
 ## Release 1.0 priority

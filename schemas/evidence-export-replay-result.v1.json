@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "schemaValid": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "sourceManifestValid": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "exportDigestValid": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "semanticsValid": {
+      "$ref": "#/$defs/__schema4"
+    }
+  },
+  "required": [
+    "valid",
+    "schemaValid",
+    "sourceManifestValid",
+    "exportDigestValid",
+    "semanticsValid"
+  ],
+  "additionalProperties": false,
+  "title": "AssertLedger evidence export replay result",
+  "description": "Independent schema, source, digest, and semantic replay verdicts for an export.",
+  "$defs": {
+    "__schema0": {
+      "type": "boolean"
+    },
+    "__schema1": {
+      "type": "boolean"
+    },
+    "__schema2": {
+      "type": "boolean"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/evidence-export-replay-result.v1.json"
+}

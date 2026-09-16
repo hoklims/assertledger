@@ -18,7 +18,11 @@ import {
   AgenticProfileReportV2Schema,
   AgenticProfileRequestSchema,
   AgenticProfileRequestV2Schema,
+  EvidenceExportReplayResultSchema,
+  EvidenceExportRequestSchema,
+  EvidenceExportSchema,
   EvidenceManifestSchema,
+  EvidenceProviderManifestSchema,
   ReplayResultSchema,
   RepositoryAnalysisSchema,
   RepositoryInitResultSchema,
@@ -478,6 +482,62 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
   );
   server.registerTool("testforge_profile_v2_replay", profileV2ReplayConfig, profileV2ReplayHandler);
 
+  const exportInputSchema = z.strictObject({ request: EvidenceExportRequestSchema });
+  const exportConfig = {
+    title: "Export AssertLedger evidence",
+    description:
+      "Export a replay-valid AssertLedger manifest as typed evidence that separates result, integrity, authenticity, environment, confidence, controls, and cost. Consumers decide admissibility.",
+    inputSchema: exportInputSchema,
+    outputSchema: EvidenceExportSchema,
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: true,
+    },
+  };
+  const exportHandler = ({ request }: z.infer<typeof exportInputSchema>) =>
+    jsonResult(assertLedger.exportEvidence(request));
+  server.registerTool("assertledger_export", exportConfig, exportHandler);
+  server.registerTool("testforge_export", exportConfig, exportHandler);
+
+  const exportReplayInputSchema = z.strictObject({ evidenceExport: EvidenceExportSchema });
+  const exportReplayConfig = {
+    title: "Replay an AssertLedger evidence export",
+    description:
+      "Strictly validate a self-contained evidence export and recompute it from its embedded source manifest.",
+    inputSchema: exportReplayInputSchema,
+    outputSchema: EvidenceExportReplayResultSchema,
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: true,
+    },
+  };
+  const exportReplayHandler = ({ evidenceExport }: z.infer<typeof exportReplayInputSchema>) =>
+    jsonResult(assertLedger.replayEvidenceExport(evidenceExport));
+  server.registerTool("assertledger_export_replay", exportReplayConfig, exportReplayHandler);
+  server.registerTool("testforge_export_replay", exportReplayConfig, exportReplayHandler);
+
+  const providerInputSchema = z.strictObject({});
+  const providerConfig = {
+    title: "Describe the AssertLedger evidence provider",
+    description:
+      "Return the provider version, source revision, announced capabilities, formats, cost model, and limits. Announced capabilities never prove that a control ran.",
+    inputSchema: providerInputSchema,
+    outputSchema: EvidenceProviderManifestSchema,
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: true,
+    },
+  };
+  const providerHandler = () => jsonResult(assertLedger.providerManifest());
+  server.registerTool("assertledger_provider", providerConfig, providerHandler);
+  server.registerTool("testforge_provider", providerConfig, providerHandler);
+
   const schemaInputSchema = z.strictObject({
     name: z.enum([
       "agentic-corpus-allocation-request",
@@ -508,6 +568,10 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       "repository-analysis",
       "evidence-manifest",
       "replay-result",
+      "evidence-provider-manifest",
+      "evidence-export-request",
+      "evidence-export",
+      "evidence-export-replay-result",
     ]),
   });
   const schemaConfig = {

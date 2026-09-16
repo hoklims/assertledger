@@ -604,6 +604,58 @@ describe("JSON CLI", () => {
     assert.equal(JSON.parse(capture.stdout()).fileCount, 2);
   });
 
+  it("exports evidence, replays the export, and describes the provider through JSON commands", async () => {
+    const run = async (argv: string[], input?: unknown) => {
+      const capture = captureIo(process.cwd());
+      capture.io.readStdin = async () => JSON.stringify(input);
+      const code = await integration.runCli(argv, capture.io);
+      return { code, stdout: capture.stdout(), stderr: capture.stderr() };
+    };
+    const manifest = agenticProfileRequest().manifest;
+
+    const exported = await run(["export", "-", "--json"], {
+      schemaVersion: "1.0.0",
+      manifest,
+      consumerRequest: null,
+    });
+    assert.equal(exported.code, 0, exported.stderr);
+    const evidenceExport = JSON.parse(exported.stdout);
+    assert.equal(evidenceExport.result.detection, "OBSERVED");
+    assert.equal(evidenceExport.sourceArtifactDigest, manifest.artifactDigest);
+
+    const replayed = await run(["export-replay", "-", "--json"], evidenceExport);
+    assert.equal(replayed.code, 0, replayed.stderr);
+    assert.equal(JSON.parse(replayed.stdout).valid, true);
+
+    const forged = structuredClone(evidenceExport);
+    forged.result.detection = "NOT_OBSERVED";
+    const forgedReplay = await run(["export-replay", "-", "--json"], forged);
+    assert.equal(forgedReplay.code, 4, forgedReplay.stderr);
+    assert.equal(JSON.parse(forgedReplay.stdout).valid, false);
+
+    const tamperedSource = structuredClone(manifest);
+    tamperedSource.observations[0].outcome = "TIMEOUT";
+    const refused = await run(["export", "-", "--json"], {
+      schemaVersion: "1.0.0",
+      manifest: tamperedSource,
+      consumerRequest: null,
+    });
+    assert.equal(refused.code, 4);
+    assert.match(refused.stderr, /EVIDENCE_EXPORT_SOURCE_INVALID/);
+    assert.equal(refused.stdout, "");
+
+    const provider = await run(["provider", "--json"]);
+    assert.equal(provider.code, 0, provider.stderr);
+    assert.equal(JSON.parse(provider.stdout).provider.name, "assertledger");
+
+    const schema = await run(["schema", "evidence-export"]);
+    assert.equal(schema.code, 0, schema.stderr);
+    assert.equal(
+      JSON.parse(schema.stdout).$id,
+      "https://testforge.dev/schemas/evidence-export.v1.json",
+    );
+  });
+
   it("derives and replays an agentic profile through JSON stdin", async () => {
     const profileCapture = captureIo(process.cwd());
     profileCapture.io.readStdin = async () => JSON.stringify(agenticProfileRequest());
@@ -893,6 +945,9 @@ describe("MCP facade", () => {
       "testforge_benchmark_replay",
       "testforge_corpus_allocate",
       "testforge_corpus_allocation_replay",
+      "testforge_export",
+      "testforge_export_replay",
+      "testforge_provider",
       "testforge_profile",
       "testforge_profile_replay",
       "testforge_profile_v2",
@@ -1004,7 +1059,53 @@ describe("MCP facade", () => {
     assert.ok(requestDefinition.properties.isolation);
   });
 
-  it("publishes strict output schemas and all twenty-eight facade schema names", async () => {
+  it("exports and replays evidence through read-only MCP aliases", async () => {
+    const { client, server } = await connectServer({});
+    try {
+      const listed = await client.listTools();
+      for (const name of [
+        "assertledger_export",
+        "testforge_export",
+        "assertledger_export_replay",
+        "testforge_export_replay",
+        "assertledger_provider",
+        "testforge_provider",
+      ]) {
+        const tool = listed.tools.find((candidate) => candidate.name === name);
+        assert.ok(tool?.outputSchema, `missing output schema for ${name}`);
+        assert.equal(tool.annotations?.readOnlyHint, true, name);
+      }
+      const request = {
+        schemaVersion: "1.0.0",
+        manifest: agenticProfileRequest().manifest,
+        consumerRequest: null,
+      };
+      const preferred = await client.callTool({
+        name: "assertledger_export",
+        arguments: { request },
+      });
+      const legacy = await client.callTool({ name: "testforge_export", arguments: { request } });
+      assert.equal(preferred.isError, undefined);
+      assert.deepEqual(preferred.structuredContent, legacy.structuredContent);
+      const replayed = await client.callTool({
+        name: "assertledger_export_replay",
+        arguments: { evidenceExport: preferred.structuredContent },
+      });
+      assert.equal(replayed.isError, undefined);
+      assert.equal((replayed.structuredContent as Record<string, unknown>).valid, true);
+      const provider = await client.callTool({ name: "assertledger_provider", arguments: {} });
+      assert.equal(provider.isError, undefined);
+      assert.equal(
+        (provider.structuredContent as { provider: { name: string } }).provider.name,
+        "assertledger",
+      );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("publishes strict output schemas and all thirty-two facade schema names", async () => {
     const { client } = await connectServer({ allowUnsafeExecution: true });
     const server = integration.createTestForgeServer({ allowUnsafeExecution: true });
     const listed = await client.listTools();
@@ -1064,6 +1165,10 @@ describe("MCP facade", () => {
       "repository-analysis",
       "evidence-manifest",
       "replay-result",
+      "evidence-provider-manifest",
+      "evidence-export-request",
+      "evidence-export",
+      "evidence-export-replay-result",
     ]);
     const profiled = await client.callTool({
       name: "testforge_profile",

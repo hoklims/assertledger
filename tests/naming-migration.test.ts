@@ -84,10 +84,13 @@ describe("MCP naming compatibility", () => {
       "benchmark_replay",
       "corpus_allocate",
       "corpus_allocation_replay",
+      "export",
+      "export_replay",
       "profile",
       "profile_replay",
       "profile_v2",
       "profile_v2_replay",
+      "provider",
       "replay",
       "schema",
     ];

@@ -40,6 +40,10 @@ it("checks every generated public schema for staleness", () => {
       "agentic-corpus-experiment-artifact.v1.json",
       "agentic-corpus-experiment-replay-request.v1.json",
       "agentic-corpus-experiment-replay-result.v1.json",
+      "evidence-provider-manifest.v1.json",
+      "evidence-export-request.v1.json",
+      "evidence-export.v1.json",
+      "evidence-export-replay-result.v1.json",
     ],
   );
 });
