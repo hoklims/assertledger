@@ -23,6 +23,10 @@ import {
   type AgenticProfileReportV2,
   type AgenticProfileRequest,
   type AgenticProfileRequestV2,
+  type EvidenceExport,
+  type EvidenceExportReplayResult,
+  type EvidenceExportRequest,
+  type EvidenceProviderManifest,
   parseAgenticBenchmarkArtifact,
   parseAgenticBenchmarkAcquisitionResult,
   parseAgenticBenchmarkRequest,
@@ -41,6 +45,9 @@ import {
   parseAgenticProfileReportV2,
   parseAgenticProfileRequest,
   parseAgenticProfileRequestV2,
+  parseEvidenceExport,
+  parseEvidenceExportRequest,
+  parseEvidenceProviderManifest,
 } from "../contracts/index.js";
 
 export type WorldKind = "REFERENCE" | "TARGET" | "NEUTRAL";
@@ -1389,6 +1396,545 @@ export function replayAgenticProfile(value: unknown): AgenticProfileReplayResult
     sourceManifestValid,
     policyDigestValid,
     reportDigestValid,
+    semanticsValid,
+  };
+}
+
+export interface EvidenceProviderIdentity {
+  version: string;
+  sourceRevision: EvidenceProviderManifest["provider"]["sourceRevision"];
+  adapters: EvidenceProviderManifest["adapters"];
+}
+
+const EVIDENCE_EXPORT_COST_ASSUMPTIONS = [
+  "One candidate-free control run per world and attempt precedes the candidate runs.",
+  "Each run is one process execution bounded by the campaign timeout.",
+];
+
+export function createEvidenceProviderManifest(
+  identity: EvidenceProviderIdentity,
+): EvidenceProviderManifest {
+  const base = {
+    schemaVersion: "1.0.0" as const,
+    provider: {
+      name: "assertledger" as const,
+      version: identity.version,
+      sourceRevision: identity.sourceRevision,
+    },
+    scope:
+      "Qualification of regression tests recorded in AssertLedger evidence manifest v1: candidate-free controls, reference, target, and neutral worlds, repeated attempts, deterministic gates, and replayable digests.",
+    formats: {
+      accepts: [
+        {
+          schemaId: "https://testforge.dev/schemas/evidence-export-request.v1.json",
+          schemaVersion: "1.0.0",
+        },
+        {
+          schemaId: "https://testforge.dev/schemas/evidence-manifest.v1.json",
+          schemaVersion: "1.0.0",
+        },
+      ],
+      emits: [
+        {
+          schemaId: "https://testforge.dev/schemas/evidence-export.v1.json",
+          schemaVersion: "1.0.0",
+        },
+        {
+          schemaId: "https://testforge.dev/schemas/evidence-export-replay-result.v1.json",
+          schemaVersion: "1.0.0",
+        },
+      ],
+    },
+    capabilities: [
+      {
+        id: "CONTROL_WITHOUT_CANDIDATE",
+        status: "SUPPORTED",
+        modality: "TEST_OBSERVED",
+        description:
+          "Every world runs without a candidate first; controls must pass without candidate attribution.",
+      },
+      {
+        id: "REFERENCE_PASS",
+        status: "SUPPORTED",
+        modality: "TEST_OBSERVED",
+        description: "Candidates must pass every reference world.",
+      },
+      {
+        id: "REGRESSION_DETECTION",
+        status: "SUPPORTED",
+        modality: "TEST_OBSERVED",
+        description:
+          "Only an attributed ASSERTION_FAILURE on a target world is detection; compilation, collection, crash, timeout, infrastructure, and no-test outcomes never are.",
+      },
+      {
+        id: "NEUTRAL_PASS",
+        status: "SUPPORTED",
+        modality: "TEST_OBSERVED",
+        description: "Candidates must pass every neutral world.",
+      },
+      {
+        id: "STABILITY_REPETITION",
+        status: "SUPPORTED",
+        modality: "TEST_OBSERVED",
+        description: "Normalized outcomes must agree across the recorded attempts.",
+      },
+      {
+        id: "GIT_REVISION_PROVENANCE",
+        status: "SUPPORTED_WHEN_RECORDED",
+        modality: "RECORDED_METADATA",
+        description:
+          "Git commits and trees are exported only when committed Git regression qualification recorded them.",
+      },
+      {
+        id: "EXECUTION_FRESHNESS",
+        status: "UNSUPPORTED",
+        modality: "NONE",
+        description:
+          "Evidence manifest v1 does not record whether observations were freshly executed or reused.",
+      },
+      {
+        id: "PRODUCER_AUTHENTICATION",
+        status: "UNSUPPORTED",
+        modality: "NONE",
+        description: "Exports are unsigned; digests check integrity, not producer identity.",
+      },
+      {
+        id: "SANDBOXED_EXECUTION",
+        status: "UNSUPPORTED",
+        modality: "NONE",
+        description: "trusted-local execution is explicitly UNSANDBOXED.",
+      },
+    ],
+    adapters: identity.adapters,
+    cost: {
+      unit: "PROCESS_EXECUTIONS" as const,
+      estimate: "(candidates + 1) * worlds * requiredAttempts",
+      assumptions: [
+        ...EVIDENCE_EXPORT_COST_ASSUMPTIONS,
+        "Wall time is observed per recorded run and is never estimated.",
+      ],
+    },
+    limits: [
+      "An announced capability does not prove that a control ran; only the recorded observations of an exported manifest do.",
+      "Exports cover only the recorded worlds, candidates, and attempts and do not generalize to unexecuted states.",
+      "Evidence is unauthenticated and trusted-local execution is unsandboxed.",
+      "Consumers decide whether to admit, degrade, or ignore evidence; that decision never changes AssertLedger results.",
+    ],
+  } satisfies Omit<EvidenceProviderManifest, "manifestDigest">;
+  return parseEvidenceProviderManifest({ ...base, manifestDigest: sha256Canonical(base) });
+}
+
+type EvidenceExportCandidate = EvidenceExport["result"]["candidates"][number];
+type EvidenceExportWorld = EvidenceExportCandidate["worlds"][number];
+
+function recordedGitRevision(provenance: string): EvidenceExport["scope"]["worlds"][number]["git"] {
+  let value: unknown;
+  try {
+    value = JSON.parse(provenance);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || canonicalize(value) !== provenance) return null;
+  if (
+    Object.keys(value).sort(compareOrdinal).join(",") !==
+    "commit,format,objectFormat,projection,reason,role,tree"
+  )
+    return null;
+  const { commit, format, objectFormat, projection, reason, role, tree } = value;
+  const length = objectFormat === "sha1" ? 40 : objectFormat === "sha256" ? 64 : 0;
+  const objectId = new RegExp(`^[a-f0-9]{${length}}$`);
+  if (
+    length === 0 ||
+    format !== "assertledger-git-regression/1" ||
+    (role !== "reference" && role !== "target" && role !== "neutral") ||
+    typeof commit !== "string" ||
+    !objectId.test(commit) ||
+    typeof tree !== "string" ||
+    !objectId.test(tree) ||
+    typeof projection !== "string" ||
+    typeof reason !== "string"
+  )
+    return null;
+  return { role, commit, tree, objectFormat: objectFormat as "sha1" | "sha256" };
+}
+
+function recordedFramework(
+  manifest: EvidenceExportRequest["manifest"],
+): EvidenceExport["environment"]["adapter"]["framework"] {
+  const configuration = manifest.evidenceContext.adapter.configuration;
+  if (
+    manifest.adapter.kind !== "node-test" ||
+    !isRecord(configuration) ||
+    configuration.kind !== "node-test" ||
+    !isRecord(configuration.profile)
+  )
+    return { status: "UNKNOWN" };
+  const { profileId, profileVersion, official } = configuration.profile;
+  const boundedText = (text: unknown): text is string =>
+    typeof text === "string" && text.length > 0 && text.length <= 128;
+  if (!boundedText(profileId) || !boundedText(profileVersion) || typeof official !== "boolean")
+    return { status: "UNKNOWN" };
+  return {
+    status: "RECORDED",
+    profileId,
+    profileVersion,
+    official,
+    nodeVersion: boundedText(configuration.nodeVersion) ? configuration.nodeVersion : null,
+    executableDigest:
+      typeof configuration.executableDigest === "string" &&
+      /^sha256:[a-f0-9]{64}$/.test(configuration.executableDigest)
+        ? configuration.executableDigest
+        : null,
+  };
+}
+
+function exportedWorld(
+  manifest: EvidenceExportRequest["manifest"],
+  candidateId: string,
+  world: EvidenceExportRequest["manifest"]["worlds"][number],
+  detectionEstablished: boolean,
+): EvidenceExportWorld {
+  const runs = manifest.observations.filter(
+    (observation) => observation.candidateId === candidateId && observation.worldId === world.id,
+  );
+  const complete = isComplete(runs as Observation[], manifest.policy.requiredAttempts);
+  const first = runs[0];
+  const outcome: EvidenceExportWorld["outcome"] =
+    !complete || first === undefined
+      ? "MISSING"
+      : runs.every((run) => run.outcome === first.outcome)
+        ? first.outcome
+        : "DIVERGENT";
+  const attributed =
+    complete && runs.every((run) => run.attributed && run.candidateTestsDiscovered >= 1);
+  const signal: EvidenceExportWorld["signal"] =
+    attributed && outcome === "ASSERTION_FAILURE"
+      ? "RED"
+      : attributed && outcome === "PASS"
+        ? "GREEN"
+        : "NONE";
+  const detection: EvidenceExportWorld["detection"] =
+    world.kind !== "TARGET"
+      ? "NOT_APPLICABLE"
+      : !detectionEstablished
+        ? "NOT_ESTABLISHED"
+        : signal === "RED"
+          ? "OBSERVED"
+          : signal === "GREEN"
+            ? "NOT_OBSERVED"
+            : "NOT_ESTABLISHED";
+  return {
+    worldId: world.id,
+    kind: world.kind,
+    required: world.required,
+    weight: world.weight,
+    outcome,
+    attempts: runs.length,
+    signal,
+    detection,
+  };
+}
+
+export function createEvidenceExport(request: EvidenceExportRequest): EvidenceExport {
+  request = parseEvidenceExportRequest(request);
+  const manifest = request.manifest;
+  if (!replayEvidenceManifest(manifest).valid) {
+    throw new EvidenceValidationError("EVIDENCE_EXPORT_SOURCE_INVALID");
+  }
+
+  const worlds = [...manifest.worlds].sort((left, right) => compareOrdinal(left.id, right.id));
+  const worldKinds = new Map(manifest.worlds.map((world) => [world.id, world.kind]));
+  const controlsValid =
+    manifest.decision.status !== "ENGINE_ERROR" &&
+    !manifest.decision.reasonCodes.includes("CONTROL_EVIDENCE_INVALID");
+  const selected = new Set(manifest.decision.selectedCandidateIds);
+  const sortedCandidates = [...manifest.candidates].sort((left, right) =>
+    compareOrdinal(left.id, right.id),
+  );
+  const candidates: EvidenceExportCandidate[] = sortedCandidates.map((candidate) => {
+    // Detection is only meaningful once controls, discovery, reference, and neutral evidence held.
+    const detectionEstablished =
+      controlsValid && (candidate.status === "ELIGIBLE" || candidate.status === "WEAK_ORACLE");
+    return {
+      id: candidate.id,
+      digest: candidate.digest,
+      status: candidate.status,
+      selected: selected.has(candidate.id),
+      reasonCodes: [...candidate.reasonCodes],
+      worlds: worlds.map((world) =>
+        exportedWorld(manifest, candidate.id, world, detectionEstablished),
+      ),
+    };
+  });
+
+  const statuses = new Set(candidates.map((candidate) => candidate.status));
+  const targetDetections = candidates.flatMap((candidate) =>
+    candidate.worlds.filter((world) => world.kind === "TARGET").map((world) => world.detection),
+  );
+  const [detection, reasonCode]: [
+    EvidenceExport["result"]["detection"],
+    EvidenceExport["result"]["reasonCode"],
+  ] =
+    manifest.decision.status === "VERIFIED"
+      ? ["OBSERVED", "REGRESSION_ASSERTION_OBSERVED"]
+      : manifest.decision.status === "ENGINE_ERROR"
+        ? ["NOT_ESTABLISHED", "ENGINE_ERROR"]
+        : !controlsValid
+          ? ["NOT_ESTABLISHED", "CONTROL_EVIDENCE_INVALID"]
+          : statuses.has("UNSTABLE") || statuses.has("INCONCLUSIVE")
+            ? ["NOT_ESTABLISHED", "CANDIDATE_EVIDENCE_INCONCLUSIVE"]
+            : statuses.has("INVALID")
+              ? ["NOT_ESTABLISHED", "CANDIDATE_EVIDENCE_INVALID"]
+              : targetDetections.includes("NOT_ESTABLISHED")
+                ? ["NOT_ESTABLISHED", "OPERATIONAL_OUTCOME_NOT_DETECTION"]
+                : targetDetections.includes("NOT_OBSERVED")
+                  ? ["NOT_OBSERVED", "TARGET_PASSED_WITHOUT_DETECTION"]
+                  : ["NOT_ESTABLISHED", "TARGET_STRENGTH_INSUFFICIENT"];
+
+  const contextWorlds = new Map(manifest.evidenceContext.worlds.map((world) => [world.id, world]));
+  const scopeWorlds: EvidenceExport["scope"]["worlds"] = worlds.map((world) => {
+    const context = contextWorlds.get(world.id);
+    if (context === undefined) throw new EvidenceValidationError("EVIDENCE_EXPORT_SOURCE_INVALID");
+    return {
+      id: world.id,
+      kind: world.kind,
+      required: world.required,
+      weight: world.weight,
+      digest: context.digest,
+      declaredProvenance: context.provenance,
+      git: recordedGitRevision(context.provenance),
+    };
+  });
+  const recordedGit = scopeWorlds.filter((world) => world.git !== null).length;
+
+  const candidateRuns = manifest.observations.filter(
+    (observation) => observation.candidateId !== null,
+  );
+  const candidateRunsIn = (kind: EvidenceExportWorld["kind"]) =>
+    candidateRuns.filter((observation) => worldKinds.get(observation.worldId) === kind).length;
+  const executed: EvidenceExport["controls"]["executed"] = (
+    [
+      ["CONTROL_WITHOUT_CANDIDATE", manifest.observations.length - candidateRuns.length],
+      ["REFERENCE_PASS", candidateRunsIn("REFERENCE")],
+      ["REGRESSION_DETECTION", candidateRunsIn("TARGET")],
+      ["NEUTRAL_PASS", candidateRunsIn("NEUTRAL")],
+      [
+        "STABILITY_REPETITION",
+        manifest.observations.filter((observation) => observation.attempt >= 2).length,
+      ],
+    ] as const
+  ).map(([control, observations]) => ({
+    control,
+    status: observations > 0 ? "EXECUTED" : "NOT_EXECUTED",
+    observations,
+  }));
+  const executedStatus = new Map<string, "EXECUTED" | "NOT_EXECUTED">(
+    executed.map((control) => [control.control, control.status]),
+  );
+
+  const consumerRequest: EvidenceExport["consumerRequest"] =
+    request.consumerRequest === null
+      ? null
+      : {
+          reference: request.consumerRequest.reference,
+          profileId: request.consumerRequest.profileId,
+          obligations: [...request.consumerRequest.obligations]
+            .sort((left, right) => compareOrdinal(left.id, right.id))
+            .map(({ id, control }) => ({ id, control })),
+        };
+  let requested: EvidenceExport["controls"]["requested"] = { status: "NOT_SUPPLIED" };
+  if (consumerRequest !== null) {
+    // Only executable controls can be covered; anything else stays UNSUPPORTED, never inferred.
+    const obligations = consumerRequest.obligations.map((obligation) => ({
+      ...obligation,
+      coverage: executedStatus.get(obligation.control) ?? ("UNSUPPORTED" as const),
+    }));
+    const covered = obligations.filter((obligation) => obligation.coverage === "EXECUTED").length;
+    requested = {
+      status:
+        obligations.length === 0
+          ? "NO_OBLIGATIONS"
+          : covered === obligations.length
+            ? "COVERED"
+            : covered === 0
+              ? "NOT_COVERED"
+              : "PARTIAL",
+      obligations,
+    };
+  }
+
+  const timed = manifest.observations.filter((observation) => observation.durationMs !== undefined);
+  const recordedWallTimeMs =
+    timed.length === 0
+      ? null
+      : timed.reduce((total, observation) => total + (observation.durationMs ?? 0), 0);
+  const base = {
+    schemaVersion: "1.0.0" as const,
+    sourceManifest: manifest,
+    sourceArtifactDigest: manifest.artifactDigest,
+    consumerRequest,
+    result: {
+      detection,
+      modality: detection === "NOT_ESTABLISHED" ? "NONE" : "TEST_OBSERVED",
+      reasonCode,
+      decision: {
+        status: manifest.decision.status,
+        selectedCandidateIds: [...manifest.decision.selectedCandidateIds],
+        reasonCodes: [...manifest.decision.reasonCodes],
+      },
+      candidates,
+    },
+    integrity: {
+      sourceReplay: "VALID",
+      verifiedRails: ["SCHEMA", "DECISION_DIGEST", "ARTIFACT_DIGEST", "DECISION_SEMANTICS"],
+      bindings: {
+        artifactDigest: manifest.artifactDigest,
+        decisionDigest: manifest.decisionDigest,
+        repositoryDigest: manifest.repositoryDigest,
+        policyDigest: sha256Canonical(manifest.policy),
+        worldDigests: scopeWorlds.map((world) => ({ worldId: world.id, digest: world.digest })),
+      },
+    },
+    authenticity: {
+      status: "UNAUTHENTICATED",
+      attestation: "NONE",
+      declaredProducer: {
+        name: manifest.evidenceContext.engine.name,
+        version: manifest.evidenceContext.engine.version,
+      },
+    },
+    environment: {
+      isolation: { kind: manifest.isolation.kind, level: manifest.isolation.level },
+      environmentAllowlist: [...manifest.evidenceContext.execution.environmentAllowlist],
+      adapter: {
+        kind: manifest.adapter.kind,
+        name: manifest.evidenceContext.adapter.name,
+        version: manifest.evidenceContext.adapter.version,
+        framework: recordedFramework(manifest),
+      },
+    },
+    confidence: {
+      level: "REPLAY_CONSISTENT_UNAUTHENTICATED",
+      established: [
+        "SOURCE_SCHEMA_VALID",
+        "DECISION_DIGEST_RECOMPUTED",
+        "ARTIFACT_DIGEST_RECOMPUTED",
+        "DECISION_RECOMPUTED_FROM_RECORDED_OBSERVATIONS",
+      ],
+      notEstablished: [
+        "PRODUCER_AUTHENTICITY",
+        "OBSERVATION_TRUTHFULNESS",
+        "EXECUTION_ISOLATION",
+        "EXECUTION_FRESHNESS",
+        "WORLD_SEMANTIC_RELEVANCE",
+      ],
+    },
+    scope: {
+      requiredAttempts: manifest.policy.requiredAttempts,
+      candidates: manifest.candidates.length,
+      observations: manifest.observations.length,
+      gitRevisions:
+        recordedGit === 0
+          ? "NOT_RECORDED"
+          : recordedGit === scopeWorlds.length
+            ? "RECORDED"
+            : "PARTIAL",
+      worlds: scopeWorlds,
+    },
+    controls: {
+      executed,
+      requested,
+      omittedGates: sortedCandidates.flatMap((candidate) =>
+        candidate.gates
+          .filter((gate) => gate.status === "NOT_RUN")
+          .map((gate) => ({
+            candidateId: candidate.id,
+            gate: gate.name,
+            reasonCodes: [...gate.reasonCodes],
+          })),
+      ),
+    },
+    profile:
+      consumerRequest?.profileId == null
+        ? { status: "NOT_REQUESTED" }
+        : { status: "UNKNOWN_PROFILE", requestedProfileId: consumerRequest.profileId },
+    policy: {
+      policyVersion: manifest.policy.policyVersion,
+      digest: sha256Canonical(manifest.policy),
+    },
+    cost: {
+      estimated: {
+        unit: "PROCESS_EXECUTIONS",
+        value:
+          (manifest.candidates.length + 1) *
+          manifest.worlds.length *
+          manifest.policy.requiredAttempts,
+        basis: "RECORDED_CAMPAIGN_SHAPE",
+        assumptions: [...EVIDENCE_EXPORT_COST_ASSUMPTIONS],
+      },
+      observed: {
+        unit: "PROCESS_EXECUTIONS",
+        executions: manifest.observations.length,
+        recordedWallTimeMs,
+        wallTimeCoverage:
+          timed.length === 0
+            ? "NOT_RECORDED"
+            : timed.length === manifest.observations.length
+              ? "COMPLETE"
+              : "PARTIAL",
+      },
+      execution: { freshness: "UNKNOWN", cache: "NOT_RECORDED" },
+    },
+    limitations: [
+      "The export restates replay-valid recorded evidence; it does not rerun tests or authenticate the producer.",
+      "Detection covers only the recorded target worlds and attempts.",
+      "Consumers decide admissibility; rejecting or ignoring an export does not change AssertLedger results.",
+    ],
+  } satisfies Omit<EvidenceExport, "exportDigest">;
+  return { ...base, exportDigest: sha256Canonical(base) };
+}
+
+function evidenceExportProjection(value: EvidenceExport): Omit<EvidenceExport, "exportDigest"> {
+  const { exportDigest: _exportDigest, ...projection } = value;
+  return projection;
+}
+
+export function replayEvidenceExport(value: unknown): EvidenceExportReplayResult {
+  const invalid: EvidenceExportReplayResult = {
+    valid: false,
+    schemaValid: false,
+    sourceManifestValid: false,
+    exportDigestValid: false,
+    semanticsValid: false,
+  };
+  let evidenceExport: EvidenceExport;
+  try {
+    evidenceExport = parseEvidenceExport(value);
+  } catch {
+    return invalid;
+  }
+  const sourceManifestValid = replayEvidenceManifest(evidenceExport.sourceManifest).valid;
+  const exportDigestValid =
+    evidenceExport.exportDigest === sha256Canonical(evidenceExportProjection(evidenceExport));
+  let semanticsValid = false;
+  try {
+    semanticsValid =
+      canonicalize(evidenceExport) ===
+      canonicalize(
+        createEvidenceExport({
+          schemaVersion: "1.0.0",
+          manifest: evidenceExport.sourceManifest,
+          consumerRequest: evidenceExport.consumerRequest,
+        }),
+      );
+  } catch {
+    semanticsValid = false;
+  }
+  return {
+    valid: sourceManifestValid && exportDigestValid && semanticsValid,
+    schemaValid: true,
+    sourceManifestValid,
+    exportDigestValid,
     semanticsValid,
   };
 }

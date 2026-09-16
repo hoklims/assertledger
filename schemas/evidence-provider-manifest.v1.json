@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "provider": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "scope": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "formats": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/__schema5"
+    },
+    "adapters": {
+      "$ref": "#/$defs/__schema7"
+    },
+    "cost": {
+      "$ref": "#/$defs/__schema9"
+    },
+    "limits": {
+      "$ref": "#/$defs/__schema11"
+    },
+    "manifestDigest": {
+      "$ref": "#/$defs/__schema13"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "provider",
+    "scope",
+    "formats",
+    "capabilities",
+    "adapters",
+    "cost",
+    "limits",
+    "manifestDigest"
+  ],
+  "additionalProperties": false,
+  "title": "AssertLedger evidence provider manifest",
+  "description": "Announced provider identity, capabilities, formats, cost model, and limits. An announced capability never proves that a control ran.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "__schema1": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "assertledger"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sourceRevision": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "RECORDED"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+                },
+                "worktree": {
+                  "type": "string",
+                  "enum": ["CLEAN", "DIRTY"]
+                }
+              },
+              "required": ["status", "commit", "worktree"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "UNKNOWN"
+                }
+              },
+              "required": ["status"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["name", "version", "sourceRevision"],
+      "additionalProperties": false
+    },
+    "__schema2": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "accepts": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema4"
+          }
+        },
+        "emits": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema4"
+          }
+        }
+      },
+      "required": ["accepts", "emits"],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "schemaId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "schemaVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["schemaId", "schemaVersion"],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema6"
+      }
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["SUPPORTED", "SUPPORTED_WHEN_RECORDED", "UNSUPPORTED"]
+        },
+        "modality": {
+          "type": "string",
+          "enum": ["TEST_OBSERVED", "RECORDED_METADATA", "NONE"]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": ["id", "status", "modality", "description"],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema8"
+      }
+    },
+    "__schema8": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["node-test", "testforge-command"]
+        },
+        "profileId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "official": {
+          "type": "boolean"
+        }
+      },
+      "required": ["kind", "profileId", "profileVersion", "official"],
+      "additionalProperties": false
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string",
+          "const": "PROCESS_EXECUTIONS"
+        },
+        "estimate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "assumptions": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema10"
+          }
+        }
+      },
+      "required": ["unit", "estimate", "assumptions"],
+      "additionalProperties": false
+    },
+    "__schema10": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "__schema11": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema12"
+      }
+    },
+    "__schema12": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "__schema13": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  },
+  "$id": "https://testforge.dev/schemas/evidence-provider-manifest.v1.json"
+}

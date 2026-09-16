@@ -36,8 +36,15 @@ import {
   agenticProfileReportV2JsonSchema,
   agenticProfileRequestJsonSchema,
   agenticProfileRequestV2JsonSchema,
+  type EvidenceExport,
+  type EvidenceExportReplayResult,
   type EvidenceManifestContract,
+  type EvidenceProviderManifest,
+  evidenceExportJsonSchema,
+  evidenceExportReplayResultJsonSchema,
+  evidenceExportRequestJsonSchema,
   evidenceManifestJsonSchema,
+  evidenceProviderManifestJsonSchema,
   parseAgenticBenchmarkAcquisitionReplayResult,
   parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
@@ -58,7 +65,11 @@ import {
   parseAgenticProfileReportV2,
   parseAgenticProfileRequest,
   parseAgenticProfileRequestV2,
+  parseEvidenceExport,
+  parseEvidenceExportReplayResult,
+  parseEvidenceExportRequest,
   parseEvidenceManifest,
+  parseEvidenceProviderManifest,
   parseReplayResult,
   parseRepositoryAnalysis,
   parseRepositoryAudit,
@@ -77,6 +88,7 @@ import {
   verificationRequestJsonSchema,
 } from "../contracts/index.js";
 import { parseRuntimeDoctorResult, type RuntimeDoctorResult } from "../contracts/runtime-doctor.js";
+import { ASSERTLEDGER_SOURCE_REVISION } from "../build-info.js";
 import {
   type AgenticCorpusExperimentReplayDependencies,
   createAgenticBenchmark,
@@ -84,6 +96,8 @@ import {
   createAgenticCorpusExperimentArtifact,
   createAgenticProfile,
   createAgenticProfileV2,
+  createEvidenceExport,
+  createEvidenceProviderManifest,
   replayAgenticBenchmark,
   replayAgenticBenchmarkAcquisition,
   replayAgenticCorpusAllocation,
@@ -91,9 +105,11 @@ import {
   replayAgenticCorpusExperimentArtifact,
   replayAgenticProfile,
   replayAgenticProfileV2,
+  replayEvidenceExport,
   replayEvidenceManifest,
 } from "../core/index.js";
 import { explainReasonCodes } from "../diagnostics.js";
+import { NODE_TEST_ADAPTER_PROFILE } from "../engine/adapters/node-test-profile.js";
 import { type GitRegressionOptions, qualifyGitRegression } from "../engine/git-regression.js";
 import {
   acquireAgenticBenchmark,
@@ -110,6 +126,7 @@ import {
   replayAgenticCorpusProvenance,
   verifyAgenticCorpusAllocationCommitmentSignatures,
 } from "../evaluation/agentic-corpus.js";
+import { ASSERTLEDGER_VERSION } from "../version.js";
 
 export type SchemaName =
   | "agentic-corpus-allocation-request"
@@ -143,7 +160,11 @@ export type SchemaName =
   | "repository-init-lock"
   | "repository-init-result"
   | "evidence-manifest"
-  | "replay-result";
+  | "replay-result"
+  | "evidence-provider-manifest"
+  | "evidence-export-request"
+  | "evidence-export"
+  | "evidence-export-replay-result";
 
 export type AgenticCorpusExperimentReplayOptions = Omit<
   AgenticCorpusExperimentReplayDependencies,
@@ -219,6 +240,42 @@ export class AssertLedger {
         semanticsValid: false,
       });
     }
+  }
+
+  exportEvidence(request: unknown): EvidenceExport {
+    return parseEvidenceExport(createEvidenceExport(parseEvidenceExportRequest(request)));
+  }
+
+  replayEvidenceExport(evidenceExport: unknown): EvidenceExportReplayResult {
+    try {
+      return parseEvidenceExportReplayResult(replayEvidenceExport(evidenceExport));
+    } catch {
+      return parseEvidenceExportReplayResult({
+        valid: false,
+        schemaValid: false,
+        sourceManifestValid: false,
+        exportDigestValid: false,
+        semanticsValid: false,
+      });
+    }
+  }
+
+  providerManifest(): EvidenceProviderManifest {
+    return parseEvidenceProviderManifest(
+      createEvidenceProviderManifest({
+        version: ASSERTLEDGER_VERSION,
+        sourceRevision: ASSERTLEDGER_SOURCE_REVISION,
+        adapters: [
+          {
+            kind: "node-test",
+            profileId: NODE_TEST_ADAPTER_PROFILE.profileId,
+            profileVersion: NODE_TEST_ADAPTER_PROFILE.profileVersion,
+            official: NODE_TEST_ADAPTER_PROFILE.official,
+          },
+          { kind: "testforge-command", profileId: null, profileVersion: null, official: false },
+        ],
+      }),
+    );
   }
 
   benchmark(request: unknown): AgenticBenchmarkArtifact {
@@ -406,6 +463,14 @@ export class AssertLedger {
         return evidenceManifestJsonSchema();
       case "replay-result":
         return replayResultJsonSchema();
+      case "evidence-provider-manifest":
+        return evidenceProviderManifestJsonSchema();
+      case "evidence-export-request":
+        return evidenceExportRequestJsonSchema();
+      case "evidence-export":
+        return evidenceExportJsonSchema();
+      case "evidence-export-replay-result":
+        return evidenceExportReplayResultJsonSchema();
     }
   }
 }
@@ -420,12 +485,15 @@ export {
   createAgenticCorpusExperimentArtifact,
   createAgenticProfile,
   createAgenticProfileV2,
+  createEvidenceExport,
+  createEvidenceProviderManifest,
   replayAgenticBenchmark,
   replayAgenticBenchmarkAcquisition,
   replayAgenticCorpusAllocation,
   replayAgenticCorpusExperimentArtifact,
   replayAgenticProfile,
   replayAgenticProfileV2,
+  replayEvidenceExport,
   replayEvidenceManifest,
   verifyDecisionDigest,
   verifyManifestIntegrity,

@@ -58,11 +58,16 @@ Commands:
           agentic-corpus-allocation-commitment-replay-result|agentic-corpus-experiment-plan|
           agentic-corpus-experiment-plan-replay-result|
           agentic-corpus-experiment-request|agentic-corpus-experiment-artifact|
-          agentic-corpus-experiment-replay-request|agentic-corpus-experiment-replay-result>
+          agentic-corpus-experiment-replay-request|agentic-corpus-experiment-replay-result|
+          evidence-provider-manifest|evidence-export-request|evidence-export|
+          evidence-export-replay-result>
                                                Print a JSON Schema
   verify [request.json|-] --allow-unsafe-execution
                                                Execute a trusted-local campaign
   replay [manifest.json|-]                     Verify an evidence digest
+  export [request.json|-]                      Export replay-valid evidence for external consumers
+  export-replay [export.json|-]                Replay an evidence export
+  provider                                     Describe the evidence provider and its limits
   profile [request.json|-]                     Derive an Agentic Test Profile
   profile-replay [report.json|-]               Replay an Agentic Test Profile
   profile-v2 [request.json|-]                  Derive a benchmark-backed Agentic Test Profile v2
@@ -425,6 +430,7 @@ const VALIDATION_ERROR_CODES = new Set([
   "INVALID_WORLDS",
   "JSON_INPUT_TOO_LARGE",
   "AGENTIC_PROFILE_SOURCE_INVALID",
+  "EVIDENCE_EXPORT_SOURCE_INVALID",
   "AGENTIC_BENCHMARK_REFERENCE_WORLD_INVALID",
   "AGENTIC_BENCHMARK_SOURCE_INVALID",
   "AGENTIC_BENCHMARK_SOURCE_BINDING_INVALID",
@@ -803,7 +809,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           name !== "agentic-corpus-experiment-request" &&
           name !== "agentic-corpus-experiment-artifact" &&
           name !== "agentic-corpus-experiment-replay-request" &&
-          name !== "agentic-corpus-experiment-replay-result"
+          name !== "agentic-corpus-experiment-replay-result" &&
+          name !== "evidence-provider-manifest" &&
+          name !== "evidence-export-request" &&
+          name !== "evidence-export" &&
+          name !== "evidence-export-replay-result"
         ) {
           io.writeStderr(USAGE);
           return 64;
@@ -825,6 +835,20 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const result = ledger.replay(await readJsonInput(positional[1], io));
         writeJson(io, result);
         return result.valid ? 0 : 4;
+      }
+      case "export": {
+        const result = ledger.exportEvidence(await readJsonInput(positional[1], io));
+        writeJson(io, result);
+        return 0;
+      }
+      case "export-replay": {
+        const result = ledger.replayEvidenceExport(await readJsonInput(positional[1], io));
+        writeJson(io, result);
+        return result.valid ? 0 : 4;
+      }
+      case "provider": {
+        writeJson(io, ledger.providerManifest());
+        return 0;
       }
       case "profile": {
         const result = ledger.profile(await readJsonInput(positional[1], io));

@@ -11,7 +11,7 @@ import {
   sealManifestArtifact,
   sha256Canonical,
 } from "../src/index.js";
-import { publishedSchemas } from "./schema-registry.js";
+import { conformanceV1Schemas } from "./schema-registry.js";
 
 const SCHEMA_VERSION = "1.0.0" as const;
 const CANONICAL_DIRECTORY = path.resolve("conformance", "v1");
@@ -222,7 +222,7 @@ async function writeJson(root: string, relativePath: string, value: unknown): Pr
 
 async function schemaExpectedDigests() {
   const schemaDirectory = path.resolve("schemas");
-  const names = publishedSchemas()
+  const names = conformanceV1Schemas()
     .map(([name]) => name)
     .sort();
   const schemas = [];

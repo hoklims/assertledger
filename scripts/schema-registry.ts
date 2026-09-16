@@ -25,7 +25,11 @@ import {
   agenticProfileReportV2JsonSchema,
   agenticProfileRequestJsonSchema,
   agenticProfileRequestV2JsonSchema,
+  evidenceExportJsonSchema,
+  evidenceExportReplayResultJsonSchema,
+  evidenceExportRequestJsonSchema,
   evidenceManifestJsonSchema,
+  evidenceProviderManifestJsonSchema,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
@@ -34,6 +38,18 @@ import {
   repositoryInitResultJsonSchema,
   verificationRequestJsonSchema,
 } from "../src/contracts/index.js";
+
+/** Schemas published after the frozen conformance v1 set; they are locked additively. */
+export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
+  "evidence-provider-manifest.v1.json",
+  "evidence-export-request.v1.json",
+  "evidence-export.v1.json",
+  "evidence-export-replay-result.v1.json",
+]);
+
+export function conformanceV1Schemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
+  return publishedSchemas().filter(([name]) => !POST_CONFORMANCE_V1_SCHEMA_NAMES.has(name));
+}
 
 export function publishedSchemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
   return [
@@ -92,5 +108,9 @@ export function publishedSchemas(): ReadonlyArray<readonly [string, Record<strin
       "agentic-corpus-experiment-replay-result.v1.json",
       agenticCorpusExperimentReplayResultJsonSchema(),
     ],
+    ["evidence-provider-manifest.v1.json", evidenceProviderManifestJsonSchema()],
+    ["evidence-export-request.v1.json", evidenceExportRequestJsonSchema()],
+    ["evidence-export.v1.json", evidenceExportJsonSchema()],
+    ["evidence-export-replay-result.v1.json", evidenceExportReplayResultJsonSchema()],
   ];
 }

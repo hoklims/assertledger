@@ -50,7 +50,7 @@
     "!benchmarks/**/RESULT-*.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsx scripts/write-build-info.ts",
     "check": "pnpm run format:check && pnpm run lint && pnpm run check:schemas && pnpm run check:conformance && pnpm run typecheck && pnpm run test",
     "smoke:package": "pnpm run build && pnpm run check:schemas && pnpm run check:conformance && tsx scripts/smoke-package.ts",
     "check:conformance": "tsx scripts/check-conformance-v1.ts",

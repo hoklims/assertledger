@@ -18,10 +18,12 @@ import {
   CONFORMANCE_V1_FILE_DIGESTS,
   CONFORMANCE_V1_PUBLIC_DIGESTS,
   CONFORMANCE_V1_ROOT_DIGEST,
+  PUBLISHED_SCHEMA_EXTENSIONS_DIGEST,
 } from "./conformance-v1-lock.js";
 
 const ROOT = path.resolve("conformance", "v1");
 const SCHEMA_DIRECTORY = path.resolve("schemas");
+const SCHEMA_EXTENSIONS = path.resolve("conformance", "schema-extensions.json");
 const OPERATIONS = [
   "CANONICALIZE",
   "DECIDE_EVIDENCE",
@@ -146,19 +148,14 @@ async function readJson(absolutePath: string): Promise<unknown> {
   return JSON.parse(await readFile(absolutePath, "utf8")) as unknown;
 }
 
-async function verifySchemas(): Promise<void> {
-  const document = record(
-    await readJson(path.join(ROOT, "schemas", "expected-digests.json")),
-    "SCHEMA_DIGESTS",
-  );
-  exactKeys(document, ["schemaVersion", "schemas"], "SCHEMA_DIGESTS");
-  assert.equal(document.schemaVersion, "1.0.0");
-  assert.ok(Array.isArray(document.schemas));
-  assert.equal(document.schemas.length, 34);
-  const expectedNames: string[] = [];
-  for (const [index, value] of document.schemas.entries()) {
-    const item = record(value, `SCHEMA_${index}`);
-    exactKeys(item, ["path", "rawSha256", "$id"], `SCHEMA_${index}`);
+async function verifyLockedSchemaEntries(
+  entries: unknown[],
+  label: string,
+  expectedNames: string[],
+): Promise<void> {
+  for (const [index, value] of entries.entries()) {
+    const item = record(value, `${label}_${index}`);
+    exactKeys(item, ["path", "rawSha256", "$id"], `${label}_${index}`);
     assert.equal(typeof item.path, "string");
     assert.equal(typeof item.rawSha256, "string");
     assert.equal(typeof item.$id, "string");
@@ -169,9 +166,44 @@ async function verifySchemas(): Promise<void> {
     expectedNames.push(name);
     const bytes = await readFile(path.join(SCHEMA_DIRECTORY, name));
     assert.equal(rawDigest(bytes), item.rawSha256, `SCHEMA_RAW_DIGEST_MISMATCH: ${name}`);
-    const schema = record(JSON.parse(bytes.toString("utf8")) as unknown, `SCHEMA_${index}`);
+    const schema = record(JSON.parse(bytes.toString("utf8")) as unknown, `${label}_${index}`);
     assert.equal(schema.$id, item.$id, `SCHEMA_ID_MISMATCH: ${name}`);
   }
+}
+
+async function verifySchemas(): Promise<void> {
+  const document = record(
+    await readJson(path.join(ROOT, "schemas", "expected-digests.json")),
+    "SCHEMA_DIGESTS",
+  );
+  exactKeys(document, ["schemaVersion", "schemas"], "SCHEMA_DIGESTS");
+  assert.equal(document.schemaVersion, "1.0.0");
+  assert.ok(Array.isArray(document.schemas));
+  assert.equal(document.schemas.length, 34);
+  const expectedNames: string[] = [];
+  await verifyLockedSchemaEntries(document.schemas, "SCHEMA", expectedNames);
+
+  const extensionBytes = await readFile(SCHEMA_EXTENSIONS);
+  assert.equal(
+    rawDigest(extensionBytes),
+    PUBLISHED_SCHEMA_EXTENSIONS_DIGEST,
+    "SCHEMA_EXTENSIONS_RAW_DIGEST_MISMATCH",
+  );
+  const extensions = record(
+    JSON.parse(extensionBytes.toString("utf8")) as unknown,
+    "SCHEMA_EXTENSIONS",
+  );
+  exactKeys(extensions, ["schemaVersion", "extends", "schemas"], "SCHEMA_EXTENSIONS");
+  assert.equal(extensions.schemaVersion, "1.0.0");
+  assert.equal(extensions.extends, "testforge-conformance-v1");
+  assert.ok(Array.isArray(extensions.schemas) && extensions.schemas.length > 0);
+  const extensionNames: string[] = [];
+  await verifyLockedSchemaEntries(extensions.schemas, "SCHEMA_EXTENSION", extensionNames);
+  for (const name of extensionNames) {
+    assert.equal(expectedNames.includes(name), false, `SCHEMA_EXTENSION_OVERLAPS_V1: ${name}`);
+  }
+  assert.equal(new Set(extensionNames).size, extensionNames.length, "SCHEMA_EXTENSION_DUPLICATE");
+  expectedNames.push(...extensionNames);
   expectedNames.sort();
   const actualNames = (await readdir(SCHEMA_DIRECTORY))
     .filter((name) => name.endsWith(".json"))
