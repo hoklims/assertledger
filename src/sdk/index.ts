@@ -39,11 +39,13 @@ import {
   type EvidenceExport,
   type EvidenceExportReplayResult,
   type EvidenceManifestContract,
+  type EvidenceManifestV2Contract,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
   evidenceExportRequestJsonSchema,
   evidenceManifestJsonSchema,
+  evidenceManifestV2JsonSchema,
   evidenceProviderManifestJsonSchema,
   parseAgenticBenchmarkAcquisitionReplayResult,
   parseAgenticBenchmarkAcquisitionRequest,
@@ -68,13 +70,13 @@ import {
   parseEvidenceExport,
   parseEvidenceExportReplayResult,
   parseEvidenceExportRequest,
-  parseEvidenceManifest,
   parseEvidenceProviderManifest,
   parseReplayResult,
   parseRepositoryAnalysis,
   parseRepositoryAudit,
   parseRepositoryInitResult,
-  parseVerificationRequest,
+  parseVersionedEvidenceManifest,
+  parseVersionedVerificationRequest,
   type ReplayResult,
   type RepositoryAnalysis,
   type RepositoryAudit,
@@ -86,6 +88,7 @@ import {
   repositoryInitLockJsonSchema,
   repositoryInitResultJsonSchema,
   verificationRequestJsonSchema,
+  verificationRequestV2JsonSchema,
 } from "../contracts/index.js";
 import { parseRuntimeDoctorResult, type RuntimeDoctorResult } from "../contracts/runtime-doctor.js";
 import { ASSERTLEDGER_SOURCE_REVISION } from "../build-info.js";
@@ -154,12 +157,14 @@ export type SchemaName =
   | "agentic-profile-report-v2"
   | "agentic-profile-replay-result-v2"
   | "verification-request"
+  | "verification-request-v2"
   | "repository-analysis"
   | "repository-audit"
   | "repository-init-config"
   | "repository-init-lock"
   | "repository-init-result"
   | "evidence-manifest"
+  | "evidence-manifest-v2"
   | "replay-result"
   | "evidence-provider-manifest"
   | "evidence-export-request"
@@ -197,8 +202,10 @@ export class AssertLedger {
     return parseRuntimeDoctorResult(await doctorRepositoryRuntime(root, options));
   }
 
-  async verify(request: unknown): Promise<EvidenceManifestContract> {
-    return parseEvidenceManifest(await verifyCampaign(parseVerificationRequest(request)));
+  async verify(request: unknown): Promise<EvidenceManifestContract | EvidenceManifestV2Contract> {
+    return parseVersionedEvidenceManifest(
+      await verifyCampaign(parseVersionedVerificationRequest(request)),
+    );
   }
 
   async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
@@ -206,9 +213,9 @@ export class AssertLedger {
   }
 
   replay(manifest: unknown): ReplayResult {
-    let parsedManifest: EvidenceManifestContract;
+    let parsedManifest: EvidenceManifestContract | EvidenceManifestV2Contract;
     try {
-      parsedManifest = parseEvidenceManifest(manifest);
+      parsedManifest = parseVersionedEvidenceManifest(manifest);
     } catch {
       return parseReplayResult({
         valid: false,
@@ -449,6 +456,8 @@ export class AssertLedger {
         return agenticProfileReplayResultV2JsonSchema();
       case "verification-request":
         return verificationRequestJsonSchema();
+      case "verification-request-v2":
+        return verificationRequestV2JsonSchema();
       case "repository-analysis":
         return repositoryAnalysisJsonSchema();
       case "repository-audit":
@@ -461,6 +470,8 @@ export class AssertLedger {
         return repositoryInitResultJsonSchema();
       case "evidence-manifest":
         return evidenceManifestJsonSchema();
+      case "evidence-manifest-v2":
+        return evidenceManifestV2JsonSchema();
       case "replay-result":
         return replayResultJsonSchema();
       case "evidence-provider-manifest":

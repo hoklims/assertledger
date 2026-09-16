@@ -88,6 +88,38 @@ export const TrustedLocalIsolationSchema = z.strictObject({
   environmentAllowlist: z.array(EnvironmentVariableSchema).max(100),
 });
 
+export const VERIFICATION_SCHEMA_VERSION_V2 = "2.0.0" as const;
+
+// Only digest-pinned references are accepted; the leading alphanumeric also keeps a reference
+// from being parsed as a container runtime option.
+const ContainerImageReferenceSchema = z
+  .string()
+  .max(512)
+  .regex(
+    /^(?:[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?@sha256:[a-f0-9]{64}$/,
+  );
+
+const ContainerEnvironmentVariableSchema = z.strictObject({
+  name: EnvironmentVariableSchema,
+  value: z.string().max(4_096),
+});
+
+export const ContainerLimitsSchema = z.strictObject({
+  memoryBytes: z.int().min(67_108_864).max(68_719_476_736),
+  cpuMillicores: z.int().min(100).max(256_000),
+  pids: z.int().min(16).max(65_536),
+  temporaryDirectoryBytes: z.int().min(1_048_576).max(17_179_869_184),
+});
+
+// The host runtime command is operator configuration, never request data: a request cannot choose
+// which host executable starts the container, and it cannot forward host environment values.
+export const ContainerIsolationSchema = z.strictObject({
+  kind: z.literal("container"),
+  image: ContainerImageReferenceSchema,
+  environment: z.array(ContainerEnvironmentVariableSchema).max(100),
+  limits: ContainerLimitsSchema,
+});
+
 export const BudgetsSchema = z.strictObject({
   maximumCandidates: z.int().min(1).max(1_000),
   maximumWorlds: z.int().min(3).max(1_000),
@@ -129,6 +161,22 @@ export const VerificationRequestSchema = z
     title: "TestForge verification request",
     description:
       "A versioned campaign describing operator-owned worlds, candidate test overlays, budgets, and evidence policy.",
+  });
+
+export const VerificationRequestV2Schema = z
+  .strictObject({
+    ...VerificationRequestSchema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V2),
+    isolation: z.discriminatedUnion("kind", [
+      TrustedLocalIsolationSchema,
+      ContainerIsolationSchema,
+    ]),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/verification-request.v2.json",
+    title: "AssertLedger verification request v2",
+    description:
+      "A versioned campaign executed either in a digest-pinned container backend or in explicitly acknowledged unsandboxed trusted-local mode.",
   });
 
 export const RepositoryAnalysisSchema = z
@@ -439,6 +487,76 @@ export const EvidenceManifestSchema = z
     title: "TestForge evidence manifest",
     description:
       "The final auditable campaign artifact, including evidence, deterministic gates, decisions, and integrity digests.",
+  });
+
+const ContainerExecutionControlsSchema = z.strictObject({
+  network: z.literal("none"),
+  rootFilesystem: z.literal("read-only"),
+  hostMounts: z.literal("none"),
+  workspace: z.literal("anonymous-volume"),
+  user: z.literal("65534:65534"),
+  capabilities: z.literal("none"),
+  noNewPrivileges: z.literal(true),
+  imagePull: z.literal("never"),
+  logDriver: z.literal("none"),
+  environment: z.array(ContainerEnvironmentVariableSchema).max(100),
+  limits: ContainerLimitsSchema,
+});
+
+const ExecutionBackendRecordSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("trusted-local"), level: z.literal("UNSANDBOXED") }),
+  z.strictObject({
+    kind: z.literal("container"),
+    level: z.literal("CONTAINER"),
+    image: z.strictObject({
+      reference: ContainerImageReferenceSchema,
+      id: Sha256DigestSchema,
+      os: z.literal("linux"),
+      architecture: z.string().min(1).max(64),
+    }),
+    runtime: z.strictObject({
+      clientVersion: z.string().min(1).max(128),
+      serverVersion: z.string().min(1).max(128),
+      serverOs: z.literal("linux"),
+      serverArchitecture: z.string().min(1).max(64),
+      cgroupVersion: z.string().max(16),
+      securityOptions: z.array(z.string().min(1).max(512)).max(64),
+    }),
+    controls: ContainerExecutionControlsSchema,
+  }),
+]);
+
+const EvidenceContextV2Schema = z.strictObject({
+  ...EvidenceContextSchema.shape,
+  execution: z.strictObject({
+    ...EvidenceContextSchema.shape.execution.shape,
+    backend: ExecutionBackendRecordSchema,
+  }),
+});
+
+export const EvidenceManifestV2Schema = z
+  .strictObject({
+    ...EvidenceManifestSchema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V2),
+    evidenceContext: EvidenceContextV2Schema,
+    isolation: z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("trusted-local"),
+        level: z.literal("UNSANDBOXED"),
+        acknowledgedUnsafeExecution: z.literal(true),
+      }),
+      z.strictObject({
+        kind: z.literal("container"),
+        level: z.literal("CONTAINER"),
+        runtimeCommand: z.array(z.string().min(1).max(4_096)).min(1).max(16),
+      }),
+    ]),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-manifest.v2.json",
+    title: "AssertLedger evidence manifest v2",
+    description:
+      "The final auditable campaign artifact with a decision-bound record of the execution backend and its enforced controls.",
   });
 
 export const ReplayResultSchema = z
@@ -1786,6 +1904,9 @@ export type FileOverlay = z.infer<typeof FileOverlaySchema>;
 export type World = z.infer<typeof WorldSchema>;
 export type Candidate = z.infer<typeof CandidateSchema>;
 export type VerificationRequest = z.infer<typeof VerificationRequestSchema>;
+export type VerificationRequestV2 = z.infer<typeof VerificationRequestV2Schema>;
+export type ContainerIsolation = z.infer<typeof ContainerIsolationSchema>;
+export type ContainerLimits = z.infer<typeof ContainerLimitsSchema>;
 export type NodeTestAdapter = z.infer<typeof NodeTestAdapterSchema>;
 export type StructuredCommandAdapter = z.infer<typeof StructuredCommandAdapterSchema>;
 export type RepositoryAnalysis = z.infer<typeof RepositoryAnalysisSchema>;
@@ -1795,6 +1916,8 @@ export type RepositoryInitLock = z.infer<typeof RepositoryInitLockSchema>;
 export type RepositoryInitResult = z.infer<typeof RepositoryInitResultSchema>;
 export type RepositoryInitDetections = z.infer<typeof RepositoryInitDetectionsSchema>;
 export type EvidenceManifestContract = z.infer<typeof EvidenceManifestSchema>;
+export type EvidenceManifestV2Contract = z.infer<typeof EvidenceManifestV2Schema>;
+export type ExecutionBackendRecord = z.infer<typeof ExecutionBackendRecordSchema>;
 export type ReplayResult = z.infer<typeof ReplayResultSchema>;
 export type AgenticProfilePolicy = z.infer<typeof AgenticProfilePolicySchema>;
 export type AgenticProfileRequest = z.infer<typeof AgenticProfileRequestSchema>;
@@ -1875,7 +1998,7 @@ function assertUniqueIdentifiers(items: ReadonlyArray<{ id: string }>, code: str
   }
 }
 
-function assertWorldKinds(request: VerificationRequest): void {
+function assertWorldKinds(request: Omit<VerificationRequest, "schemaVersion" | "isolation">): void {
   if (!request.worlds.some((world) => world.kind === "REFERENCE" && world.required)) {
     throw new ContractError("REFERENCE_WORLD_REQUIRED");
   }
@@ -1896,7 +2019,7 @@ function assertWorldKinds(request: VerificationRequest): void {
   }
 }
 
-function assertBudgets(request: VerificationRequest): void {
+function assertBudgets(request: Omit<VerificationRequest, "schemaVersion" | "isolation">): void {
   if (request.candidates.length > request.budgets.maximumCandidates) {
     throw new ContractError("CANDIDATE_BUDGET_EXCEEDED");
   }
@@ -1972,15 +2095,19 @@ function findUnsafeNodeTestArgument(value: unknown): string | undefined {
 function findReservedEnvironmentVariable(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null || !("isolation" in value)) return undefined;
   const isolation = value.isolation;
-  if (
-    typeof isolation !== "object" ||
-    isolation === null ||
-    !("environmentAllowlist" in isolation) ||
-    !Array.isArray(isolation.environmentAllowlist)
-  ) {
-    return undefined;
+  if (typeof isolation !== "object" || isolation === null) return undefined;
+  const names: unknown[] = [];
+  if ("environmentAllowlist" in isolation && Array.isArray(isolation.environmentAllowlist)) {
+    names.push(...isolation.environmentAllowlist);
   }
-  return isolation.environmentAllowlist.find((variable): variable is string => {
+  if ("environment" in isolation && Array.isArray(isolation.environment)) {
+    for (const variable of isolation.environment) {
+      if (typeof variable === "object" && variable !== null && "name" in variable) {
+        names.push(variable.name);
+      }
+    }
+  }
+  return names.find((variable): variable is string => {
     if (typeof variable !== "string") return false;
     const normalized = variable.toUpperCase();
     return (
@@ -2001,6 +2128,58 @@ export function parseVerificationRequest(value: unknown): VerificationRequest {
     throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
   }
 
+  assertVerificationRequestPreconditions(value);
+
+  const parsed = VerificationRequestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
+  }
+
+  const request = parsed.data;
+  assertUniqueIdentifiers(request.worlds, "DUPLICATE_WORLD_ID");
+  assertUniqueIdentifiers(request.candidates, "DUPLICATE_CANDIDATE_ID");
+  assertWorldKinds(request);
+  assertBudgets(request);
+
+  return request;
+}
+
+/** Parses either the frozen v1 request or the v2 request that adds container isolation. */
+export function parseVersionedVerificationRequest(
+  value: unknown,
+): VerificationRequest | VerificationRequestV2 {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== VERIFICATION_SCHEMA_VERSION_V2
+  ) {
+    return parseVerificationRequest(value);
+  }
+
+  assertVerificationRequestPreconditions(value);
+
+  const parsed = VerificationRequestV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
+  }
+
+  const request = parsed.data;
+  assertUniqueIdentifiers(request.worlds, "DUPLICATE_WORLD_ID");
+  assertUniqueIdentifiers(request.candidates, "DUPLICATE_CANDIDATE_ID");
+  assertWorldKinds(request);
+  assertBudgets(request);
+  if (request.isolation.kind === "container") {
+    const names = request.isolation.environment.map((variable) => variable.name);
+    if (new Set(names).size !== names.length) {
+      throw new ContractError("DUPLICATE_CONTAINER_ENVIRONMENT_VARIABLE");
+    }
+  }
+
+  return request;
+}
+
+function assertVerificationRequestPreconditions(value: object): void {
   const rawPolicy = "policy" in value ? value.policy : undefined;
   if (
     typeof rawPolicy === "object" &&
@@ -2024,19 +2203,6 @@ export function parseVerificationRequest(value: unknown): VerificationRequest {
   if (reservedEnvironmentVariable !== undefined) {
     throw new ContractError("RESERVED_ENVIRONMENT_VARIABLE", reservedEnvironmentVariable);
   }
-
-  const parsed = VerificationRequestSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
-  }
-
-  const request = parsed.data;
-  assertUniqueIdentifiers(request.worlds, "DUPLICATE_WORLD_ID");
-  assertUniqueIdentifiers(request.candidates, "DUPLICATE_CANDIDATE_ID");
-  assertWorldKinds(request);
-  assertBudgets(request);
-
-  return request;
 }
 
 export function parseRepositoryAnalysis(value: unknown): RepositoryAnalysis {
@@ -2573,7 +2739,9 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function manifestSummariesAreConsistent(manifest: EvidenceManifestContract): boolean {
+function manifestSummariesAreConsistent(
+  manifest: EvidenceManifestContract | EvidenceManifestV2Contract,
+): boolean {
   const engineError = manifest.decision.status === "ENGINE_ERROR";
   const invalidEvidence =
     manifest.repositoryDigest === "invalid" || manifest.policy.policyVersion === "invalid";
@@ -2605,12 +2773,59 @@ export function parseEvidenceManifest(value: unknown): EvidenceManifestContract 
     throw new ContractError("EVIDENCE_MANIFEST_INVALID", z.prettifyError(parsed.error));
   }
   const manifest = parsed.data;
+  if (!manifestSummariesAreConsistent(manifest) || !manifestReferencesAreConsistent(manifest)) {
+    throw new ContractError("EVIDENCE_MANIFEST_INCONSISTENT");
+  }
+  return manifest;
+}
+
+export function parseEvidenceManifestV2(value: unknown): EvidenceManifestV2Contract {
+  const parsed = EvidenceManifestV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_MANIFEST_INVALID", z.prettifyError(parsed.error));
+  }
+  const manifest = parsed.data;
+  if (
+    !manifestSummariesAreConsistent(manifest) ||
+    !manifestReferencesAreConsistent(manifest) ||
+    !executionBackendIsConsistent(manifest)
+  ) {
+    throw new ContractError("EVIDENCE_MANIFEST_INCONSISTENT");
+  }
+  return manifest;
+}
+
+/** Parses either a frozen v1 manifest or a v2 manifest with an execution backend record. */
+export function parseVersionedEvidenceManifest(
+  value: unknown,
+): EvidenceManifestContract | EvidenceManifestV2Contract {
+  return isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V2
+    ? parseEvidenceManifestV2(value)
+    : parseEvidenceManifest(value);
+}
+
+function executionBackendIsConsistent(manifest: EvidenceManifestV2Contract): boolean {
+  const execution = manifest.evidenceContext.execution;
+  const backend = execution.backend;
+  if (backend.kind !== manifest.isolation.kind || backend.level !== manifest.isolation.level) {
+    return false;
+  }
+  if (backend.kind !== "container") return true;
+  const names = backend.controls.environment.map((variable) => variable.name);
+  return (
+    new Set(names).size === names.length &&
+    JSON.stringify([...names].sort()) === JSON.stringify(execution.environmentAllowlist)
+  );
+}
+
+function manifestReferencesAreConsistent(
+  manifest: EvidenceManifestContract | EvidenceManifestV2Contract,
+): boolean {
   const worldIds = new Set(manifest.worlds.map((world) => world.id));
   const candidateIds = new Set(manifest.candidates.map((candidate) => candidate.id));
   const runIds = new Set(manifest.observations.map((observation) => observation.runId));
   const contextWorldIds = new Set(manifest.evidenceContext.worlds.map((world) => world.id));
   const inconsistent =
-    !manifestSummariesAreConsistent(manifest) ||
     worldIds.size !== manifest.worlds.length ||
     candidateIds.size !== manifest.candidates.length ||
     runIds.size !== manifest.observations.length ||
@@ -2629,10 +2844,7 @@ export function parseEvidenceManifest(value: unknown): EvidenceManifestContract 
         candidate.killedTargetIds.some((id) => !worldIds.has(id)) ||
         candidate.gates.some((gate) => gate.evidenceRunIds.some((id) => !runIds.has(id))),
     );
-  if (inconsistent) {
-    throw new ContractError("EVIDENCE_MANIFEST_INCONSISTENT");
-  }
-  return manifest;
+  return !inconsistent;
 }
 
 export function parseReplayResult(value: unknown): ReplayResult {
@@ -3550,6 +3762,20 @@ export function evidenceManifestJsonSchema(): Record<string, unknown> {
   return jsonSchemaFor(
     EvidenceManifestSchema,
     "https://testforge.dev/schemas/evidence-manifest.v1.json",
+  );
+}
+
+export function verificationRequestV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    VerificationRequestV2Schema,
+    "https://testforge.dev/schemas/verification-request.v2.json",
+  );
+}
+
+export function evidenceManifestV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceManifestV2Schema,
+    "https://testforge.dev/schemas/evidence-manifest.v2.json",
   );
 }
 

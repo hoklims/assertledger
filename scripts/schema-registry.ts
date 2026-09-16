@@ -29,6 +29,7 @@ import {
   evidenceExportReplayResultJsonSchema,
   evidenceExportRequestJsonSchema,
   evidenceManifestJsonSchema,
+  evidenceManifestV2JsonSchema,
   evidenceProviderManifestJsonSchema,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
@@ -37,6 +38,7 @@ import {
   repositoryInitLockJsonSchema,
   repositoryInitResultJsonSchema,
   verificationRequestJsonSchema,
+  verificationRequestV2JsonSchema,
 } from "../src/contracts/index.js";
 
 /** Schemas published after the frozen conformance v1 set; they are locked additively. */
@@ -45,6 +47,8 @@ export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
   "evidence-export-request.v1.json",
   "evidence-export.v1.json",
   "evidence-export-replay-result.v1.json",
+  "verification-request.v2.json",
+  "evidence-manifest.v2.json",
 ]);
 
 export function conformanceV1Schemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
@@ -74,12 +78,14 @@ export function publishedSchemas(): ReadonlyArray<readonly [string, Record<strin
     ["agentic-profile-report.v2.json", agenticProfileReportV2JsonSchema()],
     ["agentic-profile-replay-result.v2.json", agenticProfileReplayResultV2JsonSchema()],
     ["verification-request.v1.json", verificationRequestJsonSchema()],
+    ["verification-request.v2.json", verificationRequestV2JsonSchema()],
     ["repository-analysis.v1.json", repositoryAnalysisJsonSchema()],
     ["repository-audit.v1.json", repositoryAuditJsonSchema()],
     ["repository-init-config.v1.json", repositoryInitConfigJsonSchema()],
     ["repository-init-lock.v1.json", repositoryInitLockJsonSchema()],
     ["repository-init-result.v1.json", repositoryInitResultJsonSchema()],
     ["evidence-manifest.v1.json", evidenceManifestJsonSchema()],
+    ["evidence-manifest.v2.json", evidenceManifestV2JsonSchema()],
     ["replay-result.v1.json", replayResultJsonSchema()],
     ["agentic-corpus-allocation-request.v1.json", agenticCorpusAllocationRequestJsonSchema()],
     ["agentic-corpus-allocation.v1.json", agenticCorpusAllocationJsonSchema()],
