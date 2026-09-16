@@ -442,8 +442,12 @@ describe("developer entry points", () => {
     temporaryDirectories.push(aliasDirectory);
     const root = path.join(aliasDirectory, "repository");
     await symlink(canonicalRoot, root, process.platform === "win32" ? "junction" : "dir");
-    await mkdir(path.join(process.cwd(), ".omx"), { recursive: true });
-    const buildRoot = await mkdtemp(path.join(process.cwd(), ".omx", "assertledger-dx-build-"));
+    // Build inside the checkout for module resolution, but under a directory that concurrent
+    // whole-repository walkers exclude by default, so they never read a disappearing scratch file.
+    await mkdir(path.join(process.cwd(), ".testforge"), { recursive: true });
+    const buildRoot = await mkdtemp(
+      path.join(process.cwd(), ".testforge", "assertledger-dx-build-"),
+    );
     temporaryDirectories.push(buildRoot);
     await writeFile(
       path.join(buildRoot, "package.json"),
