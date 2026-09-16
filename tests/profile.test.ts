@@ -269,6 +269,7 @@ describe("agentic test profile", () => {
   it("never lets speed compensate for weak target evidence", () => {
     const report = createAgenticProfile(parseAgenticProfileRequest(request(evidence(false))));
 
+    assert.equal(report.sourceManifest.decision.status, "REJECTED");
     assert.equal(report.status, "NOT_QUALIFIED");
     assert.equal(report.qualifiedCandidateIds.length, 0);
     assert.equal(report.candidates[0]?.classification, "NOT_QUALIFIED");

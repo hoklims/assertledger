@@ -42,6 +42,7 @@ const required = [
   "examples/node-test/repository/package.json",
   "examples/node-test/repository/src/is-even.js",
   "examples/node-test/repository/tests/base.test.js",
+  "examples/agentic-profile/profile-manifest.mjs",
   "examples/git-history/create-demo.mjs",
   "examples/git-history/escape-string-regexp/before.cjs.txt",
   "examples/git-history/escape-string-regexp/fixed.cjs.txt",
@@ -448,8 +449,31 @@ function main(): void {
       status: "QUALIFIED",
       reportDigest: profile.reportDigest,
     });
+    // The copyable example keeps its three-sample policy; two reference attempts stay insufficient.
+    const example = run(
+      [
+        path.join(installed, "examples/agentic-profile/profile-manifest.mjs"),
+        manifestPath,
+        "package-smoke/example",
+      ],
+      consumer,
+      env,
+    );
+    assert.equal(example.error, null);
+    assert.equal(example.signal, null);
+    assert.equal(example.status, 2, example.stderr);
+    const exampleReport = JSON.parse(example.stdout.trim());
+    assert.equal(exampleReport.status, "INSUFFICIENT_TIMING_EVIDENCE");
+    assert.equal(exampleReport.sourceArtifactDigest, manifest.artifactDigest);
+    const exampleReportPath = path.join(consumer, "profile-example-report.json");
+    jsonFile(exampleReportPath, exampleReport);
+    assert.equal(
+      parse(runBin("assertledger", ["profile-replay", exampleReportPath, "--json"])).valid,
+      true,
+    );
     jsonFile(path.join(artifacts, "profile-report.json"), profile);
     jsonFile(path.join(artifacts, "profile-replay.json"), profileReplay);
+    jsonFile(path.join(artifacts, "profile-example-report.json"), exampleReport);
 
     // Main product journey, using installed code and byte-exact snapshots of a real correction.
     const historical = parse(
