@@ -498,11 +498,20 @@ function main(): void {
       encoding: "utf8",
       windowsHide: true,
     });
+    const sourceRevisionMismatch = `PROVIDER_SOURCE_REVISION_MISMATCH: ${JSON.stringify(provider.provider.sourceRevision)}`;
     if (sourceHead.status === 0) {
-      assert.equal(provider.provider.sourceRevision.status, "RECORDED");
-      assert.equal(provider.provider.sourceRevision.commit, sourceHead.stdout.trim());
+      assert.equal(provider.provider.sourceRevision.status, "RECORDED", sourceRevisionMismatch);
+      assert.equal(
+        provider.provider.sourceRevision.commit,
+        sourceHead.stdout.trim(),
+        sourceRevisionMismatch,
+      );
     } else {
-      assert.deepEqual(provider.provider.sourceRevision, { status: "UNKNOWN" });
+      assert.deepEqual(
+        provider.provider.sourceRevision,
+        { status: "UNKNOWN" },
+        sourceRevisionMismatch,
+      );
     }
     const exportRequest = {
       schemaVersion: "1.0.0",
@@ -543,7 +552,11 @@ function main(): void {
     });
     const consumerExample = path.join(installed, "examples/evidence-export/consumer.mjs");
     const consumerDecision = parse(run([consumerExample, exportPath], consumer, env));
-    assert.equal(consumerDecision.decision, "DEGRADE");
+    assert.equal(
+      consumerDecision.decision,
+      "DEGRADE",
+      `EVIDENCE_CONSUMER_DECISION_MISMATCH: ${consumerDecision.decision}`,
+    );
     assert.ok(consumerDecision.reasons.includes("EVIDENCE_UNAUTHENTICATED"));
     const forgedExportPath = path.join(consumer, "evidence-export-forged.json");
     jsonFile(forgedExportPath, {
@@ -555,10 +568,18 @@ function main(): void {
       forgedExportPath,
       "--json",
     ]);
-    assert.equal(forgedExportReplay.status, 4, forgedExportReplay.stderr);
+    assert.equal(
+      forgedExportReplay.status,
+      4,
+      `EVIDENCE_EXPORT_FORGED_REPLAY_EXIT_CODE_MISMATCH: ${forgedExportReplay.status} ${forgedExportReplay.stderr}`,
+    );
     assert.equal(JSON.parse(forgedExportReplay.stdout).valid, false);
     const forgedDecision = parse(run([consumerExample, forgedExportPath], consumer, env));
-    assert.equal(forgedDecision.decision, "REJECT");
+    assert.equal(
+      forgedDecision.decision,
+      "REJECT",
+      `EVIDENCE_CONSUMER_FORGED_EXPORT_NOT_REJECTED: ${forgedDecision.decision}`,
+    );
     assert.deepEqual(parse(runBin("assertledger", ["replay", manifestPath])), replay);
     jsonFile(path.join(artifacts, "provider-manifest.json"), provider);
     jsonFile(path.join(artifacts, "evidence-export.json"), evidenceExport);

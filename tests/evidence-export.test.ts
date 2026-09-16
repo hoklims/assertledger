@@ -405,6 +405,7 @@ describe("evidence export", () => {
         for (const world of candidate.worlds) {
           assert.notEqual(world.detection, "OBSERVED", outcome);
           assert.notEqual(world.detection, "NOT_OBSERVED", outcome);
+          if (world.kind === "TARGET") assert.equal(world.signal, "NONE", outcome);
         }
       }
     }
