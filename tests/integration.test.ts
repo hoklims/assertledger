@@ -622,6 +622,42 @@ describe("JSON CLI", () => {
     assert.equal(JSON.parse(replayCapture.stdout()).valid, true);
   });
 
+  it("maps each agentic profile outcome to its documented exit code", async () => {
+    const runProfile = async (request: unknown, command = "profile") => {
+      const capture = captureIo(process.cwd());
+      capture.io.readStdin = async () => JSON.stringify(request);
+      const code = await integration.runCli([command, "-", "--json"], capture.io);
+      return { code, stdout: capture.stdout(), stderr: capture.stderr() };
+    };
+
+    const budgetMissed = agenticProfileRequest();
+    budgetMissed.policy.lanes = [{ id: "loop", maximumReferenceP95Ms: 5 }];
+    const missed = await runProfile(budgetMissed);
+    assert.equal(missed.code, 2, missed.stderr);
+    assert.equal(JSON.parse(missed.stdout).status, "BUDGET_MISSED");
+
+    const insufficient = agenticProfileRequest();
+    insufficient.policy.minimumTimingSamples = 2;
+    const timing = await runProfile(insufficient);
+    assert.equal(timing.code, 3, timing.stderr);
+    assert.equal(JSON.parse(timing.stdout).status, "INSUFFICIENT_TIMING_EVIDENCE");
+
+    const tamperedSource = agenticProfileRequest();
+    tamperedSource.manifest.observations[0].outcome = "TIMEOUT";
+    const source = await runProfile(tamperedSource);
+    assert.equal(source.code, 4);
+    assert.match(source.stderr, /AGENTIC_PROFILE_SOURCE_INVALID/);
+    assert.equal(source.stdout, "");
+
+    const qualified = await runProfile(agenticProfileRequest());
+    assert.equal(qualified.code, 0, qualified.stderr);
+    const report = JSON.parse(qualified.stdout);
+    report.candidates[0].latency.p95Ms = 1;
+    const replay = await runProfile(report, "profile-replay");
+    assert.equal(replay.code, 4, replay.stderr);
+    assert.equal(JSON.parse(replay.stdout).valid, false);
+  });
+
   it("derives and replays an agentic benchmark through JSON stdin", async () => {
     const benchmarkCapture = captureIo(process.cwd());
     benchmarkCapture.io.readStdin = async () => JSON.stringify(agenticBenchmarkRequest());

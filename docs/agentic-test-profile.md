@@ -172,6 +172,11 @@ The report lists every satisfied lane and a `bestLaneId`, defined as the smalles
 the candidate satisfies. `QUALIFIED` is always scoped to declared worlds, attempts, environment,
 and profile policy.
 
+The report status maps to stable `assertledger profile` exit codes: `0` for `QUALIFIED`, `2` for
+`NOT_QUALIFIED` or `BUDGET_MISSED`, `3` for `INSUFFICIENT_TIMING_EVIDENCE`, and `4` when the
+request or its source manifest is rejected before a report exists. See the
+[CLI reference](reference.md).
+
 ## Portfolio selection under a budget
 
 Each lane also yields a deterministic weighted-coverage portfolio under that lane's wall-time

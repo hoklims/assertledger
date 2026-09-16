@@ -55,6 +55,14 @@ results go to stdout. Diagnostics go to stderr. `assertledger mcp` reserves stdo
 campaign and sets the request's local acknowledgement before validation. The flag does not create a
 sandbox.
 
+`profile` exits with `0` for `QUALIFIED`, `2` for `NOT_QUALIFIED` or `BUDGET_MISSED`, and `3` for
+`INSUFFICIENT_TIMING_EVIDENCE`. A malformed request or a replay-invalid source manifest writes no
+report, prints its reason code such as `AGENTIC_PROFILE_SOURCE_INVALID` to stderr, and exits with
+`4`. `profile-replay` exits with `0` only when every replay rail is valid and with `4` otherwise.
+`profile-v2` and `profile-v2-replay` use the same mapping, plus `4` for
+`OBSERVED_BENCHMARK_FAILURE` and `COMPARISON_SCOPE_MISMATCH`. Unexpected engine errors exit with
+`5`.
+
 Versioned JSON Schemas are published for the
 [`verification request`](../schemas/verification-request.v1.json),
 [`repository analysis`](../schemas/repository-analysis.v1.json),
