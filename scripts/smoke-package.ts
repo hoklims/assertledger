@@ -461,7 +461,7 @@ function main(): void {
     );
     assert.equal(example.error, null);
     assert.equal(example.signal, null);
-    assert.equal(example.status, 2, example.stderr);
+    assert.equal(example.status, 3, example.stderr);
     const exampleReport = JSON.parse(example.stdout.trim());
     assert.equal(exampleReport.status, "INSUFFICIENT_TIMING_EVIDENCE");
     assert.equal(exampleReport.sourceArtifactDigest, manifest.artifactDigest);
@@ -660,6 +660,12 @@ function main(): void {
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),
       ).version,
       initStatus: init.status,
+      profile: {
+        status: profile.status,
+        reportDigest: profile.reportDigest,
+        replayValid: profileReplay.valid,
+      },
+      profileExample: { exitCode: example.status, status: exampleReport.status },
     };
     jsonFile(path.join(artifacts, "report.json"), report);
     console.log(JSON.stringify(report));
