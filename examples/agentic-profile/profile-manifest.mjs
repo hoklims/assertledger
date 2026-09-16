@@ -24,5 +24,9 @@ if (manifestPath === undefined) {
     },
   });
   process.stdout.write(`${JSON.stringify(report)}\n`);
-  process.exitCode = report.status === "QUALIFIED" ? 0 : 2;
+  // Same mapping as `assertledger profile`.
+  process.exitCode =
+    { QUALIFIED: 0, NOT_QUALIFIED: 2, BUDGET_MISSED: 2, INSUFFICIENT_TIMING_EVIDENCE: 3 }[
+      report.status
+    ] ?? 5;
 }

@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { parseRepositoryInitResult } from "../src/contracts/index.js";
+import { sha256Canonical } from "../src/core/index.js";
 
 type IntegrationApi = {
   TestForge: new () => {
@@ -210,7 +211,7 @@ function verificationRequest(
   };
 }
 
-function agenticProfileRequest() {
+function agenticProfileRequest({ weak = false }: { weak?: boolean } = {}) {
   const worlds = [
     { id: "reference", kind: "REFERENCE", required: true, weight: 0 },
     { id: "target", kind: "TARGET", required: true, weight: 1 },
@@ -233,7 +234,7 @@ function agenticProfileRequest() {
       candidateId: "candidate",
       worldId: world.id,
       attempt: 1,
-      outcome: world.kind === "TARGET" ? "ASSERTION_FAILURE" : "PASS",
+      outcome: world.kind === "TARGET" && !weak ? "ASSERTION_FAILURE" : "PASS",
       testsDiscovered: 2,
       candidateTestsDiscovered: 1,
       attributed: true,
@@ -620,6 +621,68 @@ describe("JSON CLI", () => {
     );
     assert.equal(replayCode, 0, replayCapture.stderr());
     assert.equal(JSON.parse(replayCapture.stdout()).valid, true);
+  });
+
+  it("maps each agentic profile outcome to its documented exit code", async () => {
+    const runProfile = async (request: unknown, command = "profile") => {
+      const capture = captureIo(process.cwd());
+      capture.io.readStdin = async () => JSON.stringify(request);
+      const code = await integration.runCli([command, "-", "--json"], capture.io);
+      return { code, stdout: capture.stdout(), stderr: capture.stderr() };
+    };
+
+    const weak = await runProfile(agenticProfileRequest({ weak: true }));
+    assert.equal(weak.code, 2, weak.stderr);
+    const weakReport = JSON.parse(weak.stdout);
+    assert.equal(weakReport.sourceManifest.decision.status, "REJECTED");
+    assert.equal(weakReport.status, "NOT_QUALIFIED");
+
+    const budgetMissed = agenticProfileRequest();
+    budgetMissed.policy.lanes = [{ id: "loop", maximumReferenceP95Ms: 5 }];
+    const missed = await runProfile(budgetMissed);
+    assert.equal(missed.code, 2, missed.stderr);
+    assert.equal(JSON.parse(missed.stdout).status, "BUDGET_MISSED");
+
+    const insufficient = agenticProfileRequest();
+    insufficient.policy.minimumTimingSamples = 2;
+    const timing = await runProfile(insufficient);
+    assert.equal(timing.code, 3, timing.stderr);
+    assert.equal(JSON.parse(timing.stdout).status, "INSUFFICIENT_TIMING_EVIDENCE");
+
+    const tamperedSource = agenticProfileRequest();
+    tamperedSource.manifest.observations[0].outcome = "TIMEOUT";
+    const source = await runProfile(tamperedSource);
+    assert.equal(source.code, 4);
+    assert.match(source.stderr, /AGENTIC_PROFILE_SOURCE_INVALID/);
+    assert.equal(source.stdout, "");
+
+    const ambiguousPolicy = agenticProfileRequest();
+    ambiguousPolicy.policy.lanes = [
+      { id: "slow", maximumReferenceP95Ms: 100 },
+      { id: "fast", maximumReferenceP95Ms: 50 },
+    ];
+    const policy = await runProfile(ambiguousPolicy);
+    assert.equal(policy.code, 4);
+    assert.match(policy.stderr, /AGENTIC_PROFILE_POLICY_INVALID/);
+    assert.equal(policy.stdout, "");
+
+    const qualified = await runProfile(agenticProfileRequest());
+    assert.equal(qualified.code, 0, qualified.stderr);
+    const tampered = JSON.parse(qualified.stdout);
+    tampered.candidates[0].latency.p95Ms = 1;
+    const replay = await runProfile(tampered, "profile-replay");
+    assert.equal(replay.code, 4, replay.stderr);
+    assert.equal(JSON.parse(replay.stdout).reportDigestValid, false);
+
+    const forged = JSON.parse(qualified.stdout);
+    forged.sourceArtifactDigest = `sha256:${"d".repeat(64)}`;
+    const { reportDigest: _reportDigest, ...projection } = forged;
+    forged.reportDigest = sha256Canonical(projection);
+    const semanticReplay = await runProfile(forged, "profile-replay");
+    assert.equal(semanticReplay.code, 4, semanticReplay.stderr);
+    const semanticResult = JSON.parse(semanticReplay.stdout);
+    assert.equal(semanticResult.reportDigestValid, true);
+    assert.equal(semanticResult.semanticsValid, false);
   });
 
   it("derives and replays an agentic benchmark through JSON stdin", async () => {

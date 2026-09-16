@@ -94,6 +94,27 @@ function evidence(strong = true, unstable = false) {
   });
 }
 
+function decisionDigestProjection(manifest: ReturnType<typeof evidence>) {
+  return {
+    schemaVersion: manifest.schemaVersion,
+    repositoryDigest: manifest.repositoryDigest,
+    evidenceContext: manifest.evidenceContext,
+    policy: manifest.policy,
+    worlds: manifest.worlds,
+    candidates: manifest.candidates,
+    observations: manifest.observations.map(
+      ({
+        durationMs: _durationMs,
+        exitCode: _exitCode,
+        stdoutDigest: _stdoutDigest,
+        stderrDigest: _stderrDigest,
+        ...observation
+      }) => observation,
+    ),
+    decision: manifest.decision,
+  };
+}
+
 function request(manifest = evidence(true), minimumTimingSamples = 3) {
   return {
     schemaVersion: "1.0.0",
@@ -248,6 +269,7 @@ describe("agentic test profile", () => {
   it("never lets speed compensate for weak target evidence", () => {
     const report = createAgenticProfile(parseAgenticProfileRequest(request(evidence(false))));
 
+    assert.equal(report.sourceManifest.decision.status, "REJECTED");
     assert.equal(report.status, "NOT_QUALIFIED");
     assert.equal(report.qualifiedCandidateIds.length, 0);
     assert.equal(report.candidates[0]?.classification, "NOT_QUALIFIED");
@@ -340,6 +362,68 @@ describe("agentic test profile", () => {
     const replay = replayAgenticProfile(invalidReport);
     assert.equal(replay.valid, false);
     assert.equal(replay.schemaValid, false);
+  });
+
+  it("rejects replay-invalid source evidence before deriving a profile", () => {
+    const rawTamper = request();
+    const observation = rawTamper.manifest.observations[0];
+    assert.ok(observation);
+    rawTamper.manifest.observations[0] = { ...observation, outcome: "TIMEOUT" };
+    assert.throws(
+      () => createAgenticProfile(parseAgenticProfileRequest(rawTamper)),
+      /AGENTIC_PROFILE_SOURCE_INVALID/,
+    );
+
+    // Graft genuine VERIFIED assessment rows onto weak observations, then reseal both digests.
+    const genuine = evidence(true);
+    const forged = evidence(false);
+    assert.equal(forged.candidates[0]?.status, "WEAK_ORACLE");
+    forged.candidates = structuredClone(genuine.candidates);
+    forged.decision = structuredClone(genuine.decision);
+    forged.decisionDigest = sha256Canonical(decisionDigestProjection(forged));
+    const resealed = sealManifestArtifact(forged);
+    const sourceReplay = replayEvidenceManifest(resealed);
+    assert.equal(sourceReplay.decisionDigestValid, true);
+    assert.equal(sourceReplay.artifactDigestValid, true);
+    assert.equal(sourceReplay.decisionSemanticsValid, false);
+    assert.throws(
+      () => createAgenticProfile(parseAgenticProfileRequest(request(resealed))),
+      /AGENTIC_PROFILE_SOURCE_INVALID/,
+    );
+  });
+
+  it("fails replay closed when a re-digested report forges its source binding", () => {
+    const redigest = (report: ReturnType<typeof createAgenticProfile>) => {
+      const { reportDigest: _oldDigest, ...projection } = report;
+      report.reportDigest = sha256Canonical(projection);
+      return replayAgenticProfile(report);
+    };
+
+    const foreignDigest = createAgenticProfile(parseAgenticProfileRequest(request()));
+    foreignDigest.sourceArtifactDigest = digest("another-manifest");
+    assert.deepEqual(redigest(foreignDigest), {
+      valid: false,
+      schemaValid: true,
+      sourceManifestValid: true,
+      policyDigestValid: true,
+      reportDigestValid: true,
+      semanticsValid: false,
+    });
+
+    const swappedSource = createAgenticProfile(parseAgenticProfileRequest(request()));
+    assert.equal(swappedSource.status, "QUALIFIED");
+    const weakSource = parseAgenticProfileRequest(request(evidence(false))).manifest;
+    assert.equal(replayEvidenceManifest(weakSource).valid, true);
+    swappedSource.sourceManifest = weakSource;
+    swappedSource.sourceArtifactDigest = weakSource.artifactDigest;
+    assert.deepEqual(redigest(swappedSource), {
+      valid: false,
+      schemaValid: true,
+      sourceManifestValid: true,
+      policyDigestValid: true,
+      reportDigestValid: true,
+      semanticsValid: false,
+    });
   });
 
   it("selects a deterministic maximum-value greedy portfolio for each lane budget", () => {

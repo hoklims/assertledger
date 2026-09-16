@@ -42,6 +42,7 @@ const required = [
   "examples/node-test/repository/package.json",
   "examples/node-test/repository/src/is-even.js",
   "examples/node-test/repository/tests/base.test.js",
+  "examples/agentic-profile/profile-manifest.mjs",
   "examples/git-history/create-demo.mjs",
   "examples/git-history/escape-string-regexp/before.cjs.txt",
   "examples/git-history/escape-string-regexp/fixed.cjs.txt",
@@ -334,12 +335,14 @@ function main(): void {
     writeFileSync(
       typesScript,
       [
-        'import { AssertLedger, TestForge, type EvidenceManifestContract, type ReplayResult } from "assertledger";',
+        'import { AssertLedger, TestForge, type AgenticProfileReplayResult, type AgenticProfileReport, type EvidenceManifestContract, type ReplayResult } from "assertledger";',
         'import { canonicalize, replayEvidenceManifest } from "assertledger/core";',
         "const sdk: AssertLedger = new TestForge();",
         "const manifest: EvidenceManifestContract = await sdk.verify({});",
         "const replay: ReplayResult = sdk.replay(manifest);",
-        "const valid: boolean = replayEvidenceManifest(manifest).valid && replay.valid;",
+        "const profile: AgenticProfileReport = sdk.profile({ manifest });",
+        "const profileReplay: AgenticProfileReplayResult = sdk.replayProfile(profile);",
+        "const valid: boolean = replayEvidenceManifest(manifest).valid && replay.valid && profileReplay.valid;",
         "const text: string = canonicalize({ valid });",
         "void text;",
         "",
@@ -394,6 +397,87 @@ function main(): void {
       decisionSemanticsValid: true,
     });
     jsonFile(path.join(artifacts, "replay.json"), replay);
+
+    // Agentic Test Profile v1 derived by the installed CLI and SDK from the manifest verified above.
+    const profileRequest = {
+      schemaVersion: "1.0.0",
+      manifest,
+      policy: {
+        profileVersion: "1.0.0",
+        profileId: "package-smoke/default",
+        mode: "HARDENING",
+        minimumTimingSamples: 1,
+        lanes: [{ id: "gate", maximumReferenceP95Ms: 86_400_000 }],
+      },
+    };
+    const profileRequestPath = path.join(consumer, "profile-request.json");
+    jsonFile(profileRequestPath, profileRequest);
+    const profile = parse(runBin("assertledger", ["profile", profileRequestPath, "--json"]));
+    assert.equal(profile.status, "QUALIFIED");
+    assert.deepEqual(profile.qualifiedCandidateIds, ["strong"]);
+    assert.equal(profile.sourceArtifactDigest, manifest.artifactDigest);
+    const profilePath = path.join(consumer, "profile-report.json");
+    jsonFile(profilePath, profile);
+    const profileReplay = parse(runBin("assertledger", ["profile-replay", profilePath, "--json"]));
+    assert.equal(profileReplay.valid, true);
+    const forgedProfilePath = path.join(consumer, "profile-report-forged.json");
+    jsonFile(forgedProfilePath, { ...profile, qualifiedCandidateIds: [] });
+    const forgedProfileReplay = runBin("assertledger", [
+      "profile-replay",
+      forgedProfilePath,
+      "--json",
+    ]);
+    assert.equal(forgedProfileReplay.status, 4, forgedProfileReplay.stderr);
+    assert.equal(JSON.parse(forgedProfileReplay.stdout).valid, false);
+    const sdkProfileScript = path.join(consumer, "consumer-profile.mjs");
+    writeFileSync(
+      sdkProfileScript,
+      [
+        'import assert from "node:assert/strict";',
+        'import { readFileSync } from "node:fs";',
+        'import { AssertLedger } from "assertledger";',
+        `const request = JSON.parse(readFileSync(${JSON.stringify(profileRequestPath)}, "utf8"));`,
+        "const sdk = new AssertLedger();",
+        "const report = sdk.profile(request);",
+        `assert.equal(report.reportDigest, ${JSON.stringify(profile.reportDigest)});`,
+        "assert.equal(sdk.replayProfile(report).valid, true);",
+        "console.log(JSON.stringify({ status: report.status, reportDigest: report.reportDigest }));",
+        "",
+      ].join("\n"),
+    );
+    assert.deepEqual(parse(run([sdkProfileScript], consumer, env)), {
+      status: "QUALIFIED",
+      reportDigest: profile.reportDigest,
+    });
+    // The copyable example keeps its three-sample policy; two reference attempts stay insufficient.
+    const example = run(
+      [
+        path.join(installed, "examples/agentic-profile/profile-manifest.mjs"),
+        manifestPath,
+        "package-smoke/example",
+      ],
+      consumer,
+      env,
+    );
+    assert.equal(example.error, null);
+    assert.equal(example.signal, null);
+    assert.equal(
+      example.status,
+      3,
+      `PROFILE_EXAMPLE_EXIT_CODE_MISMATCH: ${example.status} ${example.stderr}`,
+    );
+    const exampleReport = JSON.parse(example.stdout.trim());
+    assert.equal(exampleReport.status, "INSUFFICIENT_TIMING_EVIDENCE");
+    assert.equal(exampleReport.sourceArtifactDigest, manifest.artifactDigest);
+    const exampleReportPath = path.join(consumer, "profile-example-report.json");
+    jsonFile(exampleReportPath, exampleReport);
+    assert.equal(
+      parse(runBin("assertledger", ["profile-replay", exampleReportPath, "--json"])).valid,
+      true,
+    );
+    jsonFile(path.join(artifacts, "profile-report.json"), profile);
+    jsonFile(path.join(artifacts, "profile-replay.json"), profileReplay);
+    jsonFile(path.join(artifacts, "profile-example-report.json"), exampleReport);
 
     // Main product journey, using installed code and byte-exact snapshots of a real correction.
     const historical = parse(
@@ -580,6 +664,12 @@ function main(): void {
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),
       ).version,
       initStatus: init.status,
+      profile: {
+        status: profile.status,
+        reportDigest: profile.reportDigest,
+        replayValid: profileReplay.valid,
+      },
+      profileExample: { exitCode: example.status, status: exampleReport.status },
     };
     jsonFile(path.join(artifacts, "report.json"), report);
     console.log(JSON.stringify(report));
