@@ -461,7 +461,11 @@ function main(): void {
     );
     assert.equal(example.error, null);
     assert.equal(example.signal, null);
-    assert.equal(example.status, 3, example.stderr);
+    assert.equal(
+      example.status,
+      3,
+      `PROFILE_EXAMPLE_EXIT_CODE_MISMATCH: ${example.status} ${example.stderr}`,
+    );
     const exampleReport = JSON.parse(example.stdout.trim());
     assert.equal(exampleReport.status, "INSUFFICIENT_TIMING_EVIDENCE");
     assert.equal(exampleReport.sourceArtifactDigest, manifest.artifactDigest);
