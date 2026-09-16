@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
@@ -17,6 +17,8 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable, type Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import { createScanner, SyntaxKind } from "typescript/unstable/ast";
 import {
@@ -24,6 +26,7 @@ import {
   type AgenticBenchmarkAcquisitionRequest,
   type AgenticBenchmarkAcquisitionResult,
   type AgenticBenchmarkRun,
+  type ContainerIsolation,
   parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
   parseEvidenceManifest,
@@ -32,6 +35,7 @@ import {
   parseRepositoryInitLock,
   parseRepositoryInitResult,
   parseVerificationRequest,
+  parseVersionedVerificationRequest,
   type RepositoryAudit,
   type RepositoryInitConfig,
   type RepositoryInitDetections,
@@ -54,9 +58,21 @@ import {
 } from "../core/index.js";
 import { NODE_TEST_ADAPTER_PROFILE } from "./adapters/node-test-profile.js";
 import {
+  type NodeTestPreflightProbeExecutor,
   type NodeTestRuntimePreflight,
   runNodeTestRuntimePreflight,
 } from "./adapters/node-test-runtime.js";
+import {
+  type BoundedProcessResult,
+  CONTAINER_LIMITATIONS,
+  CONTAINER_REPORTER_FILE,
+  CONTAINER_RESULT_FILE,
+  CONTAINER_WORKSPACE,
+  type ContainerBackend,
+  DEFAULT_CONTAINER_RUNTIME_COMMAND,
+  prepareContainerBackend,
+  runContainerExecution,
+} from "./container.js";
 import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 import { type RuntimeDoctorResult, runRuntimeDoctorChecks } from "./runtime-doctor.js";
@@ -164,11 +180,13 @@ interface VerificationRequest {
         arguments: string[];
         protocolVersion: "1.0.0";
       };
-  isolation: {
-    kind: "trusted-local";
-    acknowledgedUnsafeExecution: boolean;
-    environmentAllowlist: string[];
-  };
+  isolation:
+    | {
+        kind: "trusted-local";
+        acknowledgedUnsafeExecution: boolean;
+        environmentAllowlist: string[];
+      }
+    | ContainerIsolation;
   candidateRoots: string[];
   budgets: {
     maximumCandidates: number;
@@ -233,6 +251,10 @@ class OutputAccumulator {
       this.#parts.push(captured);
       this.#capturedBytes += captured.byteLength;
     }
+  }
+
+  capturedBytes(): Buffer {
+    return Buffer.concat(this.#parts);
   }
 
   finish(): CapturedOutput {
@@ -349,17 +371,31 @@ async function terminateProcessTree(pid: number | undefined): Promise<void> {
 }
 
 export async function runProcess(value: unknown): Promise<ProcessResult> {
-  const input = parseProcessInput(value);
+  const { stdoutBytes: _stdoutBytes, ...result } = await runBoundedProcess(
+    parseProcessInput(value),
+  );
+  return result;
+}
+
+/**
+ * Runs a validated process. The optional byte stream is written to standard input; a failure to
+ * produce or deliver it makes the run an infrastructure error even when the process exits zero.
+ */
+async function runBoundedProcess(
+  input: ProcessInput,
+  standardInput?: AsyncIterable<Uint8Array>,
+): Promise<BoundedProcessResult> {
   const cwd = await realpath(input.cwd);
   const cwdStats = await stat(cwd);
   if (!cwdStats.isDirectory()) throw new TypeError("INVALID_CWD");
 
-  return new Promise<ProcessResult>((resolve) => {
+  return new Promise<BoundedProcessResult>((resolve) => {
     const startedAt = Date.now();
     const stdout = new OutputAccumulator(input.maximumOutputBytes);
     const stderr = new OutputAccumulator(input.maximumOutputBytes);
     let timedOut = false;
     let spawnError: Error | undefined;
+    let inputError: Error | undefined;
     let settled = false;
     let terminationTimer: NodeJS.Timeout | undefined;
     const child = spawn(input.executable, input.args, {
@@ -368,8 +404,14 @@ export async function runProcess(value: unknown): Promise<ProcessResult> {
       env: input.environment,
       shell: false,
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+      stdio: [standardInput === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    }) as ChildProcessByStdio<Writable | null, Readable, Readable>;
+    const inputDelivered =
+      standardInput === undefined || child.stdin === null
+        ? Promise.resolve()
+        : pipeline(Readable.from(standardInput), child.stdin).catch((error: unknown) => {
+            inputError = error instanceof Error ? error : new Error(String(error));
+          });
     child.stdout.on("data", (chunk: Buffer) => stdout.add(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.add(chunk));
     child.once("error", (error) => {
@@ -393,7 +435,12 @@ export async function runProcess(value: unknown): Promise<ProcessResult> {
         durationMs: Date.now() - startedAt,
         stdout: stdout.finish(),
         stderr: stderr.finish(),
-        ...(spawnError ? { error: spawnError.message } : {}),
+        stdoutBytes: stdout.capturedBytes(),
+        ...(spawnError
+          ? { error: spawnError.message }
+          : inputError
+            ? { error: inputError.message }
+            : {}),
       });
     };
 
@@ -415,14 +462,18 @@ export async function runProcess(value: unknown): Promise<ProcessResult> {
     }, input.timeoutMs);
 
     child.once("close", (exitCode, signal) => {
-      const outcome: ProcessOutcome = timedOut
-        ? "TIMEOUT"
-        : spawnError
-          ? "INFRA_ERROR"
-          : exitCode === 0
-            ? "PASS"
-            : "PROCESS_CRASH";
-      finish(outcome, exitCode, signal);
+      const settle = (): void => {
+        const outcome: ProcessOutcome = timedOut
+          ? "TIMEOUT"
+          : spawnError || inputError
+            ? "INFRA_ERROR"
+            : exitCode === 0
+              ? "PASS"
+              : "PROCESS_CRASH";
+        finish(outcome, exitCode, signal);
+      };
+      if (standardInput === undefined) settle();
+      else void inputDelivered.then(settle);
     });
   });
 }
@@ -2073,7 +2124,7 @@ function assertPortableStringCollection(values: string[], duplicateCode: string)
 }
 
 function parseRequest(value: unknown): VerificationRequest {
-  const request = parseVerificationRequest(value) as unknown as JsonRecord;
+  const request = parseVersionedVerificationRequest(value) as unknown as JsonRecord;
   const repository = requireRecord(request.repository, "repository");
   const adapter = requireRecord(request.adapter, "adapter");
   const isolation = requireRecord(request.isolation, "isolation");
@@ -2087,9 +2138,24 @@ function parseRequest(value: unknown): VerificationRequest {
   if (adapter.kind !== "node-test" && adapter.kind !== "testforge-command") {
     throw new TypeError("UNSUPPORTED_ADAPTER");
   }
-  if (isolation.kind !== "trusted-local") throw new TypeError("UNSUPPORTED_ISOLATION");
-  if (isolation.acknowledgedUnsafeExecution !== true) {
-    throw new Error("UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED");
+  // The versioned contract already restricts container isolation to v2 requests.
+  const containerIsolation =
+    isolation.kind === "container"
+      ? (() => {
+          const parsed = isolation as unknown as ContainerIsolation;
+          return {
+            kind: "container" as const,
+            image: parsed.image,
+            environment: parsed.environment.map(({ name, value }) => ({ name, value })),
+            limits: { ...parsed.limits },
+          };
+        })()
+      : undefined;
+  if (containerIsolation === undefined) {
+    if (isolation.kind !== "trusted-local") throw new TypeError("UNSUPPORTED_ISOLATION");
+    if (isolation.acknowledgedUnsafeExecution !== true) {
+      throw new Error("UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED");
+    }
   }
   const parsedBudgets = {
     maximumCandidates: requirePositiveInteger(budgets.maximumCandidates, "maximum_candidates"),
@@ -2193,10 +2259,10 @@ function parseRequest(value: unknown): VerificationRequest {
   const executionCount = worlds.length * requiredAttempts * (candidates.length + 1);
   if (executionCount > parsedBudgets.maximumExecutions)
     throw new Error("EXECUTION_BUDGET_EXCEEDED");
-  const environmentAllowlist = requireStringArray(
-    isolation.environmentAllowlist,
-    "environment_allowlist",
-  );
+  const environmentAllowlist =
+    containerIsolation === undefined
+      ? requireStringArray(isolation.environmentAllowlist, "environment_allowlist")
+      : [];
   if (new Set(environmentAllowlist).size !== environmentAllowlist.length) {
     throw new TypeError("DUPLICATE_ENVIRONMENT_ALLOWLIST_ENTRY");
   }
@@ -2249,7 +2315,7 @@ function parseRequest(value: unknown): VerificationRequest {
       exclude: requireStringArray(repository.exclude, "repository_exclude"),
     },
     adapter: normalizedAdapter,
-    isolation: {
+    isolation: containerIsolation ?? {
       kind: "trusted-local",
       acknowledgedUnsafeExecution: true,
       environmentAllowlist,
@@ -2582,6 +2648,224 @@ async function probeNodeTestExecutable(
   };
 }
 
+// Evaluated by `node -p` inside a fresh container before any candidate code runs there.
+const CONTAINER_NODE_PROBE_SOURCE =
+  '(() => { const fs = require("node:fs"); const crypto = require("node:crypto"); const execPath = fs.realpathSync(process.execPath); return JSON.stringify({ digest: "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(execPath)).digest("hex"), execPath, node: process.versions.node }); })()';
+
+function parseJsonBytes(bytes: Buffer | undefined): unknown {
+  if (bytes === undefined) return undefined;
+  try {
+    return JSON.parse(bytes.toString("utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+async function withEmptyWorkspace<T>(operation: (workspace: string) => Promise<T>): Promise<T> {
+  const workspace = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "assertledger-container-probe-")),
+  );
+  try {
+    return await operation(workspace);
+  } finally {
+    await removeTemporaryDirectory(workspace);
+  }
+}
+
+async function runContainerNodeProbe(
+  container: ContainerBackend,
+  executable: string,
+  workspace: string,
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<{ execPath: string; nodeVersion: string; executableDigest: string }> {
+  const { process: result } = await runContainerExecution(
+    container,
+    {
+      workspace,
+      executable,
+      args: ["-p", CONTAINER_NODE_PROBE_SOURCE],
+      environment: {},
+      timeoutMs: Math.min(timeoutMs, 30_000),
+      maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+    },
+    runBoundedProcess,
+    os.tmpdir(),
+  );
+  if (result.outcome !== "PASS" || result.stdout.truncated || result.stderr.totalBytes > 0) {
+    throw new Error("NODE_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  let report: unknown;
+  try {
+    report = JSON.parse(result.stdout.text.trim()) as unknown;
+  } catch {
+    throw new Error("NODE_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  if (
+    !isRecord(report) ||
+    Object.keys(report).sort().join("\0") !== "digest\0execPath\0node" ||
+    typeof report.execPath !== "string" ||
+    !report.execPath.startsWith("/") ||
+    typeof report.digest !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/u.test(report.digest) ||
+    typeof report.node !== "string"
+  ) {
+    throw new Error("NODE_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  if (!nodeVersionIsSupported(report.node)) throw new Error("NODE_TEST_VERSION_UNSUPPORTED");
+  return { execPath: report.execPath, nodeVersion: report.node, executableDigest: report.digest };
+}
+
+async function probeContainerNodeExecutable(
+  container: ContainerBackend,
+  requestedExecutable: string,
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<NodeExecutableIdentity> {
+  return withEmptyWorkspace(async (workspace) => {
+    const firstProbe = await runContainerNodeProbe(
+      container,
+      requestedExecutable,
+      workspace,
+      timeoutMs,
+      maximumOutputBytes,
+    );
+    const secondProbe = await runContainerNodeProbe(
+      container,
+      firstProbe.execPath,
+      workspace,
+      timeoutMs,
+      maximumOutputBytes,
+    );
+    if (
+      secondProbe.execPath !== firstProbe.execPath ||
+      secondProbe.nodeVersion !== firstProbe.nodeVersion ||
+      secondProbe.executableDigest !== firstProbe.executableDigest
+    ) {
+      throw new Error("NODE_TEST_EXECUTABLE_PROBE_FAILED");
+    }
+    return {
+      requestedExecutable,
+      resolvedExecutable: firstProbe.execPath,
+      executableDigest: firstProbe.executableDigest,
+      nodeVersion: firstProbe.nodeVersion,
+    };
+  });
+}
+
+function containerPreflightExecutor(
+  container: ContainerBackend,
+  executable: string,
+): NodeTestPreflightProbeExecutor {
+  return (probe) =>
+    withEmptyWorkspace(async (workspace) => {
+      await writeFile(path.join(workspace, "control.test.mjs"), probe.controlSource, {
+        flag: "wx",
+      });
+      await writeFile(path.join(workspace, `${probe.name}.test.mjs`), probe.candidateSource, {
+        flag: "wx",
+      });
+      const candidate = `${CONTAINER_WORKSPACE}/${probe.name}.test.mjs`;
+      const executed = await runContainerExecution(
+        container,
+        {
+          workspace,
+          reporterSource: probe.reporterSource,
+          executable,
+          args: [
+            "--test",
+            `--test-reporter=file://${CONTAINER_REPORTER_FILE}`,
+            `--test-reporter-destination=${CONTAINER_RESULT_FILE}`,
+            "--",
+            `${CONTAINER_WORKSPACE}/control.test.mjs`,
+            candidate,
+          ],
+          environment: { TESTFORGE_NODE_CANDIDATE_FILES: JSON.stringify([candidate]) },
+          timeoutMs: probe.timeoutMs,
+          maximumOutputBytes: probe.maximumOutputBytes,
+          resultMaximumBytes: probe.reportMaximumBytes,
+        },
+        runBoundedProcess,
+        os.tmpdir(),
+      );
+      return {
+        processResult: {
+          outcome: executed.process.outcome,
+          exitCode: executed.process.exitCode,
+        },
+        report: parseJsonBytes(executed.result),
+      };
+    });
+}
+
+interface AdapterExecution {
+  result: ProcessResult;
+  structuredReport: StructuredCommandReport | undefined;
+  nodeTestReport: NodeTestReport | undefined;
+}
+
+async function executeContainerAdapter(
+  request: VerificationRequest,
+  container: ContainerBackend,
+  workspace: string,
+  candidateFiles: string[],
+): Promise<AdapterExecution> {
+  const adapter = request.adapter;
+  const executed = await runContainerExecution(
+    container,
+    {
+      workspace,
+      ...(adapter.kind === "node-test" ? { reporterSource: NODE_TEST_REPORTER_SOURCE } : {}),
+      executable: adapter.executable,
+      args:
+        adapter.kind === "node-test"
+          ? [
+              "--test",
+              `--test-reporter=file://${CONTAINER_REPORTER_FILE}`,
+              `--test-reporter-destination=${CONTAINER_RESULT_FILE}`,
+              ...(adapter.extraArguments ?? []),
+              "--",
+              ...adapter.baseTestFiles,
+              ...candidateFiles,
+            ]
+          : adapter.arguments,
+      environment:
+        adapter.kind === "node-test"
+          ? {
+              TESTFORGE_NODE_CANDIDATE_FILES: JSON.stringify(
+                candidateFiles.map((file) => `${CONTAINER_WORKSPACE}/${file}`),
+              ),
+            }
+          : {
+              TESTFORGE_RESULT_FILE: CONTAINER_RESULT_FILE,
+              TESTFORGE_CANDIDATE_FILES: JSON.stringify(candidateFiles),
+            },
+      timeoutMs: request.budgets.timeoutMsPerExecution,
+      maximumOutputBytes: request.budgets.maximumOutputBytes,
+      resultMaximumBytes: CONTROLLED_REPORT_MAXIMUM_BYTES,
+    },
+    runBoundedProcess,
+    os.tmpdir(),
+  );
+  const result = executed.process;
+  const document =
+    result.outcome === "TIMEOUT" || result.outcome === "INFRA_ERROR"
+      ? undefined
+      : parseJsonBytes(executed.result);
+  return {
+    result,
+    structuredReport:
+      adapter.kind === "testforge-command"
+        ? parseStructuredCommandReport(document, result)
+        : undefined,
+    nodeTestReport: adapter.kind === "node-test" ? parseNodeTestReport(document) : undefined,
+  };
+}
+
+function trustedLocalEnvironmentAllowlist(request: VerificationRequest): string[] {
+  return request.isolation.kind === "trusted-local" ? request.isolation.environmentAllowlist : [];
+}
+
 function classifyNodeTest(
   result: ProcessResult,
   report: NodeTestReport | undefined,
@@ -2625,6 +2909,57 @@ async function copyRepository(
   });
 }
 
+async function executeTrustedLocalAdapter(
+  request: VerificationRequest,
+  workspace: string,
+  temporaryRoot: string,
+  candidateFiles: string[],
+  nodeTestReporterPath: string | undefined,
+): Promise<AdapterExecution> {
+  const resultFile = path.join(temporaryRoot, "structured-command-result.json");
+  const environment = environmentFromAllowlist(trustedLocalEnvironmentAllowlist(request));
+  if (request.adapter.kind === "testforge-command") {
+    environment.TESTFORGE_RESULT_FILE = resultFile;
+    environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
+  } else {
+    if (nodeTestReporterPath === undefined) throw new Error("NODE_TEST_REPORTER_MISSING");
+    environment.TESTFORGE_NODE_CANDIDATE_FILES = JSON.stringify(
+      candidateFiles.map((file) => path.resolve(workspace, ...file.split("/"))),
+    );
+  }
+  const args =
+    request.adapter.kind === "node-test"
+      ? [
+          "--test",
+          `--test-reporter=${pathToFileURL(nodeTestReporterPath as string).href}`,
+          `--test-reporter-destination=${resultFile}`,
+          ...(request.adapter.extraArguments ?? []),
+          "--",
+          ...request.adapter.baseTestFiles,
+          ...candidateFiles,
+        ]
+      : request.adapter.arguments;
+  const result = await runProcess({
+    executable: request.adapter.executable,
+    args,
+    cwd: workspace,
+    environment,
+    timeoutMs: request.budgets.timeoutMsPerExecution,
+    maximumOutputBytes: request.budgets.maximumOutputBytes,
+  });
+  return {
+    result,
+    structuredReport:
+      request.adapter.kind === "testforge-command"
+        ? await readStructuredCommandReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
+        : undefined,
+    nodeTestReport:
+      request.adapter.kind === "node-test"
+        ? await readNodeTestReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
+        : undefined,
+  };
+}
+
 async function executeObservation(
   request: VerificationRequest,
   repositoryRoot: string,
@@ -2632,6 +2967,7 @@ async function executeObservation(
   candidate: Candidate | null,
   attempt: number,
   nodeTestReporterPath: string | undefined,
+  container: ContainerBackend | undefined,
 ): Promise<Observation> {
   const temporaryRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-run-")));
   const workspace = path.join(temporaryRoot, "repository");
@@ -2640,45 +2976,16 @@ async function executeObservation(
     await applyFiles(workspace, world.files);
     if (candidate) await applyFiles(workspace, candidate.files);
     const candidateFiles = candidate ? candidate.files.map((file) => file.path) : [];
-    const resultFile = path.join(temporaryRoot, "structured-command-result.json");
-    const environment = environmentFromAllowlist(request.isolation.environmentAllowlist);
-    if (request.adapter.kind === "testforge-command") {
-      environment.TESTFORGE_RESULT_FILE = resultFile;
-      environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
-    } else {
-      if (nodeTestReporterPath === undefined) throw new Error("NODE_TEST_REPORTER_MISSING");
-      environment.TESTFORGE_NODE_CANDIDATE_FILES = JSON.stringify(
-        candidateFiles.map((file) => path.resolve(workspace, ...file.split("/"))),
-      );
-    }
-    const args =
-      request.adapter.kind === "node-test"
-        ? [
-            "--test",
-            `--test-reporter=${pathToFileURL(nodeTestReporterPath as string).href}`,
-            `--test-reporter-destination=${resultFile}`,
-            ...(request.adapter.extraArguments ?? []),
-            "--",
-            ...request.adapter.baseTestFiles,
-            ...candidateFiles,
-          ]
-        : request.adapter.arguments;
-    const result = await runProcess({
-      executable: request.adapter.executable,
-      args,
-      cwd: workspace,
-      environment,
-      timeoutMs: request.budgets.timeoutMsPerExecution,
-      maximumOutputBytes: request.budgets.maximumOutputBytes,
-    });
-    const structuredReport =
-      request.adapter.kind === "testforge-command"
-        ? await readStructuredCommandReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
-        : undefined;
-    const nodeTestReport =
-      request.adapter.kind === "node-test"
-        ? await readNodeTestReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
-        : undefined;
+    const { result, structuredReport, nodeTestReport } =
+      container === undefined
+        ? await executeTrustedLocalAdapter(
+            request,
+            workspace,
+            temporaryRoot,
+            candidateFiles,
+            nodeTestReporterPath,
+          )
+        : await executeContainerAdapter(request, container, workspace, candidateFiles);
     const nodeClassification =
       request.adapter.kind === "node-test"
         ? classifyNodeTest(result, nodeTestReport, candidate !== null)
@@ -2711,8 +3018,25 @@ async function executeObservation(
   }
 }
 
-export async function verifyCampaign(value: unknown): Promise<unknown> {
+export interface VerifyCampaignOptions {
+  /** Operator-owned argv prefix of a Docker-compatible CLI; requests cannot provide it. */
+  containerRuntime?: { command: readonly string[] };
+}
+
+export async function verifyCampaign(
+  value: unknown,
+  options: VerifyCampaignOptions = {},
+): Promise<unknown> {
   const request = parseRequest(value);
+  const container =
+    request.isolation.kind === "container"
+      ? await prepareContainerBackend(
+          options.containerRuntime?.command ?? DEFAULT_CONTAINER_RUNTIME_COMMAND,
+          request.isolation,
+          runBoundedProcess,
+          os.tmpdir(),
+        )
+      : undefined;
   const repositoryRoot = await resolveRepositoryRoot(request.repository.root);
   const excludes = effectiveExcludes(request.repository.exclude);
   const sourceInventory = await walkFiles(repositoryRoot, excludes);
@@ -2723,15 +3047,22 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
     throw new Error("REPOSITORY_BYTES_BUDGET_EXCEEDED");
   }
   const nodeIdentity =
-    request.adapter.kind === "node-test"
-      ? await probeNodeTestExecutable(
-          request.adapter.executable,
-          repositoryRoot,
-          request.isolation.environmentAllowlist,
-          request.budgets.timeoutMsPerExecution,
-          request.budgets.maximumOutputBytes,
-        )
-      : undefined;
+    request.adapter.kind !== "node-test"
+      ? undefined
+      : container === undefined
+        ? await probeNodeTestExecutable(
+            request.adapter.executable,
+            repositoryRoot,
+            trustedLocalEnvironmentAllowlist(request),
+            request.budgets.timeoutMsPerExecution,
+            request.budgets.maximumOutputBytes,
+          )
+        : await probeContainerNodeExecutable(
+            container,
+            request.adapter.executable,
+            request.budgets.timeoutMsPerExecution,
+            request.budgets.maximumOutputBytes,
+          );
   if (request.adapter.kind === "node-test" && nodeIdentity !== undefined) {
     request.adapter.executable = nodeIdentity.resolvedExecutable;
   }
@@ -2740,10 +3071,18 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
       ? await runNodeTestRuntimePreflight({
           executable: nodeIdentity.resolvedExecutable,
           reporterSource: NODE_TEST_REPORTER_SOURCE,
-          environment: environmentFromAllowlist(request.isolation.environmentAllowlist),
+          environment: environmentFromAllowlist(trustedLocalEnvironmentAllowlist(request)),
           timeoutMs: request.budgets.timeoutMsPerExecution,
           maximumOutputBytes: request.budgets.maximumOutputBytes,
           processRunner: runProcess,
+          ...(container === undefined
+            ? {}
+            : {
+                probeExecutor: containerPreflightExecutor(
+                  container,
+                  nodeIdentity.resolvedExecutable,
+                ),
+              }),
         })
       : undefined;
   const campaignRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-")));
@@ -2793,6 +3132,7 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
             null,
             attempt,
             nodeTestReporterPath,
+            container,
           ),
         );
       }
@@ -2808,6 +3148,7 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
               candidate,
               attempt,
               nodeTestReporterPath,
+              container,
             ),
           );
         }
@@ -2851,10 +3192,21 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
               : request.adapter,
         },
         execution: {
-          isolation: "UNSANDBOXED",
-          environmentAllowlist: request.isolation.environmentAllowlist,
+          isolation: container === undefined ? "UNSANDBOXED" : "CONTAINER",
+          environmentAllowlist:
+            container === undefined
+              ? trustedLocalEnvironmentAllowlist(request)
+              : container.isolation.environment.map((variable) => variable.name).sort(),
           budgets: request.budgets,
           candidateRoots: request.candidateRoots,
+          ...(request.schemaVersion === "1.0.0"
+            ? {}
+            : {
+                backend:
+                  container === undefined
+                    ? { kind: "trusted-local", level: "UNSANDBOXED" }
+                    : container.record,
+              }),
         },
         worlds: request.worlds.map((world) => ({
           id: world.id,
@@ -2884,15 +3236,21 @@ export async function verifyCampaign(value: unknown): Promise<unknown> {
         request.adapter.kind === "testforge-command"
           ? { kind: request.adapter.kind, protocolVersion: request.adapter.protocolVersion }
           : { kind: request.adapter.kind },
-      isolation: {
-        kind: "trusted-local",
-        level: "UNSANDBOXED",
-        acknowledgedUnsafeExecution: true,
-      },
-      limitations: [
-        "UNSANDBOXED trusted-local execution cannot safely contain hostile candidate code.",
-        "Process-tree termination is best effort and depends on host operating-system facilities.",
-      ],
+      isolation:
+        container === undefined
+          ? {
+              kind: "trusted-local",
+              level: "UNSANDBOXED",
+              acknowledgedUnsafeExecution: true,
+            }
+          : { kind: "container", level: "CONTAINER", runtimeCommand: container.runtimeCommand },
+      limitations:
+        container === undefined
+          ? [
+              "UNSANDBOXED trusted-local execution cannot safely contain hostile candidate code.",
+              "Process-tree termination is best effort and depends on host operating-system facilities.",
+            ]
+          : [...CONTAINER_LIMITATIONS],
     };
     return sealManifestArtifact(finalManifest);
   } finally {

@@ -14,7 +14,29 @@ interface PreflightInput {
   timeoutMs: number;
   maximumOutputBytes: number;
   processRunner: (input: NodeTestPreflightProcessInput) => Promise<NodeTestPreflightProcessResult>;
+  /** Replaces the host-workspace probe execution, for example to run each probe in a container. */
+  probeExecutor?: NodeTestPreflightProbeExecutor;
 }
+
+export interface NodeTestPreflightProbe {
+  name: "assertion" | "generic-throw";
+  reporterSource: string;
+  controlSource: string;
+  candidateSource: string;
+  timeoutMs: number;
+  maximumOutputBytes: number;
+  reportMaximumBytes: number;
+}
+
+export interface NodeTestPreflightProbeOutcome {
+  processResult: NodeTestPreflightProcessResult;
+  /** The parsed reporter document, or undefined when it is absent, oversize or not JSON. */
+  report: unknown;
+}
+
+export type NodeTestPreflightProbeExecutor = (
+  probe: NodeTestPreflightProbe,
+) => Promise<NodeTestPreflightProbeOutcome>;
 
 interface NodeTestPreflightProcessInput {
   executable: string;
@@ -108,35 +130,61 @@ async function readBoundedReporterDocument(reportPath: string): Promise<unknown>
   }
 }
 
-async function executeProbe(
+function hostProbeExecutor(
   input: PreflightInput,
   root: string,
   reporterPath: string,
   controlPath: string,
-  name: string,
+): NodeTestPreflightProbeExecutor {
+  return async (probe) => {
+    const candidatePath = path.join(root, `${probe.name}.test.mjs`);
+    const reportPath = path.join(root, `${probe.name}.json`);
+    await writeFile(candidatePath, probe.candidateSource, { flag: "wx" });
+
+    const processResult = await input.processRunner({
+      executable: input.executable,
+      args: [
+        "--test",
+        `--test-reporter=${pathToFileURL(reporterPath).href}`,
+        `--test-reporter-destination=${reportPath}`,
+        "--",
+        controlPath,
+        candidatePath,
+      ],
+      cwd: root,
+      environment: {
+        ...input.environment,
+        TESTFORGE_NODE_CANDIDATE_FILES: JSON.stringify([candidatePath]),
+      },
+      timeoutMs: probe.timeoutMs,
+      maximumOutputBytes: probe.maximumOutputBytes,
+    });
+    const crashed =
+      processResult.outcome === "PROCESS_CRASH" &&
+      processResult.exitCode !== null &&
+      processResult.exitCode !== 0;
+    return {
+      processResult,
+      report: crashed ? await readBoundedReporterDocument(reportPath) : undefined,
+    };
+  };
+}
+
+async function executeProbe(
+  input: PreflightInput,
+  executor: NodeTestPreflightProbeExecutor,
+  controlSource: string,
+  name: NodeTestPreflightProbe["name"],
   body: string,
 ): Promise<ProbeEvidence> {
-  const candidatePath = path.join(root, `${name}.test.mjs`);
-  const reportPath = path.join(root, `${name}.json`);
-  await writeFile(candidatePath, body, { flag: "wx" });
-
-  const processResult = await input.processRunner({
-    executable: input.executable,
-    args: [
-      "--test",
-      `--test-reporter=${pathToFileURL(reporterPath).href}`,
-      `--test-reporter-destination=${reportPath}`,
-      "--",
-      controlPath,
-      candidatePath,
-    ],
-    cwd: root,
-    environment: {
-      ...input.environment,
-      TESTFORGE_NODE_CANDIDATE_FILES: JSON.stringify([candidatePath]),
-    },
+  const { processResult, report } = await executor({
+    name,
+    reporterSource: input.reporterSource,
+    controlSource,
+    candidateSource: body,
     timeoutMs: Math.min(input.timeoutMs, 5_000),
     maximumOutputBytes: Math.min(input.maximumOutputBytes, PREFLIGHT_REPORT_LIMIT_BYTES),
+    reportMaximumBytes: PREFLIGHT_REPORT_LIMIT_BYTES,
   });
   if (
     processResult.outcome !== "PROCESS_CRASH" ||
@@ -145,7 +193,7 @@ async function executeProbe(
   ) {
     throw new Error(PREFLIGHT_ERROR);
   }
-  const document = parseReporterDocument(await readBoundedReporterDocument(reportPath));
+  const document = parseReporterDocument(report);
   if (document === undefined) throw new Error(PREFLIGHT_ERROR);
   const expectedAssertionFacts = name === "assertion";
   if (
@@ -201,17 +249,17 @@ export async function runNodeTestRuntimePreflight(
     );
     const reporterPath = path.join(root, "reporter.mjs");
     const controlPath = path.join(root, "control.test.mjs");
-    await writeFile(reporterPath, input.reporterSource, { flag: "wx" });
-    await writeFile(
-      controlPath,
-      ['import test from "node:test";', 'test("control", () => {});', ""].join("\n"),
-      { flag: "wx" },
+    const controlSource = ['import test from "node:test";', 'test("control", () => {});', ""].join(
+      "\n",
     );
+    await writeFile(reporterPath, input.reporterSource, { flag: "wx" });
+    await writeFile(controlPath, controlSource, { flag: "wx" });
+    const executor =
+      input.probeExecutor ?? hostProbeExecutor(input, root, reporterPath, controlPath);
     const assertionProbe = await executeProbe(
       input,
-      root,
-      reporterPath,
-      controlPath,
+      executor,
+      controlSource,
       "assertion",
       [
         'import test from "node:test";',
@@ -222,9 +270,8 @@ export async function runNodeTestRuntimePreflight(
     );
     const genericThrowProbe = await executeProbe(
       input,
-      root,
-      reporterPath,
-      controlPath,
+      executor,
+      controlSource,
       "generic-throw",
       [
         'import test from "node:test";',
