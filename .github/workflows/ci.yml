@@ -16,12 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     env:
       # Linux runners provide Docker Engine, so the real-daemon isolation suite must run there.
-      # Windows runners only offer Windows containers; the suite reports an explicit skip.
+      # Windows runners only offer Windows containers and macOS runners provide no container
+      # runtime; the suite reports an explicit skip on both.
       ASSERTLEDGER_CONTAINER_IMAGE: ${{ matrix.os == 'ubuntu-latest' && 'node@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43' || '' }}
       ASSERTLEDGER_CONTAINER_RUNTIME: ${{ matrix.os == 'ubuntu-latest' && '["docker"]' || '' }}
       ASSERTLEDGER_REQUIRE_CONTAINER_TESTS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
