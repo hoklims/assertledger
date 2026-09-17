@@ -10,6 +10,8 @@ to v1.
   projections, outcomes, gates and reason-code semantics are unchanged.
 - A v1 request still produces a v1 manifest, and v1 manifests replay exactly as before.
 - `parseVerificationRequest()` and `parseEvidenceManifest()` still accept only v1 and reject v2.
+- The SDK methods `verify()` and `checkGitRegression()` keep their v1 inputs, results and TypeScript
+  types; `verify()` still refuses a v2 request with `SCHEMA_VERSION_UNSUPPORTED`.
 - `trusted-local` keeps its fields, stays `UNSANDBOXED` and still requires explicit authorization.
 - MCP tool schemas, evidence export, Agentic Test Profiles and benchmarks still accept only v1.
 
@@ -25,16 +27,16 @@ to v1.
   "UNSANDBOXED" }` as its backend.
 - Both schemas join the additive schema-extension lock, whose published digest changes
   accordingly.
-- `parseVersionedVerificationRequest()`, `parseEvidenceManifestV2()` and
-  `parseVersionedEvidenceManifest()` accept the new version explicitly.
+- `parseVerificationRequestV2()` and `parseEvidenceManifestV2()` accept only v2;
+  `parseVersionedVerificationRequest()` and `parseVersionedEvidenceManifest()` accept either version.
+- The SDK adds `verifyV2(request, options)` and `checkGitRegressionV2(options)`, which return
+  `EvidenceManifestV2Contract`, and the `GitRegressionV2Options` type.
 
 ## Changes visible to existing callers
 
-- TypeScript: `AssertLedger.verify()` and `checkGitRegression()` now return
-  `EvidenceManifestContract | EvidenceManifestV2Contract`. Narrow on `schemaVersion` before using
-  v2-only fields. `verify()` also accepts an optional second argument carrying the runtime command.
 - A request declaring `schemaVersion: "2.0.0"` previously failed with
-  `SCHEMA_VERSION_UNSUPPORTED`. It is now validated as v2. Other unknown versions still fail with
+  `SCHEMA_VERSION_UNSUPPORTED` everywhere. The CLI `verify` command, `verifyV2()` and the exported
+  engine function `verifyCampaign()` now validate it as v2. Other unknown versions still fail with
   that code.
 - CLI and SDK container failures use new `CONTAINER_*` and `ISOLATION_MODE_CONFLICT` reason codes,
   with CLI exit code `4`, before any repository code runs.

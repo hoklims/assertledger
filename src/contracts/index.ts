@@ -2149,12 +2149,25 @@ export function parseVersionedVerificationRequest(
   value: unknown,
 ): VerificationRequest | VerificationRequestV2 {
   if (
+    typeof value === "object" &&
+    value !== null &&
+    "schemaVersion" in value &&
+    value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V2
+  ) {
+    return parseVerificationRequestV2(value);
+  }
+  return parseVerificationRequest(value);
+}
+
+/** Parses only the v2 request, which adds container isolation to the frozen v1 request. */
+export function parseVerificationRequestV2(value: unknown): VerificationRequestV2 {
+  if (
     typeof value !== "object" ||
     value === null ||
     !("schemaVersion" in value) ||
     value.schemaVersion !== VERIFICATION_SCHEMA_VERSION_V2
   ) {
-    return parseVerificationRequest(value);
+    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
   }
 
   assertVerificationRequestPreconditions(value);

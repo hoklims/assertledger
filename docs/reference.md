@@ -196,9 +196,10 @@ surface, for consumers migrating from the prior name.
 The SDK accepts plain JSON-compatible values and validates them against the same contracts as the
 CLI. Unlike the CLI and MCP tool, `AssertLedger.verify()` has no separate authorization parameter: the
 caller must set `isolation.acknowledgedUnsafeExecution` to `true` after applying its own policy.
-A v2 container request needs no acknowledgement; the runtime argv comes from
-`verify(request, { containerRuntime: { command } })`, never from the request. `verify()` and
-`checkGitRegression()` return a v1 or v2 manifest matching the executed request.
+`verify()` and `checkGitRegression()` accept only v1 inputs and return v1 manifests.
+`verifyV2(request, { containerRuntime: { command } })` and `checkGitRegressionV2(options)` run
+[container isolation](container-isolation.md) and return v2 manifests; a container request needs no
+acknowledgement, and the runtime argv never comes from the request.
 
 `AssertLedger.replay()` reports schema validity, both digest checks, and deterministic
 decision-semantic validity. Its aggregate `valid` field is true only when all four checks pass. Replay

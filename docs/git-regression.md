@@ -15,7 +15,7 @@ Le mode d’exécution est toujours choisi explicitement. Sans `--container-imag
 
 Pour isoler l’exécution, remplacez `--allow-unsafe-execution` par `--container-image NOM@sha256:DIGEST`. Chaque contrôle et chaque candidat s’exécute alors dans un conteneur Linux neuf, sans réseau ni montage de l’hôte, avec les limites par défaut et un délai de 30 secondes par exécution. L’image doit déjà être présente sur le démon et contenir `node` : AssertLedger ne la télécharge jamais. `--container-runtime` accepte la commande du runtime sous forme de tableau JSON, `["docker"]` par défaut. Le manifeste produit est alors en version `2.0.0`. Voir [l’isolation par conteneur](container-isolation.md).
 
-L’exécution `trusted-local` est volontairement **UNSANDBOXED**. Le drapeau `--allow-unsafe-execution` constitue l’autorisation distincte de l’opérateur. L’API équivalente est `new AssertLedger().checkGitRegression(options)`, avec `container: { image }` ou `allowUnsafeExecution: true`.
+L’exécution `trusted-local` est volontairement **UNSANDBOXED**. Le drapeau `--allow-unsafe-execution` constitue l’autorisation distincte de l’opérateur. Côté SDK, `new AssertLedger().checkGitRegression(options)` exige `allowUnsafeExecution: true` et renvoie un manifeste v1 ; `checkGitRegressionV2(options)` exige `container: { image }` et renvoie un manifeste v2.
 
 MCP expose le parcours `trusted-local` avec `assertledger_check` (alias `testforge_check`) seulement si
 l’opérateur a démarré le serveur avec `--allow-unsafe-execution`. L’entrée reprend les options

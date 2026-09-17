@@ -6,9 +6,17 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.js";
+import type {
+  EvidenceManifestContract,
+  EvidenceManifestV2Contract,
+} from "../src/contracts/index.js";
 import { explainReasonCodes } from "../src/diagnostics.js";
 import { runProcess } from "../src/engine/index.js";
-import { AssertLedger } from "../src/sdk/index.js";
+import {
+  AssertLedger,
+  type GitRegressionOptions,
+  type GitRegressionV2Options,
+} from "../src/sdk/index.js";
 
 const FAKE_RUNTIME = fileURLToPath(
   new URL("./support/fake-container-runtime.mjs", import.meta.url),
@@ -326,7 +334,7 @@ describe("container isolation through the CLI", () => {
 });
 
 describe("container isolation through the SDK", () => {
-  it("requires exactly one explicit isolation mode for Git checks", async () => {
+  it("keeps Git checks explicit: trusted-local stays v1 and containers use the v2 entry point", async () => {
     const value = await gitFixture();
     const ledger = new AssertLedger();
     const base = {
@@ -343,19 +351,31 @@ describe("container isolation through the SDK", () => {
       ledger.checkGitRegression({ ...base, allowUnsafeExecution: false }),
       /GIT_REGRESSION_UNSAFE_EXECUTION_NOT_ALLOWED/,
     );
+    // Untyped JavaScript callers can still mix both modes; each entry point refuses the mixture.
     await assert.rejects(
       ledger.checkGitRegression({
         ...base,
         allowUnsafeExecution: true,
         container: { image: IMAGE },
-      }),
+      } as GitRegressionOptions),
       /ISOLATION_MODE_CONFLICT/,
+    );
+    await assert.rejects(
+      ledger.checkGitRegressionV2({
+        ...base,
+        allowUnsafeExecution: true,
+        container: { image: IMAGE },
+      } as GitRegressionV2Options),
+      /ISOLATION_MODE_CONFLICT/,
+    );
+    await assert.rejects(
+      ledger.checkGitRegressionV2({ ...base, container: { image: "node:24" } }),
+      /CONTAINER_IMAGE_REFERENCE_INVALID/,
     );
     const missing = path.join(os.tmpdir(), `assertledger-missing-runtime-${randomUUID()}`);
     await assert.rejects(
-      ledger.checkGitRegression({
+      ledger.checkGitRegressionV2({
         ...base,
-        allowUnsafeExecution: false,
         container: { image: IMAGE, runtimeCommand: [missing] },
       }),
       /CONTAINER_RUNTIME_NOT_FOUND/,
@@ -363,15 +383,34 @@ describe("container isolation through the SDK", () => {
     assert.equal(await exists(path.join(value.root, ".assertledger", "evidence")), false);
   });
 
-  it("passes the operator runtime command to verify without reading it from the request", async () => {
+  it("runs v2 requests through verifyV2 with the operator runtime command and keeps verify v1-only", async () => {
     const { requestPath } = await structuredContainerRequest();
     const runtime = await fakeRuntime();
     const request = JSON.parse(await readFile(requestPath, "utf8"));
-    const manifest = await new AssertLedger().verify(request, {
+    const ledger = new AssertLedger();
+    await assert.rejects(ledger.verify(request), /SCHEMA_VERSION_UNSUPPORTED/);
+    assert.deepEqual(await recordedCalls(runtime.state), []);
+    const manifest: EvidenceManifestV2Contract = await ledger.verifyV2(request, {
       containerRuntime: { command: runtime.command },
     });
     assert.equal(manifest.schemaVersion, "2.0.0");
     assert.equal(manifest.isolation.kind, "container");
+  });
+
+  it("keeps the 1.0.0 SDK result types for verify and checkGitRegression", () => {
+    // Compile-time witnesses checked by pnpm typecheck: 1.0.0 consumers keep their v1 manifest types.
+    const ledger = new AssertLedger();
+    const verify: (request: unknown) => Promise<EvidenceManifestContract> = (request) =>
+      ledger.verify(request);
+    const check: (options: GitRegressionOptions) => Promise<EvidenceManifestContract> = (options) =>
+      ledger.checkGitRegression(options);
+    const checkV2: (options: GitRegressionV2Options) => Promise<EvidenceManifestV2Contract> = (
+      options,
+    ) => ledger.checkGitRegressionV2(options);
+    assert.deepEqual(
+      [verify, check, checkV2].map((entry) => typeof entry),
+      ["function", "function", "function"],
+    );
   });
 });
 

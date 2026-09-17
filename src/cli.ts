@@ -7,7 +7,11 @@ import { ContractError } from "./contracts/index.js";
 import { renderDiagnostics } from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
-import { type GitRegressionOptions, renderGitRegressionSummary } from "./engine/git-regression.js";
+import {
+  type GitRegressionOptions,
+  type GitRegressionV2Options,
+  renderGitRegressionSummary,
+} from "./engine/git-regression.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -803,21 +807,24 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (containerImage === undefined && containerRuntime !== undefined) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
         }
-        const options: GitRegressionOptions = {
+        if (containerImage === undefined) {
+          const options: GitRegressionOptions = { ...checkOptions, allowUnsafeExecution };
+          const result = await ledger.checkGitRegression(options);
+          if (argv.includes("--json")) writeJson(io, result);
+          else io.writeStdout(renderGitRegressionSummary(result, options));
+          return decisionExitCode(result);
+        }
+        if (allowUnsafeExecution) throw new TypeError("ISOLATION_MODE_CONFLICT");
+        const options: GitRegressionV2Options = {
           ...checkOptions,
-          allowUnsafeExecution,
-          ...(containerImage === undefined
-            ? {}
-            : {
-                container: {
-                  image: containerImage,
-                  ...(containerRuntime === undefined
-                    ? {}
-                    : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
-                },
-              }),
+          container: {
+            image: containerImage,
+            ...(containerRuntime === undefined
+              ? {}
+              : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+          },
         };
-        const result = await ledger.checkGitRegression(options);
+        const result = await ledger.checkGitRegressionV2(options);
         if (argv.includes("--json")) writeJson(io, result);
         else io.writeStdout(renderGitRegressionSummary(result, options));
         return decisionExitCode(result);
@@ -888,14 +895,18 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
           return 4;
         }
-        const result = containerRequest
-          ? await ledger.verify(
-              request,
-              runtimeArgument === undefined
-                ? {}
-                : { containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) } },
-            )
-          : await ledger.verify(authorizeTrustedLocalExecution(request));
+        const version2 = isRecord(request) && request.schemaVersion === "2.0.0";
+        const result =
+          containerRequest || version2
+            ? await ledger.verifyV2(
+                containerRequest ? request : authorizeTrustedLocalExecution(request),
+                runtimeArgument === undefined
+                  ? {}
+                  : {
+                      containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) },
+                    },
+              )
+            : await ledger.verify(authorizeTrustedLocalExecution(request));
         writeJson(io, result);
         return decisionExitCode(result);
       }

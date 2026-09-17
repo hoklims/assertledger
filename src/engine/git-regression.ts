@@ -83,11 +83,15 @@ export interface GitRegressionOptions {
   test: string;
   baseTests: string[];
   out: string;
-  /** Explicit authorization for UNSANDBOXED trusted-local execution of reviewed code. */
   allowUnsafeExecution: boolean;
-  /** Runs the qualification in digest-pinned containers instead; exclusive with trusted-local. */
-  container?: { image: string; runtimeCommand?: readonly string[] };
 }
+
+/** Qualifies in digest-pinned containers instead of trusted-local execution; the evidence is v2. */
+export interface GitRegressionV2Options extends Omit<GitRegressionOptions, "allowUnsafeExecution"> {
+  container: { image: string; runtimeCommand?: readonly string[] };
+}
+
+type QualificationMode = "trusted-local" | "container";
 
 class GitBudget {
   readonly started = Date.now();
@@ -537,29 +541,39 @@ function validateTopology(
   }
 }
 
-function validateOptions(options: GitRegressionOptions): {
+function validateOptions(
+  options: GitRegressionOptions | GitRegressionV2Options,
+  mode: QualificationMode,
+): {
   test: string;
   baseTests: string[];
   out: string;
   container: { image: string; runtimeCommand: string[] | undefined } | undefined;
 } {
-  if (options.container !== undefined && options.allowUnsafeExecution === true)
+  // Untyped callers can pass both switches; each entry point refuses the other mode's switch.
+  const requested = options as { allowUnsafeExecution?: unknown; container?: unknown };
+  if (
+    mode === "trusted-local"
+      ? requested.container !== undefined
+      : requested.allowUnsafeExecution === true
+  )
     throw new Error("ISOLATION_MODE_CONFLICT");
-  if (options.container === undefined && options.allowUnsafeExecution !== true)
+  if (mode === "trusted-local" && requested.allowUnsafeExecution !== true)
     throw new Error("GIT_REGRESSION_UNSAFE_EXECUTION_NOT_ALLOWED");
+  const requestedContainer = requested.container as GitRegressionV2Options["container"] | undefined;
   const container =
-    options.container === undefined
+    mode === "trusted-local"
       ? undefined
       : {
-          image: ContainerImageReferenceSchema.safeParse(options.container.image).success
-            ? options.container.image
+          image: ContainerImageReferenceSchema.safeParse(requestedContainer?.image).success
+            ? (requestedContainer?.image as string)
             : (() => {
                 throw new Error("CONTAINER_IMAGE_REFERENCE_INVALID");
               })(),
           runtimeCommand:
-            options.container.runtimeCommand === undefined
+            requestedContainer?.runtimeCommand === undefined
               ? undefined
-              : parseContainerRuntimeCommand(options.container.runtimeCommand),
+              : parseContainerRuntimeCommand(requestedContainer.runtimeCommand),
         };
   const test = assertSafeRelativePath(options.test, ["."]);
   if (!/\.(?:cjs|mjs|js)$/.test(test)) throw new Error("GIT_REGRESSION_TEST_TYPE_UNSUPPORTED");
@@ -778,7 +792,7 @@ function executionSummary(manifest: QualificationManifest): string {
 
 export function renderGitRegressionSummary(
   manifest: QualificationManifest,
-  options: GitRegressionOptions,
+  options: GitRegressionOptions | GitRegressionV2Options,
 ): string {
   const targetCommit = resolvedWorldCommit(manifest, "known-bug");
   const referenceCommit = resolvedWorldCommit(manifest, "fixed");
@@ -867,8 +881,22 @@ async function cleanupReservedOutput(target: string): Promise<void> {
 
 export async function qualifyGitRegression(
   options: GitRegressionOptions,
+): Promise<EvidenceManifestContract> {
+  // The mode fixes the request version, and the manifest was parsed against that version's schema.
+  return (await qualify(options, "trusted-local")) as EvidenceManifestContract;
+}
+
+export async function qualifyGitRegressionV2(
+  options: GitRegressionV2Options,
+): Promise<EvidenceManifestV2Contract> {
+  return (await qualify(options, "container")) as EvidenceManifestV2Contract;
+}
+
+async function qualify(
+  options: GitRegressionOptions | GitRegressionV2Options,
+  mode: QualificationMode,
 ): Promise<QualificationManifest> {
-  const validated = validateOptions(options);
+  const validated = validateOptions(options, mode);
   const repository = await realpath(path.resolve(options.repository));
   if (!(await stat(repository)).isDirectory()) throw new Error("GIT_REPOSITORY_INVALID");
   const budget = new GitBudget();

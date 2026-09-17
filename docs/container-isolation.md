@@ -57,13 +57,15 @@ assertledger verify request.json --container-runtime '["docker"]' --json
 On Windows with Docker Engine inside WSL, use
 `--container-runtime '["wsl.exe","-d","Ubuntu","--exec","docker"]'` from a POSIX shell. Shells that
 strip inner double quotes from native arguments, such as Windows PowerShell 5.1, need escaped
-quotes. The SDK takes the same values as options:
+quotes. The SDK takes the same values through its v2 entry points, which return v2 manifests:
 
 ```js
 const ledger = new AssertLedger();
-await ledger.verify(request, { containerRuntime: { command: ["docker"] } });
-await ledger.checkGitRegression({ ...options, container: { image: "node@sha256:DIGEST" } });
+await ledger.verifyV2(request, { containerRuntime: { command: ["docker"] } });
+await ledger.checkGitRegressionV2({ ...options, container: { image: "node@sha256:DIGEST" } });
 ```
+
+`verify()` and `checkGitRegression()` keep their v1 contracts and result types.
 
 The MCP `check` and `verify` tools still execute only trusted-local v1 requests.
 

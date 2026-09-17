@@ -75,8 +75,11 @@ import {
   parseRepositoryAnalysis,
   parseRepositoryAudit,
   parseRepositoryInitResult,
+  parseEvidenceManifest,
+  parseEvidenceManifestV2,
+  parseVerificationRequest,
+  parseVerificationRequestV2,
   parseVersionedEvidenceManifest,
-  parseVersionedVerificationRequest,
   type ReplayResult,
   type RepositoryAnalysis,
   type RepositoryAudit,
@@ -113,7 +116,12 @@ import {
 } from "../core/index.js";
 import { explainReasonCodes } from "../diagnostics.js";
 import { NODE_TEST_ADAPTER_PROFILE } from "../engine/adapters/node-test-profile.js";
-import { type GitRegressionOptions, qualifyGitRegression } from "../engine/git-regression.js";
+import {
+  type GitRegressionOptions,
+  type GitRegressionV2Options,
+  qualifyGitRegression,
+  qualifyGitRegressionV2,
+} from "../engine/git-regression.js";
 import {
   acquireAgenticBenchmark,
   analyzeRepository,
@@ -203,23 +211,30 @@ export class AssertLedger {
     return parseRuntimeDoctorResult(await doctorRepositoryRuntime(root, options));
   }
 
+  async verify(request: unknown): Promise<EvidenceManifestContract> {
+    return parseEvidenceManifest(await verifyCampaign(parseVerificationRequest(request)));
+  }
+
   /**
-   * Executes a v1 or v2 campaign. A v2 container request runs through the operator-owned runtime
-   * command in `options`; the request itself can never select a host executable.
+   * Executes a v2 campaign. A container request runs through the operator-owned runtime command in
+   * `options`; the request itself can never select a host executable.
    */
-  async verify(
+  async verifyV2(
     request: unknown,
     options: VerifyCampaignOptions = {},
-  ): Promise<EvidenceManifestContract | EvidenceManifestV2Contract> {
-    return parseVersionedEvidenceManifest(
-      await verifyCampaign(parseVersionedVerificationRequest(request), options),
+  ): Promise<EvidenceManifestV2Contract> {
+    return parseEvidenceManifestV2(
+      await verifyCampaign(parseVerificationRequestV2(request), options),
     );
   }
 
-  async checkGitRegression(
-    options: GitRegressionOptions,
-  ): Promise<EvidenceManifestContract | EvidenceManifestV2Contract> {
+  async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
     return qualifyGitRegression(options);
+  }
+
+  /** Qualifies a committed regression inside digest-pinned containers and returns v2 evidence. */
+  async checkGitRegressionV2(options: GitRegressionV2Options): Promise<EvidenceManifestV2Contract> {
+    return qualifyGitRegressionV2(options);
   }
 
   replay(manifest: unknown): ReplayResult {
@@ -519,7 +534,7 @@ export {
   verifyDecisionDigest,
   verifyManifestIntegrity,
 } from "../core/index.js";
-export type { GitRegressionOptions } from "../engine/git-regression.js";
+export type { GitRegressionOptions, GitRegressionV2Options } from "../engine/git-regression.js";
 export { qualifyGitRegression } from "../engine/git-regression.js";
 export type { RuntimeDoctorOptions } from "../engine/index.js";
 export {
