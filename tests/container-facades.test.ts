@@ -312,6 +312,17 @@ describe("container isolation through the CLI", () => {
       /Refusing trusted-local execution without --allow-unsafe-execution/,
     );
   });
+
+  it("prints the v2 request and manifest schemas", async () => {
+    for (const [name, id] of [
+      ["verification-request-v2", "https://testforge.dev/schemas/verification-request.v2.json"],
+      ["evidence-manifest-v2", "https://testforge.dev/schemas/evidence-manifest.v2.json"],
+    ] as const) {
+      const result = await cli(["schema", name, "--json"]);
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal((JSON.parse(result.stdout) as { $id: string }).$id, id);
+    }
+  });
 });
 
 describe("container isolation through the SDK", () => {

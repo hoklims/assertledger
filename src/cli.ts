@@ -48,8 +48,9 @@ Commands:
                                                Detect and write portable initialization files
   audit [repository] [--verification-request PATH] [--emit-verification-request] [--no-git]
                                                Produce a static audit and campaign cost projection
-  schema <verification-request|repository-analysis|repository-audit|repository-init-config|
-          repository-init-lock|repository-init-result|evidence-manifest|replay-result|
+  schema <verification-request|verification-request-v2|repository-analysis|repository-audit|
+          repository-init-config|repository-init-lock|repository-init-result|
+          evidence-manifest|evidence-manifest-v2|replay-result|
           agentic-profile-request|agentic-profile-report|agentic-profile-replay-result|
            agentic-profile-request-v2|agentic-profile-report-v2|agentic-profile-replay-result-v2|
           agentic-benchmark-request|agentic-benchmark-artifact|agentic-benchmark-replay-result|
@@ -825,12 +826,14 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const name = positional[1];
         if (
           name !== "verification-request" &&
+          name !== "verification-request-v2" &&
           name !== "repository-analysis" &&
           name !== "repository-audit" &&
           name !== "repository-init-config" &&
           name !== "repository-init-lock" &&
           name !== "repository-init-result" &&
           name !== "evidence-manifest" &&
+          name !== "evidence-manifest-v2" &&
           name !== "replay-result" &&
           name !== "agentic-benchmark-request" &&
           name !== "agentic-benchmark-artifact" &&
