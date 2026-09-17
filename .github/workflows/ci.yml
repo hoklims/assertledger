@@ -27,7 +27,7 @@ jobs:
       ASSERTLEDGER_CONTAINER_RUNTIME: ${{ matrix.os == 'ubuntu-latest' && '["docker"]' || '' }}
       ASSERTLEDGER_REQUIRE_CONTAINER_TESTS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@v6
@@ -54,7 +54,7 @@ jobs:
         node: [22.15.0, 24]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@v6
