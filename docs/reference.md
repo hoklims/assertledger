@@ -323,8 +323,8 @@ evidence manifest. The operator's capability is required for both tools.
 ## Continuous integration
 
 Run `pnpm check` on every change. The included GitHub Actions workflow runs this gate on Node.js 22
-and 24 on Ubuntu and Windows. A separate matrix installs and exercises the packed artifact on both
-operating systems with Node.js 22.15.0 and 24. On Ubuntu, the gate also runs the real-daemon
+and 24 on Ubuntu, Windows and macOS. A separate matrix installs and exercises the packed artifact
+on Ubuntu and Windows with Node.js 22.15.0 and 24. On Ubuntu, the gate also runs the real-daemon
 [container isolation](container-isolation.md) suite. A CI job that executes campaigns must
 also treat `trusted-local` as `UNSANDBOXED`: use an isolated runner without secrets or host
 credentials, and pass `--allow-unsafe-execution` only from reviewed CI configuration.

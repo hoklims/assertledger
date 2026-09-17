@@ -135,9 +135,11 @@ accept only v1 manifests. The v1 request and manifest contracts are unchanged.
   adapter needs.
 - An interrupted AssertLedger process can leave a labeled container. Remove it with
   `docker ps --all --filter label=assertledger.execution` followed by `docker rm --force --volumes`.
-- Only Linux daemons are supported. The host side is platform-neutral Node.js; the hostile
-  scenario suite runs against real Docker Engine on Linux in CI and was run locally against Docker
-  Engine in WSL on Windows. macOS hosts are not exercised.
+- Only Linux daemons are supported. The host side is platform-neutral Node.js: CI runs the backend
+  selection, diagnostic, archive and cleanup tests against a fake runtime on Linux, Windows and
+  macOS. The hostile scenario suite runs against real Docker Engine on Linux in CI and was run
+  locally against Docker Engine in WSL on Windows. GitHub-hosted Windows and macOS runners provide
+  no Linux daemon, so no real daemon is exercised from a macOS host.
 
 ## Real-daemon test suite
 

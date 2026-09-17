@@ -13,7 +13,8 @@ untrusted contributions. `trusted-local` does not contain hostile code.
 On Linux, the checks job pulls one digest-pinned Node.js image and makes the
 [container isolation](container-isolation.md) suite mandatory: hostile scenarios run against the
 runner's Docker Engine, and a missing daemon or image fails the job. Windows runners provide only
-Windows containers, so that suite reports an explicit skip there.
+Windows containers and macOS runners provide no container runtime, so that suite reports an
+explicit skip there; the rest of the checks job runs on all three systems.
 
 The workflow permits pushes to `main` and same-repository pull requests from an owner,
 member or collaborator. Fork pull requests are skipped. A skipped job does not establish
