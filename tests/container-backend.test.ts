@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { parseEvidenceManifestV2 } from "../src/contracts/index.js";
+import { runNodeTestRuntimePreflight } from "../src/engine/adapters/node-test-runtime.js";
 import { readContainerResultArchiveForTesting } from "../src/engine/container.js";
 import { verifyCampaign } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
@@ -390,6 +391,46 @@ describe("container campaign execution", () => {
       verifyCampaign(request(value.root), { containerRuntime: { command: value.command } }),
       /CONTAINER_CLEANUP_FAILED/,
     );
+  });
+
+  it("runs node:test preflight probes through the container executor, never on the host", async () => {
+    const probes: string[] = [];
+    let hostExecutions = 0;
+    let failure: unknown;
+    const preflight = await runNodeTestRuntimePreflight({
+      executable: "/usr/local/bin/node",
+      reporterSource: "export default async function* reporter() {}\n",
+      environment: {},
+      timeoutMs: 20_000,
+      maximumOutputBytes: 65_536,
+      processRunner: async () => {
+        hostExecutions += 1;
+        return { outcome: "INFRA_ERROR", exitCode: null };
+      },
+      probeExecutor: async (probe) => {
+        probes.push(probe.name);
+        return {
+          processResult: { outcome: "PROCESS_CRASH", exitCode: 1 },
+          report: {
+            protocolVersion: "1.0.0",
+            testsDiscovered: 2,
+            candidateTestsDiscovered: 1,
+            candidateFailureCount: 1,
+            nonCandidateFailureCount: 0,
+            candidateSyntaxFailureCount: 0,
+            candidateFailuresAllAssertions: probe.name === "assertion",
+          },
+        };
+      },
+    }).catch((error: unknown) => {
+      failure = error;
+      return undefined;
+    });
+    assert.equal(hostExecutions, 0);
+    assert.deepEqual(probes, ["assertion", "generic-throw"]);
+    assert.equal(failure, undefined);
+    assert.equal(preflight?.assertionProbe.outcome, "ASSERTION_FAILURE");
+    assert.equal(preflight?.genericThrowProbe.outcome, "PROCESS_CRASH");
   });
 });
 
