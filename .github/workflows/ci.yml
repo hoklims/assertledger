@@ -19,6 +19,12 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
+    env:
+      # Linux runners provide Docker Engine, so the real-daemon isolation suite must run there.
+      # Windows runners only offer Windows containers; the suite reports an explicit skip.
+      ASSERTLEDGER_CONTAINER_IMAGE: ${{ matrix.os == 'ubuntu-latest' && 'node@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43' || '' }}
+      ASSERTLEDGER_CONTAINER_RUNTIME: ${{ matrix.os == 'ubuntu-latest' && '["docker"]' || '' }}
+      ASSERTLEDGER_REQUIRE_CONTAINER_TESTS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -32,6 +38,9 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Provide the pinned container image
+        if: matrix.os == 'ubuntu-latest'
+        run: docker pull "$ASSERTLEDGER_CONTAINER_IMAGE"
       - run: pnpm check
 
   package:
