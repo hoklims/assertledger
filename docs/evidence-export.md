@@ -54,7 +54,9 @@ policy for AssertLedger: it only lets the export state which requested controls 
 not executed, or unsupported. No particular plan format is required.
 
 The export refuses a manifest that fails replay with `EVIDENCE_EXPORT_SOURCE_INVALID` (CLI exit
-code `4`, no output). A malformed request fails with `EVIDENCE_EXPORT_REQUEST_INVALID`.
+code `4`, no output). A malformed request fails with `EVIDENCE_EXPORT_REQUEST_INVALID`, as does a
+request embedding a v2 manifest from [container isolation](container-isolation.md): this export
+version accepts only v1 manifests.
 
 ## Evidence export: what was observed
 

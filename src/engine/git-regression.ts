@@ -13,8 +13,11 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { EvidenceManifestContract } from "../contracts/index.js";
-import { parseEvidenceManifest } from "../contracts/index.js";
+import type { EvidenceManifestContract, EvidenceManifestV2Contract } from "../contracts/index.js";
+import {
+  ContainerImageReferenceSchema,
+  parseVersionedEvidenceManifest,
+} from "../contracts/index.js";
 import {
   assertSafeRelativePath,
   canonicalize,
@@ -22,7 +25,10 @@ import {
   sealManifestArtifact,
 } from "../core/index.js";
 import { renderDiagnostics } from "../diagnostics.js";
+import { DEFAULT_CONTAINER_LIMITS, parseContainerRuntimeCommand } from "./container.js";
 import { verifyCampaign } from "./index.js";
+
+type QualificationManifest = EvidenceManifestContract | EvidenceManifestV2Contract;
 
 const GIT_PROCESS_LIMIT = 32;
 const GIT_PROCESS_TIMEOUT_MS = 5_000;
@@ -79,6 +85,13 @@ export interface GitRegressionOptions {
   out: string;
   allowUnsafeExecution: boolean;
 }
+
+/** Qualifies in digest-pinned containers instead of trusted-local execution; the evidence is v2. */
+export interface GitRegressionV2Options extends Omit<GitRegressionOptions, "allowUnsafeExecution"> {
+  container: { image: string; runtimeCommand?: readonly string[] };
+}
+
+type QualificationMode = "trusted-local" | "container";
 
 class GitBudget {
   readonly started = Date.now();
@@ -528,13 +541,40 @@ function validateTopology(
   }
 }
 
-function validateOptions(options: GitRegressionOptions): {
+function validateOptions(
+  options: GitRegressionOptions | GitRegressionV2Options,
+  mode: QualificationMode,
+): {
   test: string;
   baseTests: string[];
   out: string;
+  container: { image: string; runtimeCommand: string[] | undefined } | undefined;
 } {
-  if (options.allowUnsafeExecution !== true)
+  // Untyped callers can pass both switches; each entry point refuses the other mode's switch.
+  const requested = options as { allowUnsafeExecution?: unknown; container?: unknown };
+  if (
+    mode === "trusted-local"
+      ? requested.container !== undefined
+      : requested.allowUnsafeExecution === true
+  )
+    throw new Error("ISOLATION_MODE_CONFLICT");
+  if (mode === "trusted-local" && requested.allowUnsafeExecution !== true)
     throw new Error("GIT_REGRESSION_UNSAFE_EXECUTION_NOT_ALLOWED");
+  const requestedContainer = requested.container as GitRegressionV2Options["container"] | undefined;
+  const container =
+    mode === "trusted-local"
+      ? undefined
+      : {
+          image: ContainerImageReferenceSchema.safeParse(requestedContainer?.image).success
+            ? (requestedContainer?.image as string)
+            : (() => {
+                throw new Error("CONTAINER_IMAGE_REFERENCE_INVALID");
+              })(),
+          runtimeCommand:
+            requestedContainer?.runtimeCommand === undefined
+              ? undefined
+              : parseContainerRuntimeCommand(requestedContainer.runtimeCommand),
+        };
   const test = assertSafeRelativePath(options.test, ["."]);
   if (!/\.(?:cjs|mjs|js)$/.test(test)) throw new Error("GIT_REGRESSION_TEST_TYPE_UNSUPPORTED");
   const baseTests = options.baseTests.map((baseTest) => assertSafeRelativePath(baseTest, ["."]));
@@ -554,7 +594,7 @@ function validateOptions(options: GitRegressionOptions): {
     })
   )
     throw new Error("GIT_REGRESSION_NEUTRAL_REASON_INVALID");
-  return { test, baseTests, out };
+  return { test, baseTests, out, container };
 }
 
 function provenance(revision: ResolvedRevision, objectFormat: string, reason: string): string {
@@ -589,7 +629,7 @@ function changedFiles(
   return files;
 }
 
-function assertBaseControlsDiscoveredTests(manifest: EvidenceManifestContract): void {
+function assertBaseControlsDiscoveredTests(manifest: QualificationManifest): void {
   for (const worldId of ["fixed", "known-bug", "neutral"]) {
     const observations = manifest.observations.filter(
       (observation) => observation.candidateId === null && observation.worldId === worldId,
@@ -704,7 +744,7 @@ function markdown(value: string): string {
     .replaceAll("\n", " ");
 }
 
-function resolvedWorldCommit(manifest: EvidenceManifestContract, worldId: string): string {
+function resolvedWorldCommit(manifest: QualificationManifest, worldId: string): string {
   const provenance = manifest.evidenceContext.worlds.find(
     (world) => world.id === worldId,
   )?.provenance;
@@ -740,9 +780,19 @@ function shellArgument(value: string): string {
   return `'${escaped}'`;
 }
 
+function executionSummary(manifest: QualificationManifest): string {
+  if (manifest.schemaVersion === "2.0.0") {
+    const backend = manifest.evidenceContext.execution.backend;
+    if (backend.kind === "container") {
+      return `- Execution: **CONTAINER** isolation (${inlineCode(backend.image.reference)}; no network, no host mounts, read-only root filesystem)`;
+    }
+  }
+  return "- Execution: **UNSANDBOXED trusted-local** (explicit operator opt-in)";
+}
+
 export function renderGitRegressionSummary(
-  manifest: EvidenceManifestContract,
-  options: GitRegressionOptions,
+  manifest: QualificationManifest,
+  options: GitRegressionOptions | GitRegressionV2Options,
 ): string {
   const targetCommit = resolvedWorldCommit(manifest, "known-bug");
   const referenceCommit = resolvedWorldCommit(manifest, "fixed");
@@ -773,7 +823,7 @@ export function renderGitRegressionSummary(
         `- Candidate reasons (${candidate.id}): ${candidate.reasonCodes.join(", ") || "none"}`,
     ),
     `- Neutral reason: ${markdown(options.neutralReason)}`,
-    "- Execution: **UNSANDBOXED trusted-local** (explicit operator opt-in)",
+    executionSummary(manifest),
     "",
     renderDiagnostics([
       ...manifest.decision.reasonCodes,
@@ -793,7 +843,7 @@ export function renderGitRegressionSummary(
 
 async function writeEvidence(
   target: string,
-  manifest: EvidenceManifestContract,
+  manifest: QualificationManifest,
   request: unknown,
   summaryText: string,
 ): Promise<void> {
@@ -832,7 +882,21 @@ async function cleanupReservedOutput(target: string): Promise<void> {
 export async function qualifyGitRegression(
   options: GitRegressionOptions,
 ): Promise<EvidenceManifestContract> {
-  const validated = validateOptions(options);
+  // The mode fixes the request version, and the manifest was parsed against that version's schema.
+  return (await qualify(options, "trusted-local")) as EvidenceManifestContract;
+}
+
+export async function qualifyGitRegressionV2(
+  options: GitRegressionV2Options,
+): Promise<EvidenceManifestV2Contract> {
+  return (await qualify(options, "container")) as EvidenceManifestV2Contract;
+}
+
+async function qualify(
+  options: GitRegressionOptions | GitRegressionV2Options,
+  mode: QualificationMode,
+): Promise<QualificationManifest> {
+  const validated = validateOptions(options, mode);
   const repository = await realpath(path.resolve(options.repository));
   if (!(await stat(repository)).isDirectory()) throw new Error("GIT_REPOSITORY_INVALID");
   const budget = new GitBudget();
@@ -903,7 +967,7 @@ export async function qualifyGitRegression(
   let outputCompleted = false;
   let operationError: unknown;
   let cleanupError: unknown;
-  let result: EvidenceManifestContract | undefined;
+  let result: QualificationManifest | undefined;
   try {
     temporaryRoot = await realpath(
       await mkdtemp(path.join(os.tmpdir(), "assertledger-git-regression-")),
@@ -911,19 +975,28 @@ export async function qualifyGitRegression(
     const snapshot = path.join(temporaryRoot, "repository");
     await mkdir(snapshot, { recursive: false });
     await materializeBase(snapshot, reference, validated.test);
+    const container = validated.container;
     const request = {
-      schemaVersion: "1.0.0",
+      schemaVersion: container === undefined ? "1.0.0" : "2.0.0",
       repository: { root: snapshot, exclude: ["node_modules", ".git", ".testforge"] },
       adapter: {
         kind: "node-test" as const,
-        executable: process.execPath,
+        executable: container === undefined ? process.execPath : "node",
         baseTestFiles: validated.baseTests,
       },
-      isolation: {
-        kind: "trusted-local" as const,
-        acknowledgedUnsafeExecution: true,
-        environmentAllowlist: ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"],
-      },
+      isolation:
+        container === undefined
+          ? {
+              kind: "trusted-local" as const,
+              acknowledgedUnsafeExecution: true,
+              environmentAllowlist: ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"],
+            }
+          : {
+              kind: "container" as const,
+              image: container.image,
+              environment: [],
+              limits: { ...DEFAULT_CONTAINER_LIMITS },
+            },
       candidateRoots: [validated.test],
       budgets: {
         maximumCandidates: 1,
@@ -934,7 +1007,8 @@ export async function qualifyGitRegression(
         maximumWorldOverlayBytes: MAXIMUM_OVERLAY_BYTES,
         maximumCandidateBytes: MAXIMUM_CANDIDATE_BYTES,
         maximumTotalCandidateBytes: MAXIMUM_CANDIDATE_BYTES,
-        timeoutMsPerExecution: 5_000,
+        // Container executions include runtime start-up in the same per-execution budget.
+        timeoutMsPerExecution: container === undefined ? 5_000 : 30_000,
         maximumOutputBytes: 65_536,
       },
       policy: {
@@ -985,7 +1059,14 @@ export async function qualifyGitRegression(
         },
       ],
     };
-    const sourceManifest = parseEvidenceManifest(await verifyCampaign(request));
+    const sourceManifest = parseVersionedEvidenceManifest(
+      await verifyCampaign(
+        request,
+        container?.runtimeCommand === undefined
+          ? {}
+          : { containerRuntime: { command: container.runtimeCommand } },
+      ),
+    );
     assertBaseControlsDiscoveredTests(sourceManifest);
     const limitations = [
       ...sourceManifest.limitations,
@@ -996,7 +1077,7 @@ export async function qualifyGitRegression(
         : "The operator supplied the neutral revision and reason; AssertLedger does not infer its independence.",
       "Manifest integrity binds recorded Git provenance but replay does not independently authenticate Git objects or execution.",
     ];
-    const manifest = parseEvidenceManifest(
+    const manifest = parseVersionedEvidenceManifest(
       sealManifestArtifact({ ...sourceManifest, limitations }),
     );
     await rm(temporaryRoot, CLEANUP_OPTIONS);

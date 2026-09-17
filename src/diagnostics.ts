@@ -164,8 +164,48 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Review the code and trust boundary. Use the explicit execution capability only for a trusted repository.",
   ],
   GIT_REGRESSION_UNSAFE_EXECUTION_NOT_ALLOWED: [
-    "Git qualification requires explicit operator authorization for local code execution.",
-    "Review the code first. Authorize trusted-local execution explicitly only when that trust assumption holds.",
+    "Git qualification requires an isolated container or explicit operator authorization for local code execution.",
+    "Prefer a digest-pinned container image. Authorize UNSANDBOXED trusted-local execution only for reviewed code.",
+  ],
+  ISOLATION_MODE_CONFLICT: [
+    "Container isolation and trusted-local authorization were requested together.",
+    "Choose one execution mode: a container image for isolation, or trusted-local authorization for reviewed code only.",
+  ],
+  CONTAINER_RUNTIME_COMMAND_INVALID: [
+    "The container runtime command is not a non-empty JSON argv array.",
+    'Pass the executable and its arguments as a JSON array, for example ["docker"]; shell strings are never executed.',
+  ],
+  CONTAINER_RUNTIME_NOT_FOUND: [
+    "The configured container runtime command could not be started; nothing was executed.",
+    'Install a Docker-compatible CLI or pass its argv explicitly, for example ["wsl.exe","-d","Ubuntu","--exec","docker"].',
+  ],
+  CONTAINER_RUNTIME_UNAVAILABLE: [
+    "The container runtime did not report a reachable daemon; nothing was executed.",
+    "Start or repair the container daemon, confirm the runtime version command succeeds, then rerun.",
+  ],
+  CONTAINER_RUNTIME_PLATFORM_UNSUPPORTED: [
+    "The container daemon does not run Linux containers.",
+    "Use a daemon that runs Linux containers; Windows containers are unsupported.",
+  ],
+  CONTAINER_IMAGE_REFERENCE_INVALID: [
+    "The container image is not pinned by a sha256 digest.",
+    "Use NAME@sha256:DIGEST; mutable tags cannot identify the execution environment.",
+  ],
+  CONTAINER_IMAGE_NOT_PRESENT: [
+    "The digest-pinned image is not present locally, and AssertLedger never pulls images.",
+    "Review the image, pull it by the same digest with the runtime, for example docker pull NAME@sha256:DIGEST, then rerun.",
+  ],
+  CONTAINER_IMAGE_DIGEST_MISMATCH: [
+    "The local image does not carry the pinned digest.",
+    "Pull the exact digest again or correct the reference; do not substitute a mutable tag.",
+  ],
+  CONTAINER_IMAGE_PLATFORM_UNSUPPORTED: [
+    "The pinned image is not a Linux image.",
+    "Select a Linux image that provides the adapter executable.",
+  ],
+  CONTAINER_CLEANUP_FAILED: [
+    "A finished container could not be removed, so no campaign result was produced.",
+    "Remove containers labeled assertledger.execution with the runtime, check the daemon, then rerun.",
   ],
   MCP_REPOSITORY_ROOT_FORBIDDEN: [
     "The requested repository is outside this server's allowed roots.",

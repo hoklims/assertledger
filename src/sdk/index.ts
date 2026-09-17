@@ -39,11 +39,13 @@ import {
   type EvidenceExport,
   type EvidenceExportReplayResult,
   type EvidenceManifestContract,
+  type EvidenceManifestV2Contract,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
   evidenceExportRequestJsonSchema,
   evidenceManifestJsonSchema,
+  evidenceManifestV2JsonSchema,
   evidenceProviderManifestJsonSchema,
   parseAgenticBenchmarkAcquisitionReplayResult,
   parseAgenticBenchmarkAcquisitionRequest,
@@ -68,13 +70,16 @@ import {
   parseEvidenceExport,
   parseEvidenceExportReplayResult,
   parseEvidenceExportRequest,
-  parseEvidenceManifest,
   parseEvidenceProviderManifest,
   parseReplayResult,
   parseRepositoryAnalysis,
   parseRepositoryAudit,
   parseRepositoryInitResult,
+  parseEvidenceManifest,
+  parseEvidenceManifestV2,
   parseVerificationRequest,
+  parseVerificationRequestV2,
+  parseVersionedEvidenceManifest,
   type ReplayResult,
   type RepositoryAnalysis,
   type RepositoryAudit,
@@ -86,6 +91,7 @@ import {
   repositoryInitLockJsonSchema,
   repositoryInitResultJsonSchema,
   verificationRequestJsonSchema,
+  verificationRequestV2JsonSchema,
 } from "../contracts/index.js";
 import { parseRuntimeDoctorResult, type RuntimeDoctorResult } from "../contracts/runtime-doctor.js";
 import { ASSERTLEDGER_SOURCE_REVISION } from "../build-info.js";
@@ -110,7 +116,12 @@ import {
 } from "../core/index.js";
 import { explainReasonCodes } from "../diagnostics.js";
 import { NODE_TEST_ADAPTER_PROFILE } from "../engine/adapters/node-test-profile.js";
-import { type GitRegressionOptions, qualifyGitRegression } from "../engine/git-regression.js";
+import {
+  type GitRegressionOptions,
+  type GitRegressionV2Options,
+  qualifyGitRegression,
+  qualifyGitRegressionV2,
+} from "../engine/git-regression.js";
 import {
   acquireAgenticBenchmark,
   analyzeRepository,
@@ -120,6 +131,7 @@ import {
   type RepositoryAuditOptions,
   type RepositoryInitOptions,
   type RuntimeDoctorOptions,
+  type VerifyCampaignOptions,
   verifyCampaign,
 } from "../engine/index.js";
 import {
@@ -154,12 +166,14 @@ export type SchemaName =
   | "agentic-profile-report-v2"
   | "agentic-profile-replay-result-v2"
   | "verification-request"
+  | "verification-request-v2"
   | "repository-analysis"
   | "repository-audit"
   | "repository-init-config"
   | "repository-init-lock"
   | "repository-init-result"
   | "evidence-manifest"
+  | "evidence-manifest-v2"
   | "replay-result"
   | "evidence-provider-manifest"
   | "evidence-export-request"
@@ -201,14 +215,32 @@ export class AssertLedger {
     return parseEvidenceManifest(await verifyCampaign(parseVerificationRequest(request)));
   }
 
+  /**
+   * Executes a v2 campaign. A container request runs through the operator-owned runtime command in
+   * `options`; the request itself can never select a host executable.
+   */
+  async verifyV2(
+    request: unknown,
+    options: VerifyCampaignOptions = {},
+  ): Promise<EvidenceManifestV2Contract> {
+    return parseEvidenceManifestV2(
+      await verifyCampaign(parseVerificationRequestV2(request), options),
+    );
+  }
+
   async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
     return qualifyGitRegression(options);
   }
 
+  /** Qualifies a committed regression inside digest-pinned containers and returns v2 evidence. */
+  async checkGitRegressionV2(options: GitRegressionV2Options): Promise<EvidenceManifestV2Contract> {
+    return qualifyGitRegressionV2(options);
+  }
+
   replay(manifest: unknown): ReplayResult {
-    let parsedManifest: EvidenceManifestContract;
+    let parsedManifest: EvidenceManifestContract | EvidenceManifestV2Contract;
     try {
-      parsedManifest = parseEvidenceManifest(manifest);
+      parsedManifest = parseVersionedEvidenceManifest(manifest);
     } catch {
       return parseReplayResult({
         valid: false,
@@ -449,6 +481,8 @@ export class AssertLedger {
         return agenticProfileReplayResultV2JsonSchema();
       case "verification-request":
         return verificationRequestJsonSchema();
+      case "verification-request-v2":
+        return verificationRequestV2JsonSchema();
       case "repository-analysis":
         return repositoryAnalysisJsonSchema();
       case "repository-audit":
@@ -461,6 +495,8 @@ export class AssertLedger {
         return repositoryInitResultJsonSchema();
       case "evidence-manifest":
         return evidenceManifestJsonSchema();
+      case "evidence-manifest-v2":
+        return evidenceManifestV2JsonSchema();
       case "replay-result":
         return replayResultJsonSchema();
       case "evidence-provider-manifest":
@@ -498,7 +534,7 @@ export {
   verifyDecisionDigest,
   verifyManifestIntegrity,
 } from "../core/index.js";
-export type { GitRegressionOptions } from "../engine/git-regression.js";
+export type { GitRegressionOptions, GitRegressionV2Options } from "../engine/git-regression.js";
 export { qualifyGitRegression } from "../engine/git-regression.js";
 export type { RuntimeDoctorOptions } from "../engine/index.js";
 export {

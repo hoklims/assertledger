@@ -1,0 +1,886 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "repositoryDigest": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "evidenceContext": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "policy": {
+      "$ref": "#/$defs/__schema11"
+    },
+    "worlds": {
+      "$ref": "#/$defs/__schema14"
+    },
+    "candidates": {
+      "$ref": "#/$defs/__schema15"
+    },
+    "observations": {
+      "$ref": "#/$defs/__schema17"
+    },
+    "decision": {
+      "$ref": "#/$defs/__schema18"
+    },
+    "decisionDigest": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "artifactDigest": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "adapter": {
+      "$ref": "#/$defs/__schema19"
+    },
+    "isolation": {
+      "$ref": "#/$defs/__schema20"
+    },
+    "limitations": {
+      "$ref": "#/$defs/__schema22"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "repositoryDigest",
+    "evidenceContext",
+    "policy",
+    "worlds",
+    "candidates",
+    "observations",
+    "decision",
+    "decisionDigest",
+    "artifactDigest",
+    "adapter",
+    "isolation",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "title": "AssertLedger evidence manifest v2",
+  "description": "The final auditable campaign artifact with a decision-bound record of the execution backend and its enforced controls.",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "const": "2.0.0"
+    },
+    "__schema1": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema2"
+        },
+        {
+          "type": "string",
+          "const": "invalid"
+        }
+      ]
+    },
+    "__schema2": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": ["name", "version"],
+          "additionalProperties": false
+        },
+        "adapter": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "configuration": {
+              "$ref": "#/$defs/__schema4"
+            }
+          },
+          "required": ["name", "version", "configuration"],
+          "additionalProperties": false
+        },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "isolation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "environmentAllowlist": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema5"
+              }
+            },
+            "budgets": {
+              "$ref": "#/$defs/__schema6"
+            },
+            "candidateRoots": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema7"
+              }
+            },
+            "backend": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "trusted-local"
+                    },
+                    "level": {
+                      "type": "string",
+                      "const": "UNSANDBOXED"
+                    }
+                  },
+                  "required": ["kind", "level"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "container"
+                    },
+                    "level": {
+                      "type": "string",
+                      "const": "CONTAINER"
+                    },
+                    "image": {
+                      "type": "object",
+                      "properties": {
+                        "reference": {
+                          "type": "string",
+                          "maxLength": 512,
+                          "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?@sha256:[a-f0-9]{64}$"
+                        },
+                        "id": {
+                          "$ref": "#/$defs/__schema2"
+                        },
+                        "os": {
+                          "type": "string",
+                          "const": "linux"
+                        },
+                        "architecture": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      },
+                      "required": ["reference", "id", "os", "architecture"],
+                      "additionalProperties": false
+                    },
+                    "runtime": {
+                      "type": "object",
+                      "properties": {
+                        "clientVersion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "serverVersion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "serverOs": {
+                          "type": "string",
+                          "const": "linux"
+                        },
+                        "serverArchitecture": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "cgroupVersion": {
+                          "type": "string",
+                          "maxLength": 16
+                        },
+                        "securityOptions": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/__schema8"
+                          }
+                        }
+                      },
+                      "required": [
+                        "clientVersion",
+                        "serverVersion",
+                        "serverOs",
+                        "serverArchitecture",
+                        "cgroupVersion",
+                        "securityOptions"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "controls": {
+                      "type": "object",
+                      "properties": {
+                        "network": {
+                          "type": "string",
+                          "const": "none"
+                        },
+                        "rootFilesystem": {
+                          "type": "string",
+                          "const": "read-only"
+                        },
+                        "hostMounts": {
+                          "type": "string",
+                          "const": "none"
+                        },
+                        "workspace": {
+                          "type": "string",
+                          "const": "anonymous-volume"
+                        },
+                        "user": {
+                          "type": "string",
+                          "const": "65534:65534"
+                        },
+                        "capabilities": {
+                          "type": "string",
+                          "const": "none"
+                        },
+                        "noNewPrivileges": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "imagePull": {
+                          "type": "string",
+                          "const": "never"
+                        },
+                        "logDriver": {
+                          "type": "string",
+                          "const": "none"
+                        },
+                        "environment": {
+                          "maxItems": 100,
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/__schema9"
+                          }
+                        },
+                        "limits": {
+                          "type": "object",
+                          "properties": {
+                            "memoryBytes": {
+                              "type": "integer",
+                              "minimum": 67108864,
+                              "maximum": 68719476736
+                            },
+                            "cpuMillicores": {
+                              "type": "integer",
+                              "minimum": 100,
+                              "maximum": 256000
+                            },
+                            "pids": {
+                              "type": "integer",
+                              "minimum": 16,
+                              "maximum": 65536
+                            },
+                            "temporaryDirectoryBytes": {
+                              "type": "integer",
+                              "minimum": 1048576,
+                              "maximum": 17179869184
+                            }
+                          },
+                          "required": [
+                            "memoryBytes",
+                            "cpuMillicores",
+                            "pids",
+                            "temporaryDirectoryBytes"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "network",
+                        "rootFilesystem",
+                        "hostMounts",
+                        "workspace",
+                        "user",
+                        "capabilities",
+                        "noNewPrivileges",
+                        "imagePull",
+                        "logDriver",
+                        "environment",
+                        "limits"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["kind", "level", "image", "runtime", "controls"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": ["isolation", "environmentAllowlist", "budgets", "candidateRoots", "backend"],
+          "additionalProperties": false
+        },
+        "worlds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/__schema10"
+              },
+              "provenance": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "digest": {
+                "$ref": "#/$defs/__schema2"
+              }
+            },
+            "required": ["id", "provenance", "digest"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["engine", "adapter", "execution", "worlds"],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema4"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema4"
+          }
+        }
+      ]
+    },
+    "__schema5": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "__schema6": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema6"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema6"
+          }
+        }
+      ]
+    },
+    "__schema7": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema8": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?!(?:[Nn][Oo][Dd][Ee]_[Oo][Pp][Tt][Ii][Oo][Nn][Ss]$|[Tt][Ee][Ss][Tt][Ff][Oo][Rr][Gg][Ee]_|[Nn][Oo][Dd][Ee]_[Tt][Ee][Ss][Tt]_)).+$"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": ["name", "value"],
+      "additionalProperties": false
+    },
+    "__schema10": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "__schema11": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "policyVersion": {
+              "type": "string",
+              "const": "1.0.0"
+            },
+            "requiredAttempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "minimumTargetWeightPermille": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "maximumSelectedCandidates": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "acceptedTargetOutcomes": {
+              "minItems": 1,
+              "maxItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema12"
+              }
+            }
+          },
+          "required": [
+            "policyVersion",
+            "requiredAttempts",
+            "minimumTargetWeightPermille",
+            "maximumSelectedCandidates",
+            "acceptedTargetOutcomes"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "policyVersion": {
+              "type": "string",
+              "const": "invalid"
+            },
+            "requiredAttempts": {
+              "type": "number",
+              "const": 1
+            },
+            "minimumTargetWeightPermille": {
+              "type": "number",
+              "const": 1000
+            },
+            "maximumSelectedCandidates": {
+              "type": "number",
+              "const": 0
+            },
+            "acceptedTargetOutcomes": {
+              "maxItems": 0,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema13"
+              }
+            }
+          },
+          "required": [
+            "policyVersion",
+            "requiredAttempts",
+            "minimumTargetWeightPermille",
+            "maximumSelectedCandidates",
+            "acceptedTargetOutcomes"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema12": {
+      "type": "string",
+      "const": "ASSERTION_FAILURE"
+    },
+    "__schema13": {
+      "type": "string",
+      "const": "ASSERTION_FAILURE"
+    },
+    "__schema14": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/__schema10"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["REFERENCE", "TARGET", "NEUTRAL"]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "required": ["id", "kind", "required", "weight"],
+        "additionalProperties": false
+      }
+    },
+    "__schema15": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/__schema10"
+          },
+          "digest": {
+            "$ref": "#/$defs/__schema2"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ELIGIBLE", "UNSTABLE", "INCONCLUSIVE", "INVALID", "WEAK_ORACLE"]
+          },
+          "killedTargetIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/__schema10"
+            }
+          },
+          "targetWeightKilled": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "gates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "COMPLETENESS",
+                    "STABILITY",
+                    "DISCOVERY",
+                    "REFERENCE",
+                    "NEUTRAL",
+                    "TARGET_STRENGTH"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["PASSED", "FAILED", "NOT_RUN"]
+                },
+                "evidenceRunIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                },
+                "reasonCodes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema16"
+                  }
+                }
+              },
+              "required": ["name", "status", "evidenceRunIds", "reasonCodes"],
+              "additionalProperties": false
+            }
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/__schema16"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "digest",
+          "sizeBytes",
+          "status",
+          "killedTargetIds",
+          "targetWeightKilled",
+          "gates",
+          "reasonCodes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema16": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "__schema17": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "candidateId": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/__schema10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worldId": {
+            "$ref": "#/$defs/__schema10"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "ASSERTION_FAILURE",
+              "COLLECTION_FAILURE",
+              "COMPILE_FAILURE",
+              "PROCESS_CRASH",
+              "TIMEOUT",
+              "INFRA_ERROR",
+              "NO_TEST_DISCOVERED"
+            ]
+          },
+          "testsDiscovered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "candidateTestsDiscovered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "attributed": {
+            "type": "boolean"
+          },
+          "durationMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "exitCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stdoutDigest": {
+            "$ref": "#/$defs/__schema2"
+          },
+          "stderrDigest": {
+            "$ref": "#/$defs/__schema2"
+          }
+        },
+        "required": [
+          "runId",
+          "candidateId",
+          "worldId",
+          "attempt",
+          "outcome",
+          "testsDiscovered",
+          "candidateTestsDiscovered",
+          "attributed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema18": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["VERIFIED", "REJECTED", "INCONCLUSIVE", "ENGINE_ERROR"]
+        },
+        "selectedCandidateIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema10"
+          }
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema16"
+          }
+        }
+      },
+      "required": ["status", "selectedCandidateIds", "reasonCodes"],
+      "additionalProperties": false
+    },
+    "__schema19": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "node-test"
+            }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "testforge-command"
+            },
+            "protocolVersion": {
+              "type": "string",
+              "const": "1.0.0"
+            }
+          },
+          "required": ["kind", "protocolVersion"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema20": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "trusted-local"
+            },
+            "level": {
+              "type": "string",
+              "const": "UNSANDBOXED"
+            },
+            "acknowledgedUnsafeExecution": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": ["kind", "level", "acknowledgedUnsafeExecution"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "container"
+            },
+            "level": {
+              "type": "string",
+              "const": "CONTAINER"
+            },
+            "runtimeCommand": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema21"
+              }
+            }
+          },
+          "required": ["kind", "level", "runtimeCommand"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema21": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "__schema22": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    }
+  },
+  "$id": "https://testforge.dev/schemas/evidence-manifest.v2.json"
+}

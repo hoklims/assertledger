@@ -219,7 +219,8 @@ describe("deterministic decision", () => {
 
   it("rejects unknown schema and policy versions at the direct core boundary", () => {
     const unknownSchema = campaign(["candidate-a"]);
-    unknownSchema.schemaVersion = "2.0.0";
+    // 2.0.0 is known and requires a backend record; this rail covers an unknown version.
+    unknownSchema.schemaVersion = "3.0.0";
     const unknownPolicy = campaign(["candidate-a"]);
     unknownPolicy.policy.policyVersion = "2.0.0";
 

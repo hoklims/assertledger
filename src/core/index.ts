@@ -57,6 +57,8 @@ export type CandidateStatus = "ELIGIBLE" | "UNSTABLE" | "INCONCLUSIVE" | "INVALI
 export type DecisionStatus = "VERIFIED" | "REJECTED" | "INCONCLUSIVE" | "ENGINE_ERROR";
 
 const EVIDENCE_SCHEMA_VERSION = "1.0.0";
+// Version 2.0.0 adds a decision-bound execution backend record; its absence stays a v1 manifest.
+const EVIDENCE_SCHEMA_VERSION_V2 = "2.0.0";
 const EVIDENCE_POLICY_VERSION = "1.0.0";
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const OBSERVATION_OUTCOMES = new Set([
@@ -120,6 +122,7 @@ export interface EvidenceContext {
     environmentAllowlist: string[];
     budgets: JsonValue;
     candidateRoots: string[];
+    backend?: JsonValue;
   };
   worlds: Array<{
     id: string;
@@ -385,12 +388,16 @@ function sortedUniqueStrings(
   return [...new Set(value)].sort(compareOrdinal);
 }
 
-function parseEvidenceContext(value: unknown): EvidenceContext {
+function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceContext {
   if (!isRecord(value)) throw new TypeError("evidenceContext must be an object");
   if (!isRecord(value.engine)) throw new TypeError("evidenceContext.engine must be an object");
   if (!isRecord(value.adapter)) throw new TypeError("evidenceContext.adapter must be an object");
   if (!isRecord(value.execution)) {
     throw new TypeError("evidenceContext.execution must be an object");
+  }
+  const backendRequired = schemaVersion === EVIDENCE_SCHEMA_VERSION_V2;
+  if (backendRequired && !isRecord(value.execution.backend)) {
+    throw new TypeError("evidenceContext.execution.backend must be an object");
   }
   if (!Array.isArray(value.worlds) || value.worlds.length === 0) {
     throw new TypeError("evidenceContext.worlds must be non-empty");
@@ -425,6 +432,7 @@ function parseEvidenceContext(value: unknown): EvidenceContext {
       environmentAllowlist: sortedUniqueStrings(value.execution, "environmentAllowlist", 100, 128),
       budgets: jsonField(value.execution, "budgets"),
       candidateRoots: sortedUniqueStrings(value.execution, "candidateRoots", 100, 512),
+      ...(backendRequired ? { backend: jsonField(value.execution, "backend") } : {}),
     },
     worlds,
   };
@@ -433,7 +441,7 @@ function parseEvidenceContext(value: unknown): EvidenceContext {
 function parseInputUnchecked(input: unknown): EvidenceInput {
   if (!isRecord(input)) throw new TypeError("Evidence must be an object");
   const schemaVersion = stringField(input, "schemaVersion");
-  if (schemaVersion !== EVIDENCE_SCHEMA_VERSION) {
+  if (schemaVersion !== EVIDENCE_SCHEMA_VERSION && schemaVersion !== EVIDENCE_SCHEMA_VERSION_V2) {
     throw new TypeError(`Unsupported schemaVersion: ${schemaVersion}`);
   }
   const policyValue = input.policy;
@@ -498,7 +506,7 @@ function parseInputUnchecked(input: unknown): EvidenceInput {
     }
   }
   const worldIds = new Set(worlds.map((world) => world.id));
-  const evidenceContext = parseEvidenceContext(input.evidenceContext);
+  const evidenceContext = parseEvidenceContext(input.evidenceContext, schemaVersion);
   if (
     evidenceContext.worlds.length !== worlds.length ||
     evidenceContext.worlds.some((world) => !worldIds.has(world.id))
