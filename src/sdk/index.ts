@@ -123,6 +123,7 @@ import {
   type RepositoryAuditOptions,
   type RepositoryInitOptions,
   type RuntimeDoctorOptions,
+  type VerifyCampaignOptions,
   verifyCampaign,
 } from "../engine/index.js";
 import {
@@ -202,13 +203,22 @@ export class AssertLedger {
     return parseRuntimeDoctorResult(await doctorRepositoryRuntime(root, options));
   }
 
-  async verify(request: unknown): Promise<EvidenceManifestContract | EvidenceManifestV2Contract> {
+  /**
+   * Executes a v1 or v2 campaign. A v2 container request runs through the operator-owned runtime
+   * command in `options`; the request itself can never select a host executable.
+   */
+  async verify(
+    request: unknown,
+    options: VerifyCampaignOptions = {},
+  ): Promise<EvidenceManifestContract | EvidenceManifestV2Contract> {
     return parseVersionedEvidenceManifest(
-      await verifyCampaign(parseVersionedVerificationRequest(request)),
+      await verifyCampaign(parseVersionedVerificationRequest(request), options),
     );
   }
 
-  async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
+  async checkGitRegression(
+    options: GitRegressionOptions,
+  ): Promise<EvidenceManifestContract | EvidenceManifestV2Contract> {
     return qualifyGitRegression(options);
   }
 

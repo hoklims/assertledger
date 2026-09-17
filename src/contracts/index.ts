@@ -92,7 +92,7 @@ export const VERIFICATION_SCHEMA_VERSION_V2 = "2.0.0" as const;
 
 // Only digest-pinned references are accepted; the leading alphanumeric also keeps a reference
 // from being parsed as a container runtime option.
-const ContainerImageReferenceSchema = z
+export const ContainerImageReferenceSchema = z
   .string()
   .max(512)
   .regex(

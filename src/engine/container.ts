@@ -10,6 +10,12 @@ import type { ProcessInput, ProcessResult } from "./index.js";
 // back as an archive in memory, and every container is removed after one execution.
 
 export const DEFAULT_CONTAINER_RUNTIME_COMMAND: readonly string[] = ["docker"];
+export const DEFAULT_CONTAINER_LIMITS = {
+  memoryBytes: 1_073_741_824,
+  cpuMillicores: 2_000,
+  pids: 256,
+  temporaryDirectoryBytes: 67_108_864,
+} as const;
 export const CONTAINER_ROOT = "/assertledger";
 export const CONTAINER_WORKSPACE = `${CONTAINER_ROOT}/repository`;
 export const CONTAINER_RESULT_FILE = `${CONTAINER_ROOT}/out/result.json`;
@@ -96,6 +102,27 @@ function runtime(
   );
 }
 
+/** Validates an operator runtime command: a non-empty argv array, never a shell string. */
+export function parseContainerRuntimeCommand(value: unknown): string[] {
+  let command = value;
+  if (typeof value === "string") {
+    try {
+      command = JSON.parse(value) as unknown;
+    } catch {
+      throw backendError("CONTAINER_RUNTIME_COMMAND_INVALID");
+    }
+  }
+  if (
+    !Array.isArray(command) ||
+    command.length === 0 ||
+    command.length > 16 ||
+    !command.every((part) => typeof part === "string" && part.length > 0 && part.length <= 4_096)
+  ) {
+    throw backendError("CONTAINER_RUNTIME_COMMAND_INVALID");
+  }
+  return [...(command as string[])];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -134,10 +161,11 @@ export async function prepareContainerBackend(
   runner: ContainerProcessRunner,
   workingDirectory: string,
 ): Promise<ContainerBackend> {
-  if (command.length === 0 || command.some((part) => typeof part !== "string" || part === "")) {
-    throw backendError("CONTAINER_RUNTIME_COMMAND_INVALID");
-  }
-  const context: RuntimeContext = { command, runner, workingDirectory };
+  const context: RuntimeContext = {
+    command: parseContainerRuntimeCommand(command),
+    runner,
+    workingDirectory,
+  };
   const version = await runtime(
     context,
     ["version", "--format={{json .}}"],
@@ -218,7 +246,7 @@ export async function prepareContainerBackend(
   }
 
   return {
-    runtimeCommand: [...command],
+    runtimeCommand: [...context.command],
     isolation,
     record: {
       kind: "container",

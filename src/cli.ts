@@ -6,7 +6,8 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
 import { renderDiagnostics } from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
-import { renderGitRegressionSummary } from "./engine/git-regression.js";
+import { parseContainerRuntimeCommand } from "./engine/container.js";
+import { type GitRegressionOptions, renderGitRegressionSummary } from "./engine/git-regression.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -31,7 +32,8 @@ Commands:
   explain CODE [CODE ...] [--json]             Explain reason codes and safe next actions
   check [repository] --before REF [--after REF] --neutral REF --neutral-reason TEXT
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
-        --allow-unsafe-execution                Qualify one committed node:test regression
+        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
+         | --allow-unsafe-execution)            Qualify one committed node:test regression
   doctor [repository] [--json]                Inspect static repository readiness without writing
   doctor [repository] --runtime --allow-unsafe-execution [--json]
                                                Run controlled trusted-local runtime probes
@@ -62,8 +64,8 @@ Commands:
           evidence-provider-manifest|evidence-export-request|evidence-export|
           evidence-export-replay-result>
                                                Print a JSON Schema
-  verify [request.json|-] --allow-unsafe-execution
-                                               Execute a trusted-local campaign
+  verify [request.json|-] [--container-runtime JSON_ARGV | --allow-unsafe-execution]
+                                               Execute a v2 container or trusted-local campaign
   replay [manifest.json|-]                     Verify an evidence digest
   export [request.json|-]                      Export replay-valid evidence for external consumers
   export-replay [export.json|-]                Replay an evidence export
@@ -141,6 +143,16 @@ async function readJsonInput(argument: string | undefined, io: CliIo): Promise<u
   return JSON.parse(text) as unknown;
 }
 
+function positionalArguments(argv: readonly string[], valueFlags: ReadonlySet<string>): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if (valueFlags.has(argument)) index += 1;
+    else if (!argument.startsWith("--")) values.push(argument);
+  }
+  return values;
+}
+
 function requiredFlag(argv: readonly string[], name: string): string {
   const index = argv.indexOf(name);
   const value = index < 0 ? undefined : argv[index + 1];
@@ -167,6 +179,8 @@ interface CheckArguments {
   test: string;
   baseTests: string[];
   out: string;
+  containerImage?: string;
+  containerRuntime?: string;
 }
 
 interface ClientArguments {
@@ -226,6 +240,8 @@ function parseCheckArguments(argv: readonly string[], cwd: string): CheckArgumen
     "--test",
     "--base-test",
     "--out",
+    "--container-image",
+    "--container-runtime",
   ]);
   const booleanFlags = new Set(["--allow-unsafe-execution", "--json"]);
   for (let index = 1; index < argv.length; index += 1) {
@@ -259,7 +275,16 @@ function parseCheckArguments(argv: readonly string[], cwd: string): CheckArgumen
   if (afterValues.length > 1) throw new TypeError("GIT_REGRESSION_ARGUMENT_INVALID");
   const baseTests = values.get("--base-test") ?? [];
   if (baseTests.length === 0) throw new TypeError("MISSING_BASE_TEST");
+  const atMostOne = (name: string): string | undefined => {
+    const found = values.get(name) ?? [];
+    if (found.length > 1) throw new TypeError("GIT_REGRESSION_ARGUMENT_INVALID");
+    return found[0];
+  };
+  const containerImage = atMostOne("--container-image");
+  const containerRuntime = atMostOne("--container-runtime");
   return {
+    ...(containerImage === undefined ? {} : { containerImage }),
+    ...(containerRuntime === undefined ? {} : { containerRuntime }),
     repository: path.resolve(cwd, repository),
     before: exactlyOne("--before"),
     ...(afterValues[0] === undefined ? {} : { after: afterValues[0] }),
@@ -480,6 +505,8 @@ function classifyError(error: unknown): number {
       BOUNDARY_VALIDATION_MESSAGES.has(error.message) ||
       error.message.startsWith("MISSING_") ||
       error.message.startsWith("GIT_") ||
+      error.message.startsWith("CONTAINER_") ||
+      error.message.startsWith("ISOLATION_") ||
       error.message === "EVIDENCE_CONTENTS_INVALID" ||
       error.message === "SUBJECT_EVIDENCE_INVALID")
   ) {
@@ -759,20 +786,39 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0;
       }
       case "check": {
-        if (!argv.includes("--allow-unsafe-execution")) {
-          io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
+        const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
+        if (!allowUnsafeExecution && !argv.includes("--container-image")) {
+          io.writeStderr(
+            "Refusing trusted-local execution without --allow-unsafe-execution.\n" +
+              "Pass --container-image NAME@sha256:DIGEST to qualify inside an isolated container, " +
+              "or authorize UNSANDBOXED trusted-local execution only for reviewed code.\n",
+          );
           return 4;
         }
-        const options = parseCheckArguments(argv, io.cwd);
-        const result = await ledger.checkGitRegression({
-          ...options,
-          allowUnsafeExecution: true,
-        });
+        const { containerImage, containerRuntime, ...checkOptions } = parseCheckArguments(
+          argv,
+          io.cwd,
+        );
+        if (containerImage === undefined && containerRuntime !== undefined) {
+          throw new TypeError("ISOLATION_MODE_CONFLICT");
+        }
+        const options: GitRegressionOptions = {
+          ...checkOptions,
+          allowUnsafeExecution,
+          ...(containerImage === undefined
+            ? {}
+            : {
+                container: {
+                  image: containerImage,
+                  ...(containerRuntime === undefined
+                    ? {}
+                    : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+                },
+              }),
+        };
+        const result = await ledger.checkGitRegression(options);
         if (argv.includes("--json")) writeJson(io, result);
-        else
-          io.writeStdout(
-            renderGitRegressionSummary(result, { ...options, allowUnsafeExecution: true }),
-          );
+        else io.writeStdout(renderGitRegressionSummary(result, options));
         return decisionExitCode(result);
       }
       case "schema": {
@@ -822,12 +868,31 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0;
       }
       case "verify": {
-        const request = await readJsonInput(positional[1], io);
-        if (!argv.includes("--allow-unsafe-execution")) {
+        const request = await readJsonInput(
+          positionalArguments(argv, new Set(["--container-runtime"]))[1],
+          io,
+        );
+        const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
+        const runtimeArgument = optionalFlag(argv, "--container-runtime");
+        const containerRequest =
+          isRecord(request) &&
+          isRecord(request.isolation) &&
+          request.isolation.kind === "container";
+        if (containerRequest ? allowUnsafeExecution : runtimeArgument !== undefined) {
+          throw new TypeError("ISOLATION_MODE_CONFLICT");
+        }
+        if (!containerRequest && !allowUnsafeExecution) {
           io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
           return 4;
         }
-        const result = await ledger.verify(authorizeTrustedLocalExecution(request));
+        const result = containerRequest
+          ? await ledger.verify(
+              request,
+              runtimeArgument === undefined
+                ? {}
+                : { containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) } },
+            )
+          : await ledger.verify(authorizeTrustedLocalExecution(request));
         writeJson(io, result);
         return decisionExitCode(result);
       }
@@ -1019,6 +1084,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     }
   } catch (error) {
     io.writeStderr(`${errorMessage(error)}\n`);
+    if (error instanceof Error && /^(?:CONTAINER|ISOLATION)_[A-Z_]+$/u.test(error.message)) {
+      if (typeof error.cause === "string" && error.cause.length > 0) {
+        io.writeStderr(`Runtime detail: ${error.cause}\n`);
+      }
+      io.writeStderr(`${renderDiagnostics([error.message])}\n`);
+    }
     return classifyError(error);
   }
 }
