@@ -40,7 +40,8 @@ versioned request
   ├─ operator-owned worlds and provenance
   ├─ candidate test overlays
   ├─ adapter configuration
-  ├─ trusted-local authorization and environment allowlist
+  ├─ isolation: trusted-local authorization and environment allowlist,
+  │            or (v2) a digest-pinned container image, environment and limits
   └─ policy and budgets
           │
           ▼
@@ -122,7 +123,9 @@ environment allowlist names, budgets, candidate roots, and each world's provenan
 digest to the decision. It does not record effective environment values. For `node:test`, the engine
 probes the requested executable, resolves its real path, probes the resolved file again, and records
 the matching Node.js version plus the executable's SHA-256 digest. The structured-command adapter
-records its configured command but does not resolve or hash it.
+records its configured command but does not resolve or hash it. A v2 container campaign probes the
+runtime before any execution and also binds the image identity, runtime facts, declared
+environment and limits; `node:test` probes then run inside the image.
 
 The repository digest covers regular files visited by the analyzer. The analyzer omits `.git`,
 `.testforge`, `node_modules`, and operator-excluded path segments. It rejects any encountered
@@ -152,6 +155,8 @@ preserve those inputs and logs beside the manifest.
 
 - Built-in adapters translate framework behavior into normalized observations.
 - The structured-command protocol supports external test-framework reporters.
-- A future isolation backend may replace `trusted-local` without changing gate ownership.
+- Isolation backends change where adapter processes run, not gate ownership. The v2
+  [container backend](container-isolation.md) is the first alternative to `trusted-local`; a VM
+  backend could follow the same boundary.
 - A future native orchestrator may replace the Node.js engine only after passing shared schema,
   canonicalization, decision, and digest conformance fixtures.

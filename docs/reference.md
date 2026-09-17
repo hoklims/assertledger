@@ -18,6 +18,7 @@ assertledger audit . --json
 assertledger analyze . --json
 assertledger schema verification-request --json
 assertledger verify assertledger.request.json --allow-unsafe-execution --json
+assertledger verify assertledger.container-request.json --container-runtime '["docker"]' --json
 assertledger replay assertledger.manifest.json --json
 assertledger provider --json
 assertledger export assertledger.export-request.json --json
@@ -56,8 +57,13 @@ then read JSON from stdin. The CLI rejects file and stdin JSON inputs larger tha
 results go to stdout. Diagnostics go to stderr. `assertledger mcp` reserves stdout for JSON-RPC.
 
 `--allow-unsafe-execution` is an external authorization signal. The CLI requires it for every
-campaign and sets the request's local acknowledgement before validation. The flag does not create a
-sandbox.
+trusted-local campaign and sets the request's local acknowledgement before validation. The flag does
+not create a sandbox.
+
+A v2 request with `container` isolation runs without that flag: each execution uses a fresh
+container from a digest-pinned local image through the operator's `--container-runtime` JSON argv,
+which defaults to `["docker"]`. `check` selects the same backend with `--container-image`. Combining
+the two modes fails with `ISOLATION_MODE_CONFLICT`. See [container isolation](container-isolation.md).
 
 `profile` exits with `0` for `QUALIFIED`, `2` for `NOT_QUALIFIED` or `BUDGET_MISSED`, and `3` for
 `INSUFFICIENT_TIMING_EVIDENCE`. A malformed request or a replay-invalid source manifest writes no
@@ -190,6 +196,9 @@ surface, for consumers migrating from the prior name.
 The SDK accepts plain JSON-compatible values and validates them against the same contracts as the
 CLI. Unlike the CLI and MCP tool, `AssertLedger.verify()` has no separate authorization parameter: the
 caller must set `isolation.acknowledgedUnsafeExecution` to `true` after applying its own policy.
+A v2 container request needs no acknowledgement; the runtime argv comes from
+`verify(request, { containerRuntime: { command } })`, never from the request. `verify()` and
+`checkGitRegression()` return a v1 or v2 manifest matching the executed request.
 
 `AssertLedger.replay()` reports schema validity, both digest checks, and deterministic
 decision-semantic validity. Its aggregate `valid` field is true only when all four checks pass. Replay
@@ -314,7 +323,8 @@ evidence manifest. The operator's capability is required for both tools.
 
 Run `pnpm check` on every change. The included GitHub Actions workflow runs this gate on Node.js 22
 and 24 on Ubuntu and Windows. A separate matrix installs and exercises the packed artifact on both
-operating systems with Node.js 22.15.0 and 24. A CI job that executes campaigns must
+operating systems with Node.js 22.15.0 and 24. On Ubuntu, the gate also runs the real-daemon
+[container isolation](container-isolation.md) suite. A CI job that executes campaigns must
 also treat `trusted-local` as `UNSANDBOXED`: use an isolated runner without secrets or host
 credentials, and pass `--allow-unsafe-execution` only from reviewed CI configuration.
 
@@ -361,7 +371,8 @@ deterministic core and protocols are framework-independent; `node:test` is the f
 framework adapter. Other frameworks integrate through the structured-command protocol described in
 [docs/adapter-protocol.md](adapter-protocol.md).
 
-Planned work is not shipped behavior. Priorities include a real sandbox backend, additional
+Planned work is not shipped behavior. Priorities include VM isolation, container evidence in
+derived reports, additional
 framework reporters with runtime attribution, signed provenance, cross-runtime conformance
 fixtures, and more built-in adapters. See [docs/roadmap.md](roadmap.md).
 

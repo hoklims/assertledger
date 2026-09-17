@@ -11,14 +11,18 @@ assertledger check . --before BEFORE --after AFTER --neutral NEUTRAL --neutral-r
 
 `--after` utilise `HEAD` par défaut. `--base-test` peut être répété. Le dossier donné à `--out` doit être un nouveau chemin relatif au dépôt. AssertLedger le réserve de manière exclusive, écrit `executed-request.json` et `summary.md`, puis publie `manifest.json` en dernier par renommage atomique. La présence de `manifest.json` est le marqueur de complétion ; un lecteur doit ignorer un dossier qui ne le contient pas.
 
-L’exécution `trusted-local` est volontairement **UNSANDBOXED**. Le drapeau `--allow-unsafe-execution` constitue l’autorisation distincte de l’opérateur. L’API équivalente est `new AssertLedger().checkGitRegression(options)` et exige `allowUnsafeExecution: true`.
+Le mode d’exécution est toujours choisi explicitement. Sans `--container-image` ni `--allow-unsafe-execution`, `check` refuse de s’exécuter ; les deux ensemble sont refusés avec `ISOLATION_MODE_CONFLICT`.
 
-MCP expose le même parcours avec `assertledger_check` (alias `testforge_check`) seulement si
+Pour isoler l’exécution, remplacez `--allow-unsafe-execution` par `--container-image NOM@sha256:DIGEST`. Chaque contrôle et chaque candidat s’exécute alors dans un conteneur Linux neuf, sans réseau ni montage de l’hôte, avec les limites par défaut et un délai de 30 secondes par exécution. L’image doit déjà être présente sur le démon et contenir `node` : AssertLedger ne la télécharge jamais. `--container-runtime` accepte la commande du runtime sous forme de tableau JSON, `["docker"]` par défaut. Le manifeste produit est alors en version `2.0.0`. Voir [l’isolation par conteneur](container-isolation.md).
+
+L’exécution `trusted-local` est volontairement **UNSANDBOXED**. Le drapeau `--allow-unsafe-execution` constitue l’autorisation distincte de l’opérateur. L’API équivalente est `new AssertLedger().checkGitRegression(options)`, avec `container: { image }` ou `allowUnsafeExecution: true`.
+
+MCP expose le parcours `trusted-local` avec `assertledger_check` (alias `testforge_check`) seulement si
 l’opérateur a démarré le serveur avec `--allow-unsafe-execution`. L’entrée reprend les options
 du SDK, sans le champ de permission : `repository`, `before`, `after` facultatif, `neutral`,
 `neutralReason`, `test`, `baseTests` et `out`. La racine est confinée aux dépôts autorisés ; le
 dossier de sortie suit les mêmes contrôles que la CLI. Un client ne peut pas s’accorder cette
-permission dans son message.
+permission dans son message. Le mode conteneur n’est pas encore exposé par MCP.
 
 ## Limites de cette première tranche
 

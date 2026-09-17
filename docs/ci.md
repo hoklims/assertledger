@@ -8,7 +8,12 @@ contain the tested GitHub SHA and matrix values.
 Both jobs execute repository code. They run on disposable GitHub-hosted runners with
 `contents: read`, no deployment secrets, and checkout credential persistence disabled.
 Never move trusted-local verification onto a privileged or self-hosted runner handling
-untrusted contributions. AssertLedger does not contain hostile code.
+untrusted contributions. `trusted-local` does not contain hostile code.
+
+On Linux, the checks job pulls one digest-pinned Node.js image and makes the
+[container isolation](container-isolation.md) suite mandatory: hostile scenarios run against the
+runner's Docker Engine, and a missing daemon or image fails the job. Windows runners provide only
+Windows containers, so that suite reports an explicit skip there.
 
 The workflow permits pushes to `main` and same-repository pull requests from an owner,
 member or collaborator. Fork pull requests are skipped. A skipped job does not establish

@@ -7,8 +7,9 @@ regression-test qualification workflow, acceptance criteria, and evidence bounda
 ## Implemented locally in v0.1
 
 - deterministic repository analysis;
-- thirty-eight versioned public JSON Schemas: thirty-four frozen by conformance v1 and four
-  evidence-export schemas locked by the additive schema-extension lock;
+- forty versioned public JSON Schemas: thirty-four frozen by conformance v1, and four
+  evidence-export schemas plus the v2 verification request and evidence manifest locked by the
+  additive schema-extension lock;
 - reference, target, and neutral overlay worlds;
 - one campaign snapshot and disposable execution workspaces;
 - built-in `node:test` runtime reporter and structured-command adapter;
@@ -35,7 +36,10 @@ regression-test qualification workflow, acceptance criteria, and evidence bounda
 - JSON CLI, TypeScript SDK, MCP v2 stdio server, and integration skill;
 - an interoperable evidence export with a provider manifest, separate result, integrity,
   authenticity, environment, confidence, control, and cost sections, and deterministic replay;
-- `trusted-local`, explicitly recorded as `UNSANDBOXED`.
+- `trusted-local`, explicitly recorded as `UNSANDBOXED`;
+- a v2 [container isolation backend](container-isolation.md): a fresh digest-pinned Linux container
+  per execution, no network or host mounts, bounded resources, and backend facts bound to the
+  decision.
 
 ## Release 1.0 priority
 
@@ -58,7 +62,8 @@ scoped deterministic qualification workflow.
    tranche is curated calibration evidence and cannot satisfy the holdout requirement.
 2. Add faithful framework-specific phase adapters. The framework-neutral acquisition path is
    shipped, but the built-in `node:test` reporter cannot attribute all four phases.
-3. Add an isolation backend backed by an independently administered container or VM boundary.
+3. Extend container isolation to evidence export, profiles, benchmarks and MCP, and add a VM
+   boundary for threats that a shared kernel does not contain.
 4. Add framework reporters beyond `node:test` that derive discovery and attribution from runtime
    events.
 5. Publish cross-runtime conformance fixtures for canonicalization, decisions, and both digests.

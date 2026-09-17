@@ -98,10 +98,12 @@ observations were truthful, authenticate the producer, or replace a signed exter
 
 The manifest alone is not a self-contained reproduction bundle. It stores candidate and world
 digests rather than their file bodies, stdout/stderr digests rather than raw logs, and environment
-allowlist names rather than effective values. The built-in `node:test` adapter records its resolved
-executable real path, version, and SHA-256 digest; the structured-command adapter records only its
-configured command. Preserve the original request, repository snapshot, dependencies, missing
-executable identities, and raw logs separately when independent audit matters.
+allowlist names rather than effective values. A v2 container manifest also binds the image identity,
+runtime facts, declared environment values, and limits to the decision. The built-in `node:test`
+adapter records its resolved executable real path, version, and SHA-256 digest; the
+structured-command adapter records only its configured command. Preserve the original request,
+repository snapshot, dependencies, missing executable identities, and raw logs separately when
+independent audit matters.
 
 ## Explicit non-claims
 
@@ -113,4 +115,6 @@ AssertLedger does not prove:
 - semantic relevance or correctness of operator-supplied worlds;
 - resistance to a candidate designed to recognize the worlds;
 - containment of hostile code under `trusted-local`;
+- containment beyond the recorded [container controls](container-isolation.md), which share the
+  daemon host's kernel and trust the daemon, its host, and the image;
 - provenance authenticity without a separate signed attestation.
