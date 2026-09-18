@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 — Unreleased
+## 1.1.0 — 2026-09-18
 
 AssertLedger can run a qualification campaign in fresh Linux containers instead of on the host.
 Version 2 of the verification request and evidence manifest adds this `container` backend beside
