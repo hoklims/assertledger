@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
   "files": {
-    "includes": ["**", "!!dist", "!!coverage", "!!.testforge", "!!.omx", "!!graphify-out"]
+    "includes": [
+      "**",
+      "!!dist",
+      "!!coverage",
+      "!!.testforge",
+      "!!.omx",
+      "!!graphify-out",
+      "!!site/evidence"
+    ]
   },
   "formatter": {
     "enabled": true,

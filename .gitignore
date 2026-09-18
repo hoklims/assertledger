@@ -4,6 +4,7 @@ coverage/
 .testforge/
 .omx/
 graphify-out/cache/
+site/evidence/
 *.log
 *.tmp
 .DS_Store
