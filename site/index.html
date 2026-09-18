@@ -1,0 +1,801 @@
+<!-- biome-ignore-all lint/a11y/noRedundantRoles: the ledger restyles table elements with CSS display, which can drop their implicit roles in some browsers; the explicit roles keep the table announced as a table. -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="meta.title">AssertLedger — Does your regression test actually catch the bug?</title>
+    <meta
+      name="description"
+      content="AssertLedger runs the same test on the fixed code, the known bug and a neutral control, then seals deterministic evidence anyone can replay. CLI, SDK and MCP for Node.js."
+      data-i18n-attr="content:meta.description"
+    />
+    <meta name="theme-color" content="#f7f5ef" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1816" media="(prefers-color-scheme: dark)" />
+    <link rel="canonical" href="https://hoklims.github.io/assertledger/" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AssertLedger" />
+    <meta property="og:title" content="Does your regression test actually catch the bug?" />
+    <meta
+      property="og:description"
+      content="The same test, run on the fixed code, the known bug and a neutral control. A deterministic verdict and evidence anyone can replay."
+    />
+    <meta property="og:url" content="https://hoklims.github.io/assertledger/" />
+    <meta property="og:image" content="https://hoklims.github.io/assertledger/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A ledger: a test that checks the type passes everywhere and is rejected; a test that checks the answer fails only on the known bug and is verified."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+    />
+    <link rel="stylesheet" href="assets/site.css" />
+    <script>
+      // Hold animated ledgers in their pending state until site.js runs them.
+      // The failsafe reveals the recorded results if the module never loads.
+      (() => {
+        const root = document.documentElement;
+        root.classList.add("js");
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          root.classList.add("ledger-armed");
+          window.__ledgerFailsafe = setTimeout(() => root.classList.remove("ledger-armed"), 3000);
+        }
+      })();
+    </script>
+    <script type="module" src="assets/site.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+
+    <header class="masthead">
+      <div class="wrap masthead__row">
+        <a class="brand" href="#top" aria-label="AssertLedger, back to top" data-i18n-attr="aria-label:brand.aria">
+          <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand__name">AssertLedger</span>
+        </a>
+        <span class="masthead__meta">v<span data-version>1.1.0</span> · MIT · Node ≥ 22.15</span>
+        <nav class="masthead__nav" aria-label="Sections" data-i18n-attr="aria-label:nav.aria">
+          <a href="#fool" data-i18n="nav.fool">Try to fool it</a>
+          <a href="#how" data-i18n="nav.how">How it works</a>
+          <a href="#evidence" data-i18n="nav.evidence">Evidence</a>
+          <a href="#start" data-i18n="nav.start">Get started</a>
+        </nav>
+        <div class="masthead__end">
+          <fieldset class="lang">
+            <legend class="sr" data-i18n="lang.aria">Language</legend>
+            <button type="button" data-lang="en" aria-pressed="true" lang="en">EN</button>
+            <button type="button" data-lang="fr" aria-pressed="false" lang="fr">FR</button>
+          </fieldset>
+          <a class="masthead__gh" href="https://github.com/hoklims/assertledger">
+            GitHub<span aria-hidden="true"> ↗</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="wrap">
+          <h1 class="display" id="hero-title" data-i18n="hero.title">
+            Does your regression test actually catch the bug?
+          </h1>
+          <div class="hero__row">
+            <p class="lede" data-i18n="hero.lede">
+              AssertLedger runs the same test on the fixed code, on the known bug and on a neutral
+              control. It vouches for a test only when it fails on the bug and nowhere else — then
+              seals the evidence so anyone can replay it.
+            </p>
+            <div class="hero__cta">
+              <div class="cmd">
+                <span class="cmd__prompt" aria-hidden="true">$</span>
+                <code>npm install --save-dev assertledger</code>
+                <button class="copy" type="button" data-copy="npm install --save-dev assertledger">
+                  <span data-i18n="copy">Copy</span>
+                </button>
+              </div>
+              <p class="hero__links">
+                <a href="#fool" data-i18n="hero.linkFool">Watch it reject bad tests</a>
+                <a href="https://github.com/hoklims/assertledger" data-i18n="hero.linkSource">Source on GitHub</a>
+              </p>
+            </div>
+          </div>
+
+          <figure class="ledger-fig" aria-labelledby="ledger-hero-cap">
+            <div class="ledger-fig__bar">
+              <span class="ledger-fig__title">ledger · <code>isEven(value)</code></span>
+              <button class="replay" type="button" data-ledger-replay="ledger-hero">
+                <span aria-hidden="true">↻ </span><span data-i18n="ledger.replay">Run again</span>
+              </button>
+            </div>
+            <table class="ledger" id="ledger-hero" data-animate="load" role="table">
+              <thead role="rowgroup">
+                <tr class="ledger__head" role="row">
+                  <th scope="col" role="columnheader" class="h-test" data-i18n="ledger.hTest">Candidate test</th>
+                  <th scope="col" role="columnheader" class="h-world" data-world="fixed">
+                    <span data-i18n="ledger.hFixed">Fixed code</span>
+                    <code>value % 2 === 0</code>
+                  </th>
+                  <th scope="col" role="columnheader" class="h-world" data-world="bug">
+                    <span data-i18n="ledger.hBug">Known bug</span>
+                    <code>value % 2 === 1</code>
+                  </th>
+                  <th scope="col" role="columnheader" class="h-world" data-world="neutral">
+                    <span data-i18n="ledger.hNeutral">Neutral control</span>
+                    <code>(value &amp; 1) === 0</code>
+                  </th>
+                  <th scope="col" role="columnheader" class="h-verdict" data-i18n="ledger.hVerdict">Verdict</th>
+                  <th scope="col" role="columnheader" class="h-why" data-i18n="ledger.hWhy">Why</th>
+                </tr>
+              </thead>
+              <tbody role="rowgroup">
+                <tr class="entry" role="row" data-candidate="weak">
+                  <th scope="row" role="rowheader" class="c-test">
+                    <span class="c-test__name" data-i18n="row.weak">Checks the type</span>
+                    <code class="c-test__code">assert.equal(typeof isEven(2), "boolean")</code>
+                  </th>
+                  <td role="cell" class="cell" data-world="fixed" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hFixed">Fixed code</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="bug" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hBug">Known bug</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                    <span class="cell__note" data-i18n="note.missed">missed the bug</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="neutral" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hNeutral">Neutral control</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="verdict">
+                    <span class="stamp" data-verdict="REJECTED">REJECTED</span>
+                    <code class="verdict__status">WEAK_ORACLE</code>
+                  </td>
+                  <td role="cell" class="why">
+                    <p data-i18n="why.weak">
+                      Green everywhere proves nothing: this test would have let the bug ship.
+                    </p>
+                    <code>TARGET_STRENGTH_INSUFFICIENT</code>
+                  </td>
+                </tr>
+                <tr class="entry" role="row" data-candidate="strong">
+                  <th scope="row" role="rowheader" class="c-test">
+                    <span class="c-test__name" data-i18n="row.strong">Checks the answer</span>
+                    <code class="c-test__code">assert.equal(isEven(2), true)</code>
+                  </th>
+                  <td role="cell" class="cell" data-world="fixed" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hFixed">Fixed code</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="bug" data-result="fail">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hBug">Known bug</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="fail"></i><i data-o="fail"></i></span>
+                    <span class="cell__out">fail</span><span class="sr" data-i18n="sr.bothAssert">, assertion failure on both attempts</span>
+                    <span class="cell__note" data-i18n="note.caught">caught it</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="neutral" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hNeutral">Neutral control</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="verdict">
+                    <span class="stamp" data-verdict="VERIFIED">VERIFIED</span>
+                    <code class="verdict__status">ELIGIBLE</code>
+                  </td>
+                  <td role="cell" class="why">
+                    <p data-i18n="why.strong">
+                      Red on the bug, green everywhere else. That is what a regression test is for.
+                    </p>
+                    <code>POLICY_SATISFIED</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <figcaption id="ledger-hero-cap" data-i18n-html="ledger.caption">
+              <code>isEven()</code> from the bundled example. Each row is one candidate test, run
+              alone: three worlds, two attempts per world. Recorded with assertledger 1.1.0.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="entry-section" id="fool" aria-labelledby="fool-title">
+        <div class="wrap">
+          <div class="folio">
+            <span><span class="folio__num">01</span> / <span data-i18n="fool.folio">Try to fool it</span></span>
+            <span class="folio__note" data-i18n="fool.folioNote">Ledger, continued</span>
+          </div>
+          <div class="section-head">
+            <h2 id="fool-title" data-i18n="fool.title">Four more tests that look fine. None of them qualify.</h2>
+            <p data-i18n="fool.lede">
+              Same function, same three worlds, real runs of the engine. Only an attributed assertion
+              failure on the known bug counts as a catch. Timeouts, crashes, compile and collection
+              failures are recorded, never credited.
+            </p>
+          </div>
+
+          <figure class="ledger-fig" aria-labelledby="ledger-fool-cap">
+            <table class="ledger" id="ledger-fool" data-animate="view" role="table">
+              <thead role="rowgroup">
+                <tr class="ledger__head" role="row">
+                  <th scope="col" role="columnheader" class="h-test" data-i18n="ledger.hTest">Candidate test</th>
+                  <th scope="col" role="columnheader" class="h-world" data-world="fixed">
+                    <span data-i18n="ledger.hFixed">Fixed code</span>
+                    <code>value % 2 === 0</code>
+                  </th>
+                  <th scope="col" role="columnheader" class="h-world" data-world="bug">
+                    <span data-i18n="ledger.hBug">Known bug</span>
+                    <code>value % 2 === 1</code>
+                  </th>
+                  <th scope="col" role="columnheader" class="h-world" data-world="neutral">
+                    <span data-i18n="ledger.hNeutral">Neutral control</span>
+                    <code>(value &amp; 1) === 0</code>
+                  </th>
+                  <th scope="col" role="columnheader" class="h-verdict" data-i18n="ledger.hVerdict">Verdict</th>
+                  <th scope="col" role="columnheader" class="h-why" data-i18n="ledger.hWhy">Why</th>
+                </tr>
+              </thead>
+              <tbody role="rowgroup">
+                <tr class="entry" role="row" data-candidate="brittle">
+                  <th scope="row" role="rowheader" class="c-test">
+                    <span class="c-test__name" data-i18n="row.brittle">Checks the answer and the source</span>
+                    <code class="c-test__code">assert.match(String(isEven), /% 2 === 0/)</code>
+                  </th>
+                  <td role="cell" class="cell" data-world="fixed" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hFixed">Fixed code</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="bug" data-result="fail">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hBug">Known bug</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="fail"></i><i data-o="fail"></i></span>
+                    <span class="cell__out">fail</span><span class="sr" data-i18n="sr.bothAssert">, assertion failure on both attempts</span>
+                    <span class="cell__note" data-i18n="note.caught">caught it</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="neutral" data-result="fail">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hNeutral">Neutral control</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="fail"></i><i data-o="fail"></i></span>
+                    <span class="cell__out">fail</span><span class="sr" data-i18n="sr.bothAssert">, assertion failure on both attempts</span>
+                    <span class="cell__note" data-i18n="note.falseAlarm">false alarm</span>
+                  </td>
+                  <td role="cell" class="verdict">
+                    <span class="stamp" data-verdict="REJECTED">REJECTED</span>
+                    <code class="verdict__status">INVALID</code>
+                  </td>
+                  <td role="cell" class="why">
+                    <p data-i18n="why.brittle">
+                      It catches the bug, but also fails on a harmless rewrite: it checks how the code
+                      is written, not what it does.
+                    </p>
+                    <code>NEUTRAL_NOT_GREEN</code>
+                  </td>
+                </tr>
+                <tr class="entry" role="row" data-candidate="hangs">
+                  <th scope="row" role="rowheader" class="c-test">
+                    <span class="c-test__name" data-i18n="row.hangs">Hangs on the bug</span>
+                    <code class="c-test__code">if (!isEven(2)) for (;;) {}</code>
+                  </th>
+                  <td role="cell" class="cell" data-world="fixed" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hFixed">Fixed code</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="bug" data-result="void">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hBug">Known bug</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="void"></i><i data-o="void"></i></span>
+                    <span class="cell__out">timeout</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                    <span class="cell__note" data-i18n="note.noCredit">no credit</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="neutral" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hNeutral">Neutral control</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="verdict">
+                    <span class="stamp" data-verdict="REJECTED">REJECTED</span>
+                    <code class="verdict__status">INVALID</code>
+                  </td>
+                  <td role="cell" class="why">
+                    <p data-i18n="why.hangs">
+                      A timeout is never a catch. The hung runs report no attributed test, so the
+                      candidate is invalid.
+                    </p>
+                    <code>CANDIDATE_DISCOVERY_INVALID</code>
+                  </td>
+                </tr>
+                <tr class="entry" role="row" data-candidate="throws">
+                  <th scope="row" role="rowheader" class="c-test">
+                    <span class="c-test__name" data-i18n="row.throws">Throws instead of asserting</span>
+                    <code class="c-test__code">if (!isEven(2)) throw new TypeError("unexpected parity")</code>
+                  </th>
+                  <td role="cell" class="cell" data-world="fixed" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hFixed">Fixed code</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="bug" data-result="void">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hBug">Known bug</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="void"></i><i data-o="void"></i></span>
+                    <span class="cell__out">crash</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                    <span class="cell__note" data-i18n="note.noCredit">no credit</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="neutral" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hNeutral">Neutral control</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="verdict">
+                    <span class="stamp" data-verdict="REJECTED">REJECTED</span>
+                    <code class="verdict__status">INVALID</code>
+                  </td>
+                  <td role="cell" class="why">
+                    <p data-i18n="why.throws">
+                      A thrown TypeError is recorded as a crash, not an assertion failure. Only
+                      attributed assertion failures count.
+                    </p>
+                    <code>CANDIDATE_DISCOVERY_INVALID</code>
+                  </td>
+                </tr>
+                <tr class="entry" role="row" data-candidate="flaky">
+                  <th scope="row" role="rowheader" class="c-test">
+                    <span class="c-test__name" data-i18n="row.flaky">Flaky</span>
+                    <code class="c-test__code">assert.equal(isEven(2) &amp;&amp; Math.random() &lt; 0.5, true)</code>
+                  </th>
+                  <td role="cell" class="cell" data-world="fixed" data-result="mixed">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hFixed">Fixed code</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="fail"></i></span>
+                    <span class="cell__out">pass · fail</span><span class="sr" data-i18n="sr.mixed">, one attempt each</span>
+                    <span class="cell__note" data-i18n="note.diverged">attempts disagree</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="bug" data-result="fail">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hBug">Known bug</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="fail"></i><i data-o="fail"></i></span>
+                    <span class="cell__out">fail</span><span class="sr" data-i18n="sr.bothAssert">, assertion failure on both attempts</span>
+                  </td>
+                  <td role="cell" class="cell" data-world="neutral" data-result="pass">
+                    <span class="cell__world" aria-hidden="true" data-i18n="ledger.hNeutral">Neutral control</span>
+                    <span class="attempts" aria-hidden="true"><i data-o="pass"></i><i data-o="pass"></i></span>
+                    <span class="cell__out">pass</span><span class="sr" data-i18n="sr.both">, both attempts</span>
+                  </td>
+                  <td role="cell" class="verdict">
+                    <span class="stamp" data-verdict="INCONCLUSIVE">INCONCLUSIVE</span>
+                    <code class="verdict__status">UNSTABLE</code>
+                  </td>
+                  <td role="cell" class="why">
+                    <p data-i18n="why.flaky">
+                      Its two attempts disagreed on the fixed code. A retry that passes never erases
+                      the one that failed.
+                    </p>
+                    <code>OBSERVATIONS_DIVERGE</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <figcaption id="ledger-fool-cap" data-i18n-html="fool.caption">
+              Four single-candidate campaigns against <code>isEven()</code>, recorded with
+              assertledger 1.1.0. The flaky row shows one recorded run; its outcomes change between
+              runs, which is the point.
+            </figcaption>
+          </figure>
+
+          <div class="verdicts">
+            <h3 class="verdicts__title" data-i18n="verdicts.title">The four campaign verdicts</h3>
+            <dl class="verdicts__list">
+              <div>
+                <dt><span class="stamp" data-verdict="VERIFIED">VERIFIED</span></dt>
+                <dd data-i18n="verdicts.verified">At least one test met the declared policy and was selected.</dd>
+              </div>
+              <div>
+                <dt><span class="stamp" data-verdict="REJECTED">REJECTED</span></dt>
+                <dd data-i18n="verdicts.rejected">The evidence is conclusive, and no test qualifies.</dd>
+              </div>
+              <div>
+                <dt><span class="stamp" data-verdict="INCONCLUSIVE">INCONCLUSIVE</span></dt>
+                <dd data-i18n="verdicts.inconclusive">
+                  Observations are unstable or incomplete, or a control is invalid.
+                </dd>
+              </div>
+              <div>
+                <dt><span class="stamp" data-verdict="ENGINE_ERROR">ENGINE_ERROR</span></dt>
+                <dd data-i18n="verdicts.engine">
+                  The evidence could not be normalized safely. Fix the setup, then rerun.
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section class="entry-section" id="how" aria-labelledby="how-title">
+        <div class="wrap">
+          <div class="folio">
+            <span><span class="folio__num">02</span> / <span data-i18n="how.folio">How it works</span></span>
+            <span class="folio__note" data-i18n="how.folioNote">No model in the loop</span>
+          </div>
+          <div class="section-head">
+            <h2 id="how-title" data-i18n="how.title">Same bytes. Three worlds. Fixed gates.</h2>
+          </div>
+
+          <ol class="steps">
+            <li class="step">
+              <div class="step__head">
+                <span class="step__num" aria-hidden="true">01</span>
+                <h3 data-i18n="how.s1.title">Declare</h3>
+              </div>
+              <p class="step__text" data-i18n="how.s1.text">
+                Name the buggy revision, its fix, and a neutral control that must keep the behavior —
+                with the reason it does. AssertLedger never guesses what your bug means.
+              </p>
+              <div class="step__art">
+                <pre class="snippet"><code><b>--before</b> BUGGY_COMMIT <b>--after</b> FIX_COMMIT
+<b>--neutral</b> NEUTRAL_COMMIT
+<b>--neutral-reason</b> <em>"Why it keeps the behavior"</em></code></pre>
+              </div>
+            </li>
+            <li class="step">
+              <div class="step__head">
+                <span class="step__num" aria-hidden="true">02</span>
+                <h3 data-i18n="how.s2.title">Run</h3>
+              </div>
+              <p class="step__text" data-i18n="how.s2.text">
+                The exact same candidate bytes run in a fresh workspace for every world, as many times
+                as the policy requires. Each world first runs without the candidate, as a control.
+              </p>
+              <div class="step__art">
+                <div class="runs" role="img" aria-label="Per world: two control runs without the candidate, then two runs with it." data-i18n-attr="aria-label:how.s2.art">
+                  <span></span>
+                  <span class="runs__h" data-i18n="runs.control">control</span>
+                  <span class="runs__h" data-i18n="runs.candidate">candidate</span>
+                  <span class="runs__w" data-i18n="runs.fixed">fixed code</span>
+                  <span class="runs__sq"><i></i><i></i></span>
+                  <span class="runs__sq is-candidate"><i></i><i></i></span>
+                  <span class="runs__w" data-i18n="runs.bug">known bug</span>
+                  <span class="runs__sq"><i></i><i></i></span>
+                  <span class="runs__sq is-candidate"><i></i><i></i></span>
+                  <span class="runs__w" data-i18n="runs.neutral">neutral control</span>
+                  <span class="runs__sq"><i></i><i></i></span>
+                  <span class="runs__sq is-candidate"><i></i><i></i></span>
+                </div>
+              </div>
+            </li>
+            <li class="step">
+              <div class="step__head">
+                <span class="step__num" aria-hidden="true">03</span>
+                <h3 data-i18n="how.s3.title">Decide</h3>
+              </div>
+              <p class="step__text" data-i18n="how.s3.text">
+                A pure core — no model, no clock, no randomness — applies six gates in a fixed order.
+                When a prerequisite fails, the gates that depend on it are recorded as not run.
+              </p>
+              <div class="step__art">
+                <ol class="gates">
+                  <li><code>COMPLETENESS</code><span data-i18n="gate.completeness">every world has the required attempts</span></li>
+                  <li><code>STABILITY</code><span data-i18n="gate.stability">the attempts agree</span></li>
+                  <li><code>DISCOVERY</code><span data-i18n="gate.discovery">the test is found and attributed</span></li>
+                  <li><code>REFERENCE</code><span data-i18n="gate.reference">passes on the fixed code</span></li>
+                  <li><code>NEUTRAL</code><span data-i18n="gate.neutral">passes on the neutral control</span></li>
+                  <li><code>TARGET_STRENGTH</code><span data-i18n="gate.target">fails, by assertion, on the bug</span></li>
+                </ol>
+              </div>
+            </li>
+            <li class="step">
+              <div class="step__head">
+                <span class="step__num" aria-hidden="true">04</span>
+                <h3 data-i18n="how.s4.title">Seal</h3>
+              </div>
+              <p class="step__text" data-i18n="how.s4.text">
+                Two SHA-256 digests bind the evidence into a manifest. Replay recomputes both digests
+                and the verdict, without rerunning a single test.
+              </p>
+              <div class="step__art">
+                <dl class="digests">
+                  <div>
+                    <dt><code>decisionDigest</code></dt>
+                    <dd data-i18n="digest.decision">binds the evidence the verdict depends on</dd>
+                  </div>
+                  <div>
+                    <dt><code>artifactDigest</code></dt>
+                    <dd data-i18n="digest.artifact">binds the whole manifest, down to each timing</dd>
+                  </div>
+                </dl>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="entry-section" id="evidence" aria-labelledby="evidence-title">
+        <div class="wrap">
+          <div class="folio">
+            <span><span class="folio__num">03</span> / <span data-i18n="ev.folio">Evidence</span></span>
+            <span class="folio__note" data-i18n="ev.folioNote">Replayable offline</span>
+          </div>
+          <div class="section-head">
+            <h2 id="evidence-title" data-i18n="ev.title">Don’t trust this page. Replay it.</h2>
+            <p data-i18n="ev.lede">
+              Each deploy of this site runs the bundled example through AssertLedger on GitHub Actions
+              and publishes the manifest it produced. Replay needs no model and runs no test: it
+              re-derives the verdict and both digests from the recorded evidence.
+            </p>
+          </div>
+
+          <div class="evidence">
+            <div class="evidence__card">
+              <div class="evidence__bar">
+                <span class="evidence__file">manifest.json</span>
+                <span class="evidence__prov" data-ev="provenance">
+                  <span data-i18n="ev.provenancePending">expected result</span>
+                </span>
+              </div>
+              <div class="evidence__summary">
+                <span class="stamp" data-verdict="VERIFIED" data-ev="status">VERIFIED</span>
+                <dl class="facts">
+                  <div class="facts__item">
+                    <dt data-i18n="ev.fact.candidates">candidate tests</dt>
+                    <dd data-ev="candidates">2</dd>
+                  </div>
+                  <div class="facts__item">
+                    <dt data-i18n="ev.fact.worlds">worlds</dt>
+                    <dd data-ev="worlds">3</dd>
+                  </div>
+                  <div class="facts__item">
+                    <dt data-i18n="ev.fact.observations">observations</dt>
+                    <dd data-ev="observations">18</dd>
+                  </div>
+                </dl>
+              </div>
+              <pre class="snippet snippet--json"><code data-ev="excerpt">{
+  "decision": {
+    "status": "VERIFIED",
+    "selectedCandidateIds": ["strong"],
+    "reasonCodes": ["POLICY_SATISFIED"]
+  },
+  "decisionDigest": "sha256:…",
+  "artifactDigest": "sha256:…"
+}</code></pre>
+              <a class="btn" data-ev="download" href="evidence/manifest.json" download="manifest.json" hidden>
+                <span aria-hidden="true">↓ </span><span data-i18n="ev.download">Download manifest.json</span>
+                <span class="btn__meta" data-ev="size"></span>
+              </a>
+            </div>
+
+            <div class="evidence__replay">
+              <h3 data-i18n="ev.replayTitle">Replay it anywhere</h3>
+              <div class="cmd">
+                <span class="cmd__prompt" aria-hidden="true">$</span>
+                <code>npx assertledger replay manifest.json --json</code>
+                <button class="copy" type="button" data-copy="npx assertledger replay manifest.json --json">
+                  <span data-i18n="copy">Copy</span>
+                </button>
+              </div>
+              <p class="rails__label" data-ev="rails-label" data-i18n="ev.expected">
+                Expected output, as documented
+              </p>
+              <ul class="rails">
+                <li data-rail="valid" data-result="pass"><code>valid</code><span>true</span></li>
+                <li data-rail="schemaValid" data-result="pass"><code>schemaValid</code><span>true</span></li>
+                <li data-rail="decisionDigestValid" data-result="pass"><code>decisionDigestValid</code><span>true</span></li>
+                <li data-rail="artifactDigestValid" data-result="pass"><code>artifactDigestValid</code><span>true</span></li>
+                <li data-rail="decisionSemanticsValid" data-result="pass"><code>decisionSemanticsValid</code><span>true</span></li>
+              </ul>
+              <p data-i18n="ev.tamper">
+                Flip a single recorded outcome and replay rejects the file: the digests and the
+                re-derived verdict stop matching.
+              </p>
+              <p class="muted" data-i18n="ev.limit">
+                Replay proves integrity and decision consistency. It does not prove who produced the
+                observations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="entry-section" id="start" aria-labelledby="start-title">
+        <div class="wrap">
+          <div class="folio">
+            <span><span class="folio__num">04</span> / <span data-i18n="start.folio">Get started</span></span>
+            <span class="folio__note">Node.js ≥ 22.15 · node:test</span>
+          </div>
+          <div class="section-head">
+            <h2 id="start-title" data-i18n="start.title">Start with one command.</h2>
+            <p data-i18n-html="start.lede">
+              Install it in the repository you want to check. <code>doctor</code> reads the repository
+              without running its tests or writing a file.
+            </p>
+          </div>
+
+          <div class="tabs" data-tabs>
+            <div class="tabs__list" role="tablist" aria-label="Entry points" data-i18n-attr="aria-label:start.tabsAria">
+              <button type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="true">CLI</button>
+              <button type="button" role="tab" id="tab-sdk" aria-controls="panel-sdk" aria-selected="false" tabindex="-1">SDK</button>
+              <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="false" tabindex="-1" data-i18n="tab.agents">Agents · MCP</button>
+            </div>
+
+            <section class="tabs__panel" role="tabpanel" id="panel-cli" aria-labelledby="tab-cli">
+              <h3 class="tabs__heading">CLI</h3>
+              <div class="codeblock">
+                <div class="codeblock__bar">
+                  <span data-i18n="start.cli.install">Install and diagnose</span>
+                  <button class="copy" type="button" data-copy="npm install --save-dev assertledger&#10;npx assertledger doctor .">
+                    <span data-i18n="copy">Copy</span>
+                  </button>
+                </div>
+                <pre class="snippet"><code>npm install --save-dev assertledger
+npx assertledger doctor .</code></pre>
+              </div>
+              <div class="codeblock">
+                <div class="codeblock__bar">
+                  <span data-i18n="start.cli.check">Qualify a committed regression test</span>
+                  <button
+                    class="copy"
+                    type="button"
+                    data-copy='npx assertledger check . --before BUGGY_COMMIT --after FIX_COMMIT --neutral NEUTRAL_COMMIT --neutral-reason "Why this revision keeps the behavior" --test tests/regression.test.js --base-test tests/base.test.js --out .assertledger/evidence-001 --allow-unsafe-execution'
+                  >
+                    <span data-i18n="copy.oneLine">Copy as one line</span>
+                  </button>
+                </div>
+                <pre class="snippet"><code>npx assertledger check . \
+  <b>--before</b> BUGGY_COMMIT <b>--after</b> FIX_COMMIT \
+  <b>--neutral</b> NEUTRAL_COMMIT \
+  <b>--neutral-reason</b> <em>"Why this revision keeps the behavior"</em> \
+  <b>--test</b> tests/regression.test.js \
+  <b>--base-test</b> tests/base.test.js \
+  <b>--out</b> .assertledger/evidence-001 \
+  <b>--allow-unsafe-execution</b></code></pre>
+              </div>
+              <p class="callout" data-i18n-html="start.cli.warn">
+                <strong>Trusted code only.</strong> <code>--allow-unsafe-execution</code> runs the
+                repository’s code on this machine, unsandboxed. Since 1.1,
+                <code>--container-image NAME@sha256:DIGEST</code> runs each observation in a fresh
+                Linux container instead.
+              </p>
+              <p class="muted" data-i18n-html="start.cli.explain">
+                Blocked by a refusal? <code>npx assertledger explain REASON_CODE</code> prints a safe
+                next action.
+              </p>
+            </section>
+
+            <section class="tabs__panel" role="tabpanel" id="panel-sdk" aria-labelledby="tab-sdk">
+              <h3 class="tabs__heading">SDK</h3>
+              <div class="codeblock">
+                <div class="codeblock__bar">
+                  <span>verify.mjs</span>
+                  <button class="copy" type="button" data-copy-from="sdk-code">
+                    <span data-i18n="copy">Copy</span>
+                  </button>
+                </div>
+                <pre class="snippet"><code id="sdk-code"><b>import</b> { readFile } <b>from</b> <em>"node:fs/promises"</em>;
+<b>import</b> { AssertLedger } <b>from</b> <em>"assertledger"</em>;
+
+<b>const</b> ledger = <b>new</b> AssertLedger();
+<b>const</b> request = JSON.parse(<b>await</b> readFile(<em>"request.json"</em>, <em>"utf8"</em>));
+
+<b>const</b> manifest = <b>await</b> ledger.verify(request);
+console.log(manifest.decision.status); <i>// VERIFIED, REJECTED, INCONCLUSIVE or ENGINE_ERROR</i>
+
+console.log(ledger.replay(manifest).valid); <i>// true</i></code></pre>
+              </div>
+              <p class="muted" data-i18n-html="start.sdk.note">
+                A request declares the worlds, the candidates and the policy — see the
+                <a href="https://github.com/hoklims/assertledger/blob/main/examples/node-test/request.json">bundled example</a>.
+                The SDK reuses the engine’s gates; it never reimplements them.
+              </p>
+            </section>
+
+            <section class="tabs__panel" role="tabpanel" id="panel-agents" aria-labelledby="tab-agents">
+              <h3 class="tabs__heading" data-i18n="tab.agents">Agents · MCP</h3>
+              <div class="codeblock">
+                <div class="codeblock__bar">
+                  <span data-i18n="start.agents.bar">Project-local setup</span>
+                  <button class="copy" type="button" data-copy="npx assertledger connect . --client claude-code">
+                    <span data-i18n="copy">Copy</span>
+                  </button>
+                </div>
+                <pre class="snippet"><code><i data-i18n="start.agents.c1"># Preview the configuration and the packaged skill</i>
+npx assertledger connect . <b>--client</b> claude-code
+
+<i data-i18n="start.agents.c2"># Install both</i>
+npx assertledger connect . <b>--client</b> claude-code <b>--write</b>
+
+<i data-i18n="start.agents.c3"># Codex, or a generic MCP descriptor</i>
+npx assertledger connect . <b>--client</b> codex
+npx assertledger connect . <b>--client</b> mcp</code></pre>
+              </div>
+              <p class="muted" data-i18n="start.agents.note">
+                An agent can propose a candidate test; the deterministic engine judges the
+                observations. The generated MCP server starts read-only, and running candidates needs
+                a separate, explicit opt-in.
+              </p>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="entry-section" id="fine-print" aria-labelledby="fine-title">
+        <div class="wrap">
+          <div class="folio">
+            <span><span class="folio__num">05</span> / <span data-i18n="fine.folio">Fine print</span></span>
+            <span class="folio__note" data-i18n="fine.folioNote">Explicit non-claims</span>
+          </div>
+          <div class="section-head">
+            <h2 id="fine-title" data-i18n="fine.title">The fine print, in large print.</h2>
+            <p data-i18n="fine.lede">A verdict is only as good as its limits. Here is what AssertLedger does not prove.</p>
+          </div>
+          <ol class="fine">
+            <li>
+              <h3 data-i18n="fine.1.t">That your code is bug-free.</h3>
+              <p data-i18n="fine.1.d">
+                A verdict covers the declared bug, the recorded worlds and the observed attempts.
+                Nothing beyond them.
+              </p>
+            </li>
+            <li>
+              <h3 data-i18n="fine.2.t">That your worlds make sense.</h3>
+              <p data-i18n="fine.2.d">
+                You supply the bug and the neutral control. AssertLedger records them; it does not
+                invent what they mean.
+              </p>
+            </li>
+            <li>
+              <h3 data-i18n="fine.3.t">That a test will never flake.</h3>
+              <p data-i18n="fine.3.d">
+                Stability is measured over the attempts it observed, not promised beyond them.
+              </p>
+            </li>
+            <li>
+              <h3 data-i18n="fine.4.t">Who produced the evidence.</h3>
+              <p data-i18n="fine.4.d">
+                Replay checks integrity and decision consistency. Authenticating the producer needs a
+                separate signed attestation.
+              </p>
+            </li>
+            <li>
+              <h3 data-i18n="fine.5.t">That local runs are sandboxed.</h3>
+              <p data-i18n-html="fine.5.d">
+                <code>trusted-local</code> is explicitly <code>UNSANDBOXED</code>: run trusted code
+                only. Container isolation runs without network or host mounts, but still shares the
+                host’s kernel.
+              </p>
+            </li>
+          </ol>
+          <p class="fine__links">
+            <a href="https://github.com/hoklims/assertledger/blob/main/docs/proof-model.md" data-i18n="fine.link.proof">Proof model</a>
+            <a href="https://github.com/hoklims/assertledger/blob/main/docs/container-isolation.md" data-i18n="fine.link.container">Container isolation</a>
+            <a href="https://github.com/hoklims/assertledger/blob/main/SECURITY.md" data-i18n="fine.link.security">Security policy</a>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="closing">
+      <div class="wrap closing__row">
+        <span class="brand brand--static">
+          <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand__name">AssertLedger</span>
+          <span class="closing__version"><span data-version>1.1.0</span> · MIT</span>
+        </span>
+        <p class="closing__line" data-i18n="foot.line">Deterministic verdicts. Replayable evidence.</p>
+        <nav class="closing__nav" aria-label="Project" data-i18n-attr="aria-label:foot.aria">
+          <a href="https://github.com/hoklims/assertledger">GitHub</a>
+          <a href="https://www.npmjs.com/package/assertledger">npm</a>
+          <a href="https://github.com/hoklims/assertledger/tree/main/docs" data-i18n="foot.docs">Documentation</a>
+          <a href="https://github.com/hoklims/assertledger/blob/main/CHANGELOG.md" data-i18n="foot.changelog">Changelog</a>
+          <a href="https://github.com/hoklims/assertledger/blob/main/SECURITY.md" data-i18n="foot.security">Security</a>
+        </nav>
+      </div>
+    </footer>
+
+    <p class="sr" aria-live="polite" id="announcer"></p>
+  </body>
+</html>

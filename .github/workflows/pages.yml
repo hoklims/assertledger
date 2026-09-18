@@ -1,0 +1,61 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site and record its evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.1.2
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # The page publishes the manifest of the repository's own bundled example and the replay of
+      # that manifest. `verify` exits non-zero unless the example's campaign is VERIFIED and
+      # `replay` exits non-zero unless every rail holds, so a change that alters the example's
+      # verdict or breaks its replay blocks the deploy. This workflow neither runs the test suite
+      # nor waits for ci.yml.
+      - name: Record the bundled example as the site's evidence
+        run: |
+          mkdir -p site/evidence
+          node dist/cli.js verify examples/node-test/request.json --allow-unsafe-execution --json > site/evidence/manifest.json
+          node dist/cli.js replay site/evidence/manifest.json --json > site/evidence/replay.json
+          cp dist/build-info.json site/evidence/build-info.json
+          node -e 'console.log(JSON.stringify({ version: require("./package.json").version }))' > site/evidence/version.json
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
