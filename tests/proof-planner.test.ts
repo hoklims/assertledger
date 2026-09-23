@@ -2531,6 +2531,158 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
     assert.equal(attribution?.reason, "runtime tree changed or unknown");
   });
 
+  it("binds evidence that answers a signal to that observation, not to its kind", () => {
+    const harness = surface("harness/ci-job", {
+      role: "proof-infrastructure",
+      runtime: "build",
+      exercises: [],
+    });
+    const failingAt = (id: string, signalId: string) =>
+      planAssurance({
+        ...revision(id, [harness]),
+        signals: [signal(signalId, "TIMEOUT", { revision: id, surfaces: ["harness/ci-job"] })],
+      });
+    const first = failingAt(R1, "a");
+    assert.equal(first.signals[0]?.classification, "unattributed");
+    assert.equal(first.signals[0]?.exercises, "no");
+    assert.equal(first.signals[0]?.revision, R1);
+    // Same baseline, tree and digests: only the failure differs.
+    const attribution = carryOverEvidence(first, failingAt(R2, "b")).mustProduce.find(
+      (entry) => entry.kind === "FAILURE_ATTRIBUTION",
+    );
+    assert.deepEqual(attribution?.surfaces, ["harness/ci-job"]);
+    assert.match(attribution?.reason ?? "", /answers an observation/);
+    // A job failing again under the same name on another revision is another observation.
+    assert.ok(
+      carryOverEvidence(first, failingAt(R2, "a")).mustProduce.some(
+        (entry) =>
+          entry.kind === "FAILURE_ATTRIBUTION" && /answers an observation/.test(entry.reason),
+      ),
+    );
+
+    // A stricter policy may answer an observation with runtime-tree evidence: same rule.
+    const suiteOnFailure: AssurancePolicy = {
+      ...DEFAULT_ASSURANCE_POLICY,
+      id: "example.suite-on-infrastructure-failure",
+      triggers: DEFAULT_ASSURANCE_POLICY.triggers.map((entry) =>
+        entry.fact === "observed:infrastructure-failure"
+          ? { ...entry, require: [...entry.require, "FULL_TEST_SUITE"] }
+          : entry,
+      ),
+    };
+    const attributedAt = (id: string, signalId: string) =>
+      planAssurance({
+        ...revision(id, []),
+        policy: suiteOnFailure,
+        signals: [
+          signal(signalId, "TIMEOUT", {
+            revision: id,
+            surfaces: ["elsewhere/job"],
+            attribution: ["OUTSIDE_IMPACT"],
+          }),
+        ],
+      });
+    const suite = carryOverEvidence(attributedAt(R1, "a"), attributedAt(R2, "b")).mustProduce.find(
+      (entry) => entry.kind === "FULL_TEST_SUITE",
+    );
+    assert.match(suite?.reason ?? "", /answers an observation/);
+
+    // A regression reproduced on the baseline pre-exists; its reproduction is not another's.
+    const preExistingAt = (id: string, signalId: string) =>
+      planAssurance({
+        ...revision(id, []),
+        signals: [
+          signal(signalId, "REGRESSION", {
+            revision: id,
+            surfaces: ["channel/replay-safe-keys"],
+            attribution: ["REPRODUCES_ON_BASELINE"],
+          }),
+        ],
+      });
+    const reproduced = carryOverEvidence(
+      preExistingAt(R1, "reg-a"),
+      preExistingAt(R2, "reg-b"),
+    ).mustProduce.find((entry) => entry.kind === "FAILURE_ATTRIBUTION");
+    assert.deepEqual(reproduced?.surfaces, ["channel/replay-safe-keys"]);
+
+    // Within one revision, a new unscoped observation voids unscoped evidence too.
+    const unnamed = signal("t", "TIMEOUT", { attribution: ["PASSES_ON_SAME_REVISION"] });
+    const withT = planAssurance({ ...revision(R1, []), signals: [unnamed] });
+    const withTU = planAssurance({
+      ...revision(R1, []),
+      signals: [unnamed, signal("u", "UNEXPECTED_BEHAVIOR")],
+    });
+    const unscoped = carryOverEvidence(withT, withTU).mustProduce.find(
+      (entry) => entry.kind === "FAILURE_ATTRIBUTION",
+    );
+    assert.deepEqual(unscoped?.surfaces, []);
+    assert.match(unscoped?.reason ?? "", /unresolved \(u\)/);
+    // Exact-revision evidence is a property of the revision itself.
+    assertIncludes(kinds(carryOverEvidence(withT, withTU).reusable), [
+      "REVISION_IDENTITY",
+      "STATIC_CHECKS",
+    ]);
+  });
+
+  it("matches a signal already answered by what it observed, not by its id", () => {
+    const divergence = (surfaces: string[]) =>
+      planAssurance({
+        ...revision(R1, []),
+        signals: [signal("ci", "CORPUS_DIVERGENCE", { surfaces })],
+      });
+    // The same id now reports a divergence on every surface.
+    const widened = carryOverEvidence(divergence(["channel/replay-fold"]), divergence([]));
+    assert.deepEqual(
+      widened.mustProduce.find(
+        (entry) => entry.kind === "TARGETED_CORPUS" && entry.reason.includes("unresolved (ci)"),
+      )?.surfaces,
+      ["channel/replay-fold", "channel/replay-safe-keys"],
+    );
+    assert.deepEqual(
+      carryOverEvidence(divergence(["channel/replay-fold"]), divergence(["channel/replay-fold"]))
+        .mustProduce,
+      [],
+    );
+  });
+
+  it("reads what a signal concerns in both plans, and a role in both plans", () => {
+    // A surface the next plan declares an execution context widens a signal the previous plan
+    // observed on it, as if the previous plan had known.
+    const config = (role: Surface["role"]) =>
+      surface("config/runtime.env", { role, runtime: "build" });
+    const regressed = planAssurance({
+      ...revision(R1, [config("product")]),
+      signals: [signal("r", "REGRESSION", { surfaces: ["config/runtime.env"] })],
+    });
+    assert.deepEqual(
+      carryOverEvidence(regressed, planAssurance(revision(R2, [config("execution-context")])))
+        .reusable,
+      [],
+    );
+
+    // A documented surface reclassified as documentation keeps depending on the tree.
+    const readme = claim("readme-exit-code-table", ["cli/exit-codes"], { kind: "documentation" });
+    const exitCodes = (id: string, tree: string, role: Surface["role"]) =>
+      planAssurance({
+        impact: impact(
+          [
+            surface("cli/exit-codes", {
+              role,
+              runtime: role === "documentation" ? "none" : "offline-analysis",
+              behaviorChange: "feature",
+            }),
+          ],
+          { revision: { id, baseline: BASE, runtimeTreeDigest: digest(tree) } },
+        ),
+        claims: [readme],
+      });
+    const check = carryOverEvidence(
+      exitCodes(R1, "tree@1", "product"),
+      exitCodes(R2, "tree@2", "documentation"),
+    ).mustProduce.find((entry) => entry.kind === "DOCUMENTATION_CHECK");
+    assert.equal(check?.reason, "runtime tree changed or unknown");
+  });
+
   it("attributes a flake of a repaired ceiling to the proof infrastructure", () => {
     const mechanics = ceiling(MECHANICS_CEILING, "test", ["mechanics/catalog"]);
     const plan = planAssurance({

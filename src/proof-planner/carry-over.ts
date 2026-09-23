@@ -32,27 +32,36 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
   const sameBaseline = previous.subject.baseline === next.subject.baseline;
   const sameRevision = previous.subject.revision === next.subject.revision;
   const runtimeTree = sameRuntimeTree(previous, next);
-  // Evidence is not reused on the surfaces that an unresolved signal may concern: across
-  // revisions, one observed beside it or one the next plan observes; within one revision, only
-  // one the next plan newly observes, since evidence produced beside a signal answers it. The
-  // planner uses the same notion of "unresolved".
+  // Evidence is not reused on the surfaces that an unresolved signal may concern, read in both
+  // plans: across revisions, one observed beside it or one the next plan observes; within one
+  // revision, only an observation the previous plan did not already have, since evidence produced
+  // beside an observation answers it. The planner uses the same notion of "unresolved".
   const previousUnresolved = previous.signals.filter(isUnresolvedSignal);
-  const answered = new Set(previousUnresolved.map((signal) => signal.id));
+  const answered = new Set(previousUnresolved.map(observationKey));
   const unresolved = [
-    ...(sameRevision ? [] : previousUnresolved).map((signal) => ({
-      id: signal.id,
-      surfaces: concernedSurfaces(previous, signal),
-    })),
-    ...next.signals
-      .filter((signal) => isUnresolvedSignal(signal) && !(sameRevision && answered.has(signal.id)))
-      .map((signal) => ({ id: signal.id, surfaces: concernedSurfaces(next, signal) })),
-  ];
+    ...(sameRevision ? [] : previousUnresolved),
+    ...next.signals.filter(
+      (signal) =>
+        isUnresolvedSignal(signal) && !(sameRevision && answered.has(observationKey(signal))),
+    ),
+  ].map((signal) => ({ id: signal.id, surfaces: concernedInEither(previous, next, signal) }));
   const unresolvedOn = (surface: string | null): string | null => {
     const blocking = unresolved.filter(
       (entry) => surface === null || entry.surfaces === null || entry.surfaces.has(surface),
     );
     return blocking.length > 0
       ? `a signal is unresolved (${sortedUnique(blocking.map((entry) => entry.id)).join(", ")})`
+      : null;
+  };
+  // Evidence that answers observations answers only those it was produced for.
+  const answersOther = (
+    requirement: EvidenceRequirement,
+    earlier: EvidenceRequirement,
+    surface: string | null,
+  ): string | null => {
+    const seen = observationsBehind(previous, earlier, surface);
+    return [...observationsBehind(next, requirement, surface)].some((key) => !seen.has(key))
+      ? "it answers an observation the earlier evidence did not"
       : null;
   };
 
@@ -77,15 +86,23 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
       continue;
     }
     if (requirement.binding === "runtime-tree") {
-      const blocker = runtimeTree ? unresolvedOn(null) : "runtime tree changed or unknown";
+      const blocker = runtimeTree
+        ? (unresolvedOn(null) ?? answersOther(requirement, earlier, null))
+        : "runtime tree changed or unknown";
       if (blocker === null) reusable.push(entry(requirement.surfaces, "runtime tree unchanged"));
       else mustProduce.push(entry(requirement.surfaces, blocker));
       continue;
     }
-    // Revision-wide evidence: exact-revision kinds, and surface-content kinds without a scope.
+    // Revision-wide evidence: exact-revision kinds, a property of the revision itself, and
+    // surface-content kinds without a scope, which a new observation can still contradict.
     if (requirement.binding === "exact-revision" || requirement.surfaces.length === 0) {
-      if (sameRevision) reusable.push(entry(requirement.surfaces, "same revision"));
-      else mustProduce.push(entry(requirement.surfaces, "bound to the exact revision"));
+      const blocker = !sameRevision
+        ? "bound to the exact revision"
+        : requirement.binding === "exact-revision"
+          ? null
+          : (unresolvedOn(null) ?? answersOther(requirement, earlier, null));
+      if (blocker === null) reusable.push(entry(requirement.surfaces, "same revision"));
+      else mustProduce.push(entry(requirement.surfaces, blocker));
       continue;
     }
     const kept: string[] = [];
@@ -93,7 +110,8 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
     for (const surface of requirement.surfaces) {
       const reason =
         surfaceReuseBlocker(previous, next, requirement, earlier, surface, runtimeTree) ??
-        unresolvedOn(surface);
+        unresolvedOn(surface) ??
+        answersOther(requirement, earlier, surface);
       if (reason === null) kept.push(surface);
       else changed.set(reason, [...(changed.get(reason) ?? []), surface]);
     }
@@ -128,6 +146,48 @@ function concernedSurfaces(plan: AssurancePlan, signal: SignalClassification): S
   return concerned;
 }
 
+/** What a signal may concern in either plan: everything as soon as one of them cannot map it. */
+function concernedInEither(
+  previous: AssurancePlan,
+  next: AssurancePlan,
+  signal: SignalClassification,
+): Set<string> | null {
+  const before = concernedSurfaces(previous, signal);
+  const after = concernedSurfaces(next, signal);
+  return before === null || after === null ? null : new Set([...before, ...after]);
+}
+
+/** One observation: evidence produced for one report never answers another. */
+function observationKey(signal: SignalClassification): string {
+  return JSON.stringify([
+    signal.id,
+    signal.revision,
+    signal.signal,
+    signal.classification,
+    signal.exercises,
+    [...signal.basis].sort(),
+    [...signal.surfaces].sort(),
+  ]);
+}
+
+/** Observations behind a requirement on a surface, or behind all of it for null. */
+function observationsBehind(
+  plan: AssurancePlan,
+  requirement: EvidenceRequirement,
+  surface: string | null,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const fact of plan.facts) {
+    if (!fact.id.startsWith("observed:") || !requirement.because.includes(fact.id)) continue;
+    if (surface !== null && fact.surfaces.length > 0 && !fact.surfaces.includes(surface)) continue;
+    for (const ref of fact.refs) {
+      const signal = plan.signals.find((entry) => entry.id === ref);
+      keys.add(signal ? observationKey(signal) : `unknown:${ref}`);
+    }
+  }
+  return keys;
+}
+
 function sameRuntimeTree(previous: AssurancePlan, next: AssurancePlan): boolean {
   const before = previous.subject.runtimeTreeDigest;
   const after = next.subject.runtimeTreeDigest;
@@ -135,13 +195,18 @@ function sameRuntimeTree(previous: AssurancePlan, next: AssurancePlan): boolean 
 }
 
 /**
- * Only documentation-only evidence about a documentation surface ignores the runtime tree. A gate
- * delta review justifies a budget with durations measured on the code the gate runs, and a
- * documentation claim scoped to a runtime surface describes that surface's behavior.
+ * Only documentation-only evidence about a surface both plans call documentation ignores the
+ * runtime tree. A gate delta review justifies a budget with durations measured on the code the
+ * gate runs, and a documentation claim scoped to a runtime surface describes its behavior.
  */
-function dependsOnRuntimeTree(requirement: EvidenceRequirement, surface: PlanSurface): boolean {
+function dependsOnRuntimeTree(
+  requirement: EvidenceRequirement,
+  before: PlanSurface,
+  after: PlanSurface,
+): boolean {
   return (
-    surface.role !== "documentation" ||
+    before.role !== "documentation" ||
+    after.role !== "documentation" ||
     !requirement.subjects.every((subject) => subject === "documentation")
   );
 }
@@ -159,7 +224,7 @@ function surfaceReuseBlocker(
   const after = next.subject.surfaces.find((entry) => entry.id === surface);
   if (!before?.contentDigest || !after?.contentDigest) return "surface digest unknown";
   if (before.contentDigest !== after.contentDigest) return "surface content changed";
-  if (dependsOnRuntimeTree(requirement, after) && !runtimeTree) {
+  if (dependsOnRuntimeTree(requirement, before, after) && !runtimeTree) {
     return "runtime tree changed or unknown";
   }
   const testsBefore = exercisers(previous.subject.surfaces, surface);

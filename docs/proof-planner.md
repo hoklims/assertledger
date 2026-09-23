@@ -183,9 +183,10 @@ Each kind declares what it stays valid for:
 - `exact-revision`: static checks and revision identity (cheap, re-run on every revision);
 - `surface-content`: valid per scoped surface while that surface, the proof surfaces that exercise
   it (a test without an `exercises` list exercises everything; a proof-infrastructure surface
-  counts where it names the surface, and a changed one that names nothing is reported as
-  `proof.exercises-unknown`), the baseline and the runtime tree keep their digests. Only
-  documentation-only evidence about a documentation file ignores the runtime tree: a gate delta
+  counts where it names the surface, and a directly changed one with a declared behavior change
+  that names nothing is reported as `proof.exercises-unknown`), the baseline and the runtime tree
+  keep their digests. Only documentation-only evidence about a surface both plans call
+  documentation ignores the runtime tree: a gate delta
   review is redone when the code its budget measures changes, and a documentation claim scoped to a
   runtime surface is checked again when the behavior it describes may have changed. Without a
   scope, it is revision-wide;
@@ -197,15 +198,18 @@ is keyed on the kind's semantic digest (id, weight, binding, subjects, verificat
 `semanticsVersion`), never on its wording and never on the whole policy digest. Missing digests, a
 changed baseline (rebase) or a changed runtime tree force re-production of every kind that depends
 on them, and evidence never crosses to another revision on the surfaces that a signal unresolved in
-either plan may concern: the surfaces it names and what a named test or proof surface lists as
-exercised, or everything when it names no surface, a surface its plan's impact does not know, an
-execution context, or a proof surface that does not list what it exercises. A signal the next plan
-observes counts too, because it contradicts evidence produced before it. Within one revision, only a
-signal the previous plan did not already have counts: evidence produced beside a signal answers it.
-A block lifts when the previous plan is planned again; the next plan does not revise its
-classification. A failure attributed to the proof infrastructure, or unattributed on a job that a
-confidently bounded impact places outside the change, concerns no product evidence. AssertLedger
-must still verify that reused evidence exists and carries the listed digests.
+either plan may concern, read in both plans: the surfaces it names and what a named test or proof
+surface lists as exercised, or everything when it names no surface, a surface either impact does not
+know, an execution context, or a proof surface that does not list what it exercises. A signal the
+next plan observes counts too, because it contradicts evidence produced before it. Within one
+revision, only an observation the previous plan did not already have counts, compared by what was
+observed (id, revision, signal, classification and surfaces), not by id: evidence produced beside an
+observation answers it. Evidence that answers observations, such as a failure attribution or a job
+rerun, is reused only for the observations it was produced for. A block lifts when the previous plan
+is planned again; the next plan does not revise its classification. A failure attributed to the
+proof infrastructure, or unattributed on a job that a confidently bounded impact places outside the
+change, concerns no product evidence. AssertLedger must still verify that reused evidence exists and
+carries the listed digests.
 
 ### Escalations
 

@@ -123,6 +123,8 @@ export interface Uncertainty {
 
 export interface SignalClassification {
   id: string;
+  /** The revision the signal was observed on, which may differ from the planned one. */
+  revision: string;
   signal: SignalName;
   classification: SignalClassificationName;
   exercises: "yes" | "no" | "unknown";
@@ -427,9 +429,10 @@ function planCore(input: NormalizedInput): CoreResult {
       carried
         ? {
             ...classification,
+            revision: source.revision,
             reason: `carried from revision ${source.revision}, same baseline and runtime tree: ${classification.reason}`,
           }
-        : classification,
+        : { ...classification, revision: source.revision },
     );
   };
   for (const signal of input.signals) {
@@ -826,7 +829,7 @@ function isProductSignal(signal: SignalName): signal is ProductSignal {
 
 interface SignalOutcome {
   source: ProofSignal;
-  classification: SignalClassification;
+  classification: Omit<SignalClassification, "revision">;
   facts: PlannerFact[];
 }
 
@@ -839,7 +842,9 @@ function observedSameProduct(signal: ProofSignal, impact: ChangeImpact): boolean
 }
 
 /** Evidence about the product, or a failure that may still be about the change. */
-export function isUnresolvedSignal(classification: SignalClassification): boolean {
+export function isUnresolvedSignal(
+  classification: Pick<SignalClassification, "classification" | "exercises">,
+): boolean {
   return (
     classification.classification === "product" ||
     (classification.classification === "unattributed" && classification.exercises !== "no")
@@ -849,6 +854,7 @@ export function isUnresolvedSignal(classification: SignalClassification): boolea
 function otherRevision(signal: ProofSignal, reason: string): SignalClassification {
   return {
     id: signal.id,
+    revision: signal.revision,
     signal: signal.signal,
     classification: "other-revision",
     exercises: signal.exercisesImpactedSurfaces,
