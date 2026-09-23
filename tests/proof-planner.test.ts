@@ -2675,6 +2675,91 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
     );
   });
 
+  it("tells observations apart by every component it recorded", () => {
+    // The same divergence, now declared to exercise the impacted surfaces, is another observation.
+    const divergence = (exercisesImpactedSurfaces: ProofSignal["exercisesImpactedSurfaces"]) =>
+      planAssurance({
+        ...revision(R1, []),
+        signals: [
+          signal("ci", "CORPUS_DIVERGENCE", {
+            surfaces: ["channel/replay-fold"],
+            exercisesImpactedSurfaces,
+          }),
+        ],
+      });
+    assert.deepEqual(carryOverEvidence(divergence("no"), divergence("no")).mustProduce, []);
+    const redeclared = carryOverEvidence(divergence("no"), divergence("yes")).mustProduce;
+    assert.deepEqual(
+      redeclared.find((entry) => entry.kind === "TARGETED_CORPUS"),
+      {
+        kind: "TARGETED_CORPUS",
+        binding: "surface-content",
+        surfaces: ["channel/replay-fold"],
+        reason: "a signal is unresolved (ci)",
+      },
+    );
+
+    // The same infrastructure failure, attributed on another basis, needs its own rerun.
+    const harness = surface("ci/harness", { role: "proof-infrastructure", runtime: "build" });
+    const attributed = (attribution: ProofSignal["attribution"]) =>
+      planAssurance({
+        ...revision(R1, [harness]),
+        signals: [signal("harness", "TIMEOUT", { surfaces: ["ci/harness"], attribution })],
+      });
+    const passes = attributed(["PASSES_ON_SAME_REVISION"]);
+    assert.equal(passes.signals[0]?.classification, "proof-infrastructure");
+    assert.deepEqual(carryOverEvidence(passes, passes).mustProduce, []);
+    assert.deepEqual(
+      carryOverEvidence(passes, attributed(["PASSES_ON_SAME_REVISION", "OUTSIDE_IMPACT"]))
+        .mustProduce,
+      [
+        {
+          kind: "AFFECTED_JOB_RERUN",
+          binding: "surface-content",
+          surfaces: ["ci/harness"],
+          reason: "it answers an observation the earlier evidence did not",
+        },
+      ],
+    );
+
+    // A stored plan may record another classification for the same report.
+    const stored = divergence("yes");
+    const reclassified: AssurancePlan = {
+      ...stored,
+      signals: stored.signals.map((entry) => ({ ...entry, classification: "unattributed" })),
+    };
+    assert.deepEqual(carryOverEvidence(stored, stored).mustProduce, []);
+    assertIncludes(
+      carryOverEvidence(stored, reclassified).mustProduce.map((entry) => entry.reason),
+      ["a signal is unresolved (ci)"],
+    );
+  });
+
+  it("refuses reuse behind a fact that names a signal the plan does not list", () => {
+    const plan = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("ci", "CORPUS_DIVERGENCE", { surfaces: ["channel/replay-fold"] })],
+    });
+    const ghost: AssurancePlan = {
+      ...plan,
+      facts: plan.facts.map((fact) =>
+        fact.id.startsWith("observed:") ? { ...fact, refs: [...fact.refs, "ghost"] } : fact,
+      ),
+    };
+    assert.deepEqual(carryOverEvidence(plan, plan).mustProduce, []);
+    // What such a plan observed cannot be compared, on either side.
+    for (const [previous, next] of [
+      [ghost, ghost],
+      [plan, ghost],
+      [ghost, plan],
+    ] as const) {
+      assertIncludes(
+        carryOverEvidence(previous, next).mustProduce.map((entry) => entry.reason),
+        ["an observation behind it is not in the plan"],
+      );
+    }
+  });
+
   it("reads what a signal concerns in both plans, and a role in both plans", () => {
     // A surface the next plan declares an execution context widens a signal the previous plan
     // observed on it, as if the previous plan had known.
@@ -2686,6 +2771,30 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
     });
     assert.deepEqual(
       carryOverEvidence(regressed, planAssurance(revision(R2, [config("execution-context")])))
+        .reusable,
+      [],
+    );
+    // A failure observed while a harness listed nothing it exercised may concern anything, even
+    // once the next plan lists what it exercises.
+    const runner = (exercises?: string[]) =>
+      surface("harness/replay-runner", {
+        role: "proof-infrastructure",
+        runtime: "build",
+        ...(exercises === undefined ? {} : { exercises }),
+      });
+    const unlisted = planAssurance({
+      ...revision(R1, [runner()]),
+      signals: [
+        signal("runner", "TIMEOUT", {
+          surfaces: ["harness/replay-runner"],
+          attribution: ["PASSES_ON_SAME_REVISION"],
+          exercisesImpactedSurfaces: "yes",
+        }),
+      ],
+    });
+    assert.equal(unlisted.signals[0]?.classification, "unattributed");
+    assert.deepEqual(
+      carryOverEvidence(unlisted, planAssurance(revision(R2, [runner(["channel/replay-fold"])])))
         .reusable,
       [],
     );
@@ -2711,6 +2820,12 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       exitCodes(R2, "tree@2", "documentation"),
     ).mustProduce.find((entry) => entry.kind === "DOCUMENTATION_CHECK");
     assert.equal(check?.reason, "runtime tree changed or unknown");
+    // And documentation reclassified as a runtime surface starts depending on it.
+    const promoted = carryOverEvidence(
+      exitCodes(R1, "tree@1", "documentation"),
+      exitCodes(R2, "tree@2", "product"),
+    ).mustProduce.find((entry) => entry.kind === "DOCUMENTATION_CHECK");
+    assert.equal(promoted?.reason, "runtime tree changed or unknown");
   });
 
   it("attributes a flake of a repaired ceiling to the proof infrastructure", () => {

@@ -60,7 +60,9 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
     surface: string | null,
   ): string | null => {
     const seen = observationsBehind(previous, earlier, surface);
-    return [...observationsBehind(next, requirement, surface)].some((key) => !seen.has(key))
+    const behind = observationsBehind(next, requirement, surface);
+    if (seen === null || behind === null) return "an observation behind it is not in the plan";
+    return [...behind].some((key) => !seen.has(key))
       ? "it answers an observation the earlier evidence did not"
       : null;
   };
@@ -154,6 +156,7 @@ function concernedInEither(
 ): Set<string> | null {
   const before = concernedSurfaces(previous, signal);
   const after = concernedSurfaces(next, signal);
+  // Where the two sets differ, what exercises that surface changed, which blocks reuse on its own.
   return before === null || after === null ? null : new Set([...before, ...after]);
 }
 
@@ -170,21 +173,25 @@ function observationKey(signal: SignalClassification): string {
   ]);
 }
 
-/** Observations behind a requirement on a surface, or behind all of it for null. */
+/**
+ * Observations behind a requirement on a surface, or behind all of it for null. Null when a fact
+ * names a signal the plan does not list, since what it observed cannot be compared.
+ */
 function observationsBehind(
   plan: AssurancePlan,
   requirement: EvidenceRequirement,
   surface: string | null,
-): Set<string> {
+): Set<string> | null {
   const keys = new Set<string>();
   for (const fact of plan.facts) {
     if (!fact.id.startsWith("observed:") || !requirement.because.includes(fact.id)) continue;
     // A fact merges the surfaces of every signal behind it: scope each observation by its own.
     for (const ref of fact.refs) {
       const signal = plan.signals.find((entry) => entry.id === ref);
-      const scope = signal?.surfaces ?? [];
+      if (!signal) return null;
+      const scope = signal.surfaces;
       if (surface !== null && scope.length > 0 && !scope.includes(surface)) continue;
-      keys.add(signal ? observationKey(signal) : `unknown:${ref}`);
+      keys.add(observationKey(signal));
     }
   }
   return keys;
