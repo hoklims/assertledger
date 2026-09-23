@@ -28,7 +28,7 @@ export const FR = {
 
   "ledger.replay": "Relancer",
   "ledger.caption":
-    "<code>isEven()</code>, tiré de l’exemple fourni. Chaque ligne est un test candidat exécuté seul : trois variantes, deux tentatives par variante. Enregistré avec assertledger 1.1.0.",
+    "<code>isEven()</code>, tiré de l’exemple fourni. Chaque ligne est un test candidat exécuté seul : trois variantes, deux tentatives par variante. Enregistré avec assertledger 1.1.1.",
   "ledger.hTest": "Test candidat",
   "ledger.hFixed": "Code corrigé",
   "ledger.hBug": "Défaut connu",
@@ -59,7 +59,7 @@ export const FR = {
   "why.brittle":
     "Il détecte le défaut, mais échoue aussi sur une réécriture inoffensive : il vérifie comment le code est écrit, pas ce qu’il fait.",
   "why.hangs":
-    "Un dépassement de délai n’est jamais une détection. Les exécutions bloquées ne rapportent aucun test attribué : le candidat est invalide.",
+    "Un dépassement de délai n’est jamais une détection, ni une preuve dans un sens ou dans l’autre : les exécutions bloquées n’ont rien observé, le verdict est donc non concluant.",
   "why.throws":
     "Une TypeError levée est enregistrée comme un plantage, pas comme un échec d’assertion. Seuls les échecs d’assertion attribués comptent.",
   "why.flaky":
@@ -71,7 +71,7 @@ export const FR = {
   "fool.lede":
     "Même fonction, mêmes trois variantes, vraies exécutions du moteur. Seul un échec d’assertion attribué sur le défaut connu compte comme une détection. Délais dépassés, plantages, erreurs de compilation ou de collecte sont enregistrés, jamais crédités.",
   "fool.caption":
-    "Quatre campagnes à candidat unique sur <code>isEven()</code>, enregistrées avec assertledger 1.1.0. La ligne instable montre une exécution enregistrée : ses résultats changent d’une exécution à l’autre, et c’est tout le problème.",
+    "Quatre campagnes à candidat unique sur <code>isEven()</code>, enregistrées avec assertledger 1.1.1. La ligne instable montre une exécution enregistrée : ses résultats changent d’une exécution à l’autre, et c’est tout le problème.",
 
   "verdicts.title": "Les quatre verdicts de campagne",
   "verdicts.verified": "Au moins un test respecte la politique déclarée et a été sélectionné.",

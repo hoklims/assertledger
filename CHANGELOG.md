@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.1 — 2026-09-23
+
+A candidate whose runs hang or fail in the infrastructure is no longer reported as an invalid test.
+`TIMEOUT` and `INFRA_ERROR` observe nothing, as the proof model already said, so such a candidate
+is now inconclusive.
+
+- When every run that fails candidate discovery is `TIMEOUT` or `INFRA_ERROR`, the `DISCOVERY` gate
+  fails with `CANDIDATE_EXECUTION_INCONCLUSIVE` and the candidate is `INCONCLUSIVE`, instead of
+  `INVALID` with `CANDIDATE_DISCOVERY_INVALID`. A campaign that selects no candidate then ends
+  `INCONCLUSIVE` (exit code 3) instead of `REJECTED` (exit code 2), never with a selection.
+- A completed run that disproves discovery still makes the candidate `INVALID`, and a timeout or an
+  infrastructure error still never counts as a kill.
+- Internal: `src/proof-planner`, which is not exported, plans proportionate evidence for a change;
+  see `docs/proof-planner.md`.
+
+Compatibility: schema, policy, profile, benchmark and conformance versions, the conformance-v1 lock
+and the digest projections are unchanged. Manifests sealed by 1.1.0 or earlier with such a
+candidate, including `VERIFIED` ones with an affected neighbour, no longer replay: their decision
+semantics fail. Every other manifest replays unchanged.
+`docs/migration-timeout-discovery-inconclusive.md` records the decision to keep `policyVersion`
+`1.0.0`, its cost and the alternative.
+
 ## 1.1.0 — 2026-09-18
 
 AssertLedger can run a qualification campaign in fresh Linux containers instead of on the host.
