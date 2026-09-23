@@ -719,24 +719,32 @@ function assessCandidate(input: EvidenceInput, candidate: Candidate): CandidateA
     };
   }
 
-  const discoveryValid = allRuns.every(
-    (run) => run.candidateTestsDiscovered >= 1 && run.attributed,
+  const undiscoveredRuns = allRuns.filter(
+    (run) => !(run.candidateTestsDiscovered >= 1 && run.attributed),
   );
+  const discoveryValid = undiscoveredRuns.length === 0;
+  // A run that timed out or failed in infrastructure never reached a verdict: it can neither
+  // prove nor disprove discovery. Only a completed run makes the candidate invalid here.
+  const discoveryInconclusive =
+    !discoveryValid && undiscoveredRuns.every((run) => INCONCLUSIVE_OUTCOMES.has(run.outcome));
+  const discoveryReason = discoveryInconclusive
+    ? "CANDIDATE_EXECUTION_INCONCLUSIVE"
+    : "CANDIDATE_DISCOVERY_INVALID";
   gates.push({
     name: "DISCOVERY",
     status: discoveryValid ? "PASSED" : "FAILED",
     evidenceRunIds: ids(allRuns),
-    reasonCodes: discoveryValid ? [] : ["CANDIDATE_DISCOVERY_INVALID"],
+    reasonCodes: discoveryValid ? [] : [discoveryReason],
   });
   if (!discoveryValid) {
     gates.push(notRun("REFERENCE"), notRun("NEUTRAL"), notRun("TARGET_STRENGTH"));
     return {
       ...candidate,
-      status: "INVALID",
+      status: discoveryInconclusive ? "INCONCLUSIVE" : "INVALID",
       killedTargetIds: [],
       targetWeightKilled: 0,
       gates,
-      reasonCodes: ["CANDIDATE_DISCOVERY_INVALID"],
+      reasonCodes: [discoveryReason],
     };
   }
 
