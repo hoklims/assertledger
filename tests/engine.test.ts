@@ -696,7 +696,6 @@ describe("campaign orchestration", () => {
   it("classifies a candidate that hangs on the target world as inconclusive, not invalid", async () => {
     const root = await createFixtureRepository();
     const request = verificationRequest(root);
-    request.budgets.timeoutMsPerExecution = 3_000;
     request.candidates = [
       {
         id: "hangs-on-bug",
@@ -764,6 +763,7 @@ describe("campaign orchestration", () => {
 
   for (const [variant, onTarget] of [
     ["dies without a report", "process.exit(1);"],
+    ["writes a malformed report", 'await writeFile(resultPath, "{"); process.exit(1);'],
     [
       "reports an infrastructure error itself",
       'await writeFile(resultPath, JSON.stringify({ protocolVersion: "1.0.0", outcome: "INFRA_ERROR", testsDiscovered: 0, candidateTestsDiscovered: 0, attributed: false })); process.exit(1);',
@@ -812,7 +812,25 @@ describe("campaign orchestration", () => {
             observation.outcome === "INFRA_ERROR" && observation.attributed === false,
         ),
       );
-      assert.equal(manifest.candidates[0].status, "INCONCLUSIVE");
+      assert.ok(
+        manifest.observations
+          .filter(
+            (observation: { candidateId: string | null; worldId: string }) =>
+              observation.worldId !== "target-parity-inversion",
+          )
+          .every(
+            (observation: { candidateId: string | null; outcome: string; attributed: boolean }) =>
+              observation.outcome === "PASS" &&
+              observation.attributed === (observation.candidateId !== null),
+          ),
+      );
+      const [candidate] = manifest.candidates;
+      assert.equal(candidate.status, "INCONCLUSIVE");
+      assert.deepEqual(candidate.reasonCodes, ["CANDIDATE_EXECUTION_INCONCLUSIVE"]);
+      assert.deepEqual(
+        candidate.gates.find((gate: { name: string }) => gate.name === "DISCOVERY").reasonCodes,
+        ["CANDIDATE_EXECUTION_INCONCLUSIVE"],
+      );
       assert.equal(manifest.decision.status, "INCONCLUSIVE");
       assert.deepEqual(manifest.decision.reasonCodes, ["CANDIDATE_EVIDENCE_INCONCLUSIVE"]);
     });

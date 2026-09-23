@@ -2,8 +2,9 @@
 
 A candidate run that ends in `TIMEOUT` or `INFRA_ERROR` never reached a verdict. It can neither
 prove nor disprove that the candidate test was discovered and attributed. The core now classifies
-such a candidate as `INCONCLUSIVE` instead of `INVALID`, as the [proof model](proof-model.md) has
-always stated.
+such a candidate as `INCONCLUSIVE` instead of `INVALID`. This resolves an ambiguity of the
+[proof model](proof-model.md), which listed the case both under `INVALID` (discovery failed) and
+under `INCONCLUSIVE` (`TIMEOUT` or `INFRA_ERROR`); the core applied the first.
 
 ## What changed
 
@@ -13,7 +14,7 @@ an attributed candidate test, so those runs made it fail, and the candidate beca
 the core looked at execution outcomes. A candidate that hangs on the faulty code was reported as a
 broken test, and the campaign as `REJECTED`.
 
-`DISCOVERY` now distinguishes the runs that fail it:
+Once completeness and stability hold, `DISCOVERY` now distinguishes the runs that fail it:
 
 | Runs that fail discovery | Before | After |
 | --- | --- | --- |
@@ -23,30 +24,33 @@ broken test, and the campaign as `REJECTED`.
 
 In the last case the `DISCOVERY` gate is `FAILED` with reason `CANDIDATE_EXECUTION_INCONCLUSIVE`,
 and `REFERENCE`, `NEUTRAL` and `TARGET_STRENGTH` stay `NOT_RUN` with `PREREQUISITE_GATE_FAILED`, as
-after any failed prerequisite. The candidate kills nothing. A completed run that disproves
-discovery still makes the candidate `INVALID`, whatever else timed out. Inconclusive execution
-still takes precedence over a red reference or neutral world, as it already did for timeouts that
-passed discovery.
+after any failed prerequisite. The candidate kills nothing. Once its attempts agree, a completed
+run that disproves discovery still makes the candidate `INVALID`, whatever else timed out; attempts
+that disagree still make it `UNSTABLE` first. Inconclusive execution still takes precedence over a
+red reference or neutral world, as it already did for timeouts that passed discovery.
 
 ## Observable effects
 
 For a campaign where a candidate falls in the last row:
 
-- candidate status `INVALID` becomes `INCONCLUSIVE`, with the reason codes above;
+- candidate status `INVALID` becomes `INCONCLUSIVE`, with the reason codes above, whatever the
+  campaign decision, including in the candidate list of evidence exports built from the manifest;
 - when no other candidate is selected, the campaign decision `REJECTED` / `NO_ELIGIBLE_CANDIDATE`
   becomes `INCONCLUSIVE` / `CANDIDATE_EVIDENCE_INCONCLUSIVE`, and the CLI exit code of `verify` and
-  `check` becomes `3` instead of `2`; a campaign with a selected candidate stays `VERIFIED`, and
-  invalid controls keep their precedence (`CONTROL_EVIDENCE_INVALID`);
-- the evidence export reason code becomes `CANDIDATE_EVIDENCE_INCONCLUSIVE` instead of
-  `CANDIDATE_EVIDENCE_INVALID`; profile v1 reports that candidate's evidence status as
-  `INCONCLUSIVE`;
+  `check` becomes `3` instead of `2`; in that case the evidence export reason code becomes
+  `CANDIDATE_EVIDENCE_INCONCLUSIVE` instead of `CANDIDATE_EVIDENCE_INVALID`, and profile v1 reports
+  the evidence status as `INCONCLUSIVE`. A campaign with a selected candidate stays `VERIFIED`,
+  invalid controls keep their precedence (`CONTROL_EVIDENCE_INVALID`), and a campaign that another
+  unstable or inconclusive candidate already made `INCONCLUSIVE` keeps its decision;
 - the `decisionDigest` and `artifactDigest` values of the manifest change. The digest projections
   do not.
 
-This applies to every source of those outcomes: a candidate that hangs on a target world, a
-structured-command adapter that dies without a report, writes a malformed or contradictory report,
-or reports `INFRA_ERROR` itself, and a `node:test` run without a valid report. None of them can be
-selected: only an `ELIGIBLE` candidate is, so no `VERIFIED` decision changes.
+The core does not look at where those outcomes come from. They include a candidate that hangs on
+a target world and a structured-command adapter that dies without a report, writes a malformed
+report or reports `INFRA_ERROR` itself (each witnessed below), as well as other engine paths such as
+a `node:test` run without a valid report, a contradictory report, a process that fails to start or
+a container execution failure. None of them can be selected: only an `ELIGIBLE` candidate is, so
+no `VERIFIED` decision changes.
 
 ## Replay of existing manifests
 
@@ -61,13 +65,17 @@ decision semantics before and after this change (`policyVersion` stays `1.0.0`).
 - a manifest sealed after this change with such a candidate fails replay the same way under a
   verifier that predates it (1.1.0 and earlier).
 
-Re-decide affected manifests from their observations with the new version, and replay them with a
-verifier of the same version. Manifests without a candidate in the last row replay as before.
+Re-decide affected manifests from their observations with the release that includes this change,
+and replay them with a verifier of that release or a later one. Manifests without a candidate in
+the last row replay as before.
 
 ## What does not change
 
 No schema version, manifest field, reason code, gate order, digest projection, adapter protocol,
-diagnostic catalogue entry or unsafe-execution permission changes. The conformance v1 bundle and
+diagnostic catalogue entry or unsafe-execution permission changes. The campaign explanation of
+`CANDIDATE_EVIDENCE_INCONCLUSIVE` points to the candidate reasons, and the explanation of
+`CANDIDATE_EXECUTION_INCONCLUSIVE` already asks to fix the timeout or infrastructure failure and
+rerun. The conformance v1 bundle and
 its lock are unchanged: every candidate run in its fixtures reports an attributed candidate test,
 so none reaches the new case. The self-hosted core campaign keeps its mutation anchors and its
 existing-test snapshot.
@@ -77,10 +85,12 @@ existing-test snapshot.
 - `tests/core-inconclusive-discovery.test.ts` fails against the previous core for `TIMEOUT` and
   `INFRA_ERROR` runs as the engine reports them, a candidate that hangs everywhere, a hung
   neighbour of an eligible candidate, and a red reference with a timed-out target. It also pins,
-  to the values the previous core produced, the decision digests of the inputs whose verdict must
-  not change (a completed run that disproves discovery, compile, collection and crash outcomes,
-  no test discovered, diverging timeouts, a timed-out control, an attributed timeout), and shows
-  that a manifest sealed before this change fails replay only on decision semantics.
+  to the values the previous core produced for the same host-independent fixtures, the decision
+  digests of the inputs whose verdict must not change (a completed run that disproves discovery
+  beside a `TIMEOUT` or an `INFRA_ERROR`, compile, collection and crash outcomes, no test
+  discovered, diverging timeouts, a timed-out control, an attributed timeout), and shows that a
+  manifest sealed before this change, rebuilt with both of its digests, fails replay only on
+  decision semantics.
 - `tests/engine.test.ts` runs a real `node:test` candidate that hangs on the target world for every
-  attempt, and a structured-command adapter that dies without a report or reports `INFRA_ERROR`
-  on the target. All three fail against the previous core and pass now.
+  attempt, and a structured-command adapter that dies without a report, writes a malformed report
+  or reports `INFRA_ERROR` on the target. All four fail against the previous core and pass now.

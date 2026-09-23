@@ -79,8 +79,8 @@ manifests.
 ## Campaign statuses
 
 - `VERIFIED`: at least one eligible candidate was selected.
-- `REJECTED`: evidence was complete and conclusive, but no candidate was eligible. A completed run
-  that disproves discovery is conclusive, even if other runs timed out.
+- `REJECTED`: evidence was complete and conclusive, but no candidate was eligible. Once attempts
+  agree, a completed run that disproves discovery is conclusive, even if other runs timed out.
 - `INCONCLUSIVE`: controls were invalid, or at least one candidate was unstable or inconclusive.
 - `ENGINE_ERROR`: the core could not normalize the supplied evidence safely.
 

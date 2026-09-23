@@ -334,8 +334,8 @@ credentials, and pass `--allow-unsafe-execution` only from reviewed CI configura
 - `VERIFIED`: at least one candidate completed all required evidence and was selected.
 - `REJECTED`: the campaign completed, but no candidate satisfied the policy.
 - `INCONCLUSIVE`: controls or candidate evidence were incomplete, unstable, timed out, or affected
-  by infrastructure failure. A completed candidate run that reports no attributed candidate test
-  still makes that candidate invalid, whatever else timed out; see the
+  by infrastructure failure. Once its attempts agree, a completed candidate run that reports no
+  attributed candidate test still makes that candidate invalid, whatever else timed out; see the
   [proof model](proof-model.md#candidate-gates).
 - `ENGINE_ERROR`: the deterministic core could not normalize the supplied evidence safely.
 

@@ -79,9 +79,11 @@ function campaign(candidateIds: string[]) {
     evidenceContext: {
       engine: { name: "testforge", version: "0.1.0" },
       adapter: {
+        // Literals, not the host's Node: the core never runs the adapter, and the pinned digests
+        // below must be the same on every machine.
         name: "node-test",
-        version: process.versions.node,
-        configuration: { executable: process.execPath, arguments: ["--test"] },
+        version: "22.0.0",
+        configuration: { executable: "/usr/bin/node", arguments: ["--test"] },
       },
       execution: {
         isolation: "UNSANDBOXED",
@@ -137,25 +139,31 @@ function asEngineReports(
 }
 
 /**
- * Decision digests these inputs had on main before this change (8a218de): the change must leave
- * every manifest outside its own case byte-identical.
+ * Decision digests these inputs had on main before this change (8a218de), produced by running
+ * this file's fixtures against that core: the change must leave every manifest outside its own
+ * case byte-identical.
  */
 const DIGESTS_BEFORE_CHANGE: Record<string, string> = {
-  "mixed-discovery-failure":
-    "sha256:f29998d2133732910afd5f485675cf19def42c3ea8da3f557aff90837dce2a37",
+  "mixed-discovery-failure-TIMEOUT":
+    "sha256:a2ea83df33d42acd49f1b751833654f87ffd1ffd505f82e9f88c90e0c3a35d0f",
+  "mixed-discovery-failure-INFRA_ERROR":
+    "sha256:32a86bba8bb649cd44b7a43996db6238300ffca37c39ddd450c18dba6a77cb0a",
   "conclusive-COMPILE_FAILURE":
-    "sha256:165b14d999f334f75218320386b3ec7862f40eb70113b4d3272054644781c93d",
+    "sha256:881acf56a31331cd16722cd0941ec82fdee452be82e4448af1f0f0ed77fd26ad",
   "conclusive-COLLECTION_FAILURE":
-    "sha256:3db775e25acdb98e88a80c81c586e88588d133743fd25db89a95a7b2ad488219",
+    "sha256:60bb06ae847943399b7e0fe28e8403c058ea8c1b1bb2c303b732d817bac494ae",
   "conclusive-PROCESS_CRASH":
-    "sha256:d668b3aa7922d07a18c25b62aa03d7e8c19dcbeb59dc78ffe66c9474ec633957",
-  "no-test-discovered": "sha256:76ebbbdf853c27fb1308d25885099165ae3126bf1a764656c53385bb57e9ee1a",
-  "diverging-timeout": "sha256:f35213934ebd9cf05ec8e6457eac2c891c56fa6a31ab3d4b0be74ef462102c95",
-  "control-timeout": "sha256:d008203dfba15b3b7d042b21e5e6f66ac79f034ae5c798ceba58029c72f48b97",
+    "sha256:da0495c77c1e34c7f29a13a610f32c39aa993131fb771f22bd31f20042c7d4c3",
+  "no-test-discovered": "sha256:310fa428a845b4c0a3e594029c646b3e17df5e1e5520a9a81fdbf780c1d32d3a",
+  "diverging-timeout": "sha256:4dc962a7098297fbb15535477b4f6b946472aeb476364e5fe9debfc4a2d2d622",
+  "control-timeout": "sha256:6659cc2ac6d56ff225582d09076e7062d50508657995f806b06a883622fe6f98",
   "verified-with-hung-neighbour":
-    "sha256:3f85d729a82f74a7392b5294b7c1f37820c53b32d402fea26f01cd4a960cd4c1",
-  "attributed-timeout": "sha256:cdbffef48d83d1f1181fb74a677709baa6f8e2c46a3a4ba12510de9995269e96",
+    "sha256:44fda235affc1b5f6e6c60877eb1c471840c95cd492e38ad7386c697c606db3b",
+  "attributed-timeout": "sha256:99f45483985190c6b1ac3e999b8957d53d5253f357c9eda3578cb017b5a4c94b",
 };
+/** Artifact digest main sealed for the verified campaign with a hung neighbour (8a218de). */
+const ARTIFACT_DIGEST_BEFORE_CHANGE =
+  "sha256:e89848427cf21908bb8bd49394a069a7218e24a80eee6fc9f237dd92fd55fa91";
 
 function assertUnchanged(manifest: { decisionDigest: string }, key: string): void {
   assert.equal(manifest.decisionDigest, DIGESTS_BEFORE_CHANGE[key], key);
@@ -284,8 +292,9 @@ describe("replay compatibility of manifests sealed before this change", () => {
       ...before,
       decisionDigest: DIGESTS_BEFORE_CHANGE["verified-with-hung-neighbour"] as string,
     });
-    // The reconstruction is exactly what main sealed: its decision digest verifies.
+    // The reconstruction is exactly what main sealed: both of its digests match main's.
     assert.equal(verifyDecisionDigest(sealed).valid, true);
+    assert.equal(sealed.artifactDigest, ARTIFACT_DIGEST_BEFORE_CHANGE);
 
     const replay = replayEvidenceManifest(sealed);
     assert.equal(replay.decisionDigestValid, true);
@@ -297,30 +306,32 @@ describe("replay compatibility of manifests sealed before this change", () => {
 });
 
 describe("verdicts the inconclusive classification must not change", () => {
-  it("keeps a candidate invalid when a completed run disproves discovery, whatever timed out", () => {
-    const input = asEngineReports(
-      campaign(["candidate-a"]),
-      "candidate-a",
-      ["target-off-by-one"],
-      "TIMEOUT",
-    );
-    for (const run of input.observations) {
-      if (run.candidateId === "candidate-a" && run.worldId === "reference") {
-        Object.assign(run, { candidateTestsDiscovered: 0, attributed: false });
+  for (const outcome of ["TIMEOUT", "INFRA_ERROR"] as const) {
+    it(`keeps a candidate invalid when a completed run disproves discovery beside ${outcome}`, () => {
+      const input = asEngineReports(
+        campaign(["candidate-a"]),
+        "candidate-a",
+        ["target-off-by-one"],
+        outcome,
+      );
+      for (const run of input.observations) {
+        if (run.candidateId === "candidate-a" && run.worldId === "reference") {
+          Object.assign(run, { candidateTestsDiscovered: 0, attributed: false });
+        }
       }
-    }
 
-    const manifest = decideEvidence(input);
+      const manifest = decideEvidence(input);
 
-    const candidate = manifest.candidates[0];
-    assert.ok(candidate);
-    assert.equal(candidate.status, "INVALID");
-    assert.deepEqual(candidate.reasonCodes, ["CANDIDATE_DISCOVERY_INVALID"]);
-    assert.deepEqual(gate(candidate, "DISCOVERY")?.reasonCodes, ["CANDIDATE_DISCOVERY_INVALID"]);
-    assert.equal(manifest.decision.status, "REJECTED");
-    assert.deepEqual(manifest.decision.reasonCodes, ["NO_ELIGIBLE_CANDIDATE"]);
-    assertUnchanged(manifest, "mixed-discovery-failure");
-  });
+      const candidate = manifest.candidates[0];
+      assert.ok(candidate);
+      assert.equal(candidate.status, "INVALID");
+      assert.deepEqual(candidate.reasonCodes, ["CANDIDATE_DISCOVERY_INVALID"]);
+      assert.deepEqual(gate(candidate, "DISCOVERY")?.reasonCodes, ["CANDIDATE_DISCOVERY_INVALID"]);
+      assert.equal(manifest.decision.status, "REJECTED");
+      assert.deepEqual(manifest.decision.reasonCodes, ["NO_ELIGIBLE_CANDIDATE"]);
+      assertUnchanged(manifest, `mixed-discovery-failure-${outcome}`);
+    });
+  }
 
   for (const outcome of ["COMPILE_FAILURE", "COLLECTION_FAILURE", "PROCESS_CRASH"] as const) {
     it(`keeps a candidate invalid when a target run ends in unattributed ${outcome}`, () => {
