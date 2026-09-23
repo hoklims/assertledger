@@ -2747,16 +2747,21 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       ),
     };
     assert.deepEqual(carryOverEvidence(plan, plan).mustProduce, []);
-    // What such a plan observed cannot be compared, on either side.
+    // What such a plan observed cannot be compared, on either side, for evidence about the whole
+    // runtime tree as for evidence scoped to a surface.
+    const unlisted = (carry: EvidenceCarryOver) =>
+      carry.mustProduce
+        .filter((entry) => entry.reason === "an observation behind it is not in the plan")
+        .map((entry) => `${entry.kind}:${entry.binding}:${entry.surfaces.join(",")}`);
     for (const [previous, next] of [
       [ghost, ghost],
       [plan, ghost],
       [ghost, plan],
     ] as const) {
-      assertIncludes(
-        carryOverEvidence(previous, next).mustProduce.map((entry) => entry.reason),
-        ["an observation behind it is not in the plan"],
-      );
+      assert.deepEqual(unlisted(carryOverEvidence(previous, next)), [
+        "FAILURE_ATTRIBUTION:surface-content:channel/replay-fold",
+        "FULL_CORPUS:runtime-tree:channel/replay-fold",
+      ]);
     }
   });
 
@@ -2769,10 +2774,15 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       ...revision(R1, [config("product")]),
       signals: [signal("r", "REGRESSION", { surfaces: ["config/runtime.env"] })],
     });
-    assert.deepEqual(
-      carryOverEvidence(regressed, planAssurance(revision(R2, [config("execution-context")])))
-        .reusable,
-      [],
+    const reclassified = planAssurance(revision(R2, [config("execution-context")]));
+    assert.deepEqual(carryOverEvidence(regressed, reclassified).reusable, []);
+    // Without that regression, evidence the configuration does not touch is reused.
+    assertIncludes(
+      carryOverEvidence(
+        planAssurance(revision(R1, [config("product")])),
+        reclassified,
+      ).reusable.map((entry) => entry.kind),
+      ["TARGETED_REGRESSION"],
     );
     // A failure observed while a harness listed nothing it exercised may concern anything, even
     // once the next plan lists what it exercises.
@@ -2793,10 +2803,14 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       ],
     });
     assert.equal(unlisted.signals[0]?.classification, "unattributed");
-    assert.deepEqual(
-      carryOverEvidence(unlisted, planAssurance(revision(R2, [runner(["channel/replay-fold"])])))
-        .reusable,
-      [],
+    const listing = planAssurance(revision(R2, [runner(["channel/replay-fold"])]));
+    assert.deepEqual(carryOverEvidence(unlisted, listing).reusable, []);
+    // Without that failure, evidence on a surface the harness never exercised is reused.
+    assertIncludes(
+      carryOverEvidence(planAssurance(revision(R1, [runner()])), listing).reusable.map(
+        (entry) => `${entry.kind}:${entry.surfaces.join(",")}`,
+      ),
+      ["TARGETED_REGRESSION:channel/replay-safe-keys"],
     );
 
     // A documented surface reclassified as documentation keeps depending on the tree.

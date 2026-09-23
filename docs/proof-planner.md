@@ -207,10 +207,10 @@ observed (id, revision, signal, classification, exercises, attribution basis and
 id: evidence produced beside an observation answers it. Evidence that answers observations, such as
 a failure attribution or a job rerun, is reused only for the observations it was produced for, each
 scoped by the surfaces it names; exact-revision evidence is reused within its revision whatever was
-observed. A fact that names a signal its plan does not list, which only a stored or foreign plan can
-carry, blocks the reuse of the evidence behind it. A block lifts when the previous plan is planned
-again; the next plan does not revise its classification. A failure attributed to the proof
-infrastructure, or unattributed on a job that a confidently bounded impact places outside the
+observed. Otherwise, a fact that names a signal its plan does not list, which only a stored or
+foreign plan can carry, blocks the reuse of the evidence behind it. A block lifts when the previous
+plan is planned again; the next plan does not revise its classification. A failure attributed to the
+proof infrastructure, or unattributed on a job that a confidently bounded impact places outside the
 change, concerns no product evidence. AssertLedger must still verify that reused evidence exists and
 carries the listed digests.
 
