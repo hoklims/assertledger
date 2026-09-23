@@ -183,8 +183,8 @@ Each kind declares what it stays valid for:
 - `exact-revision`: static checks and revision identity (cheap, re-run on every revision);
 - `surface-content`: valid per scoped surface while that surface, the proof surfaces that exercise
   it (a test without an `exercises` list exercises everything; a proof-infrastructure surface
-  counts where it names the surface, and a directly changed one with a declared behavior change
-  that names nothing is reported as `proof.exercises-unknown`), the baseline and the runtime tree
+  counts where it names the surface, and a directly changed one whose behavior change is not
+  declared `none` and that names nothing is reported as `proof.exercises-unknown`), the baseline and the runtime tree
   keep their digests. Only documentation-only evidence about a surface both plans call
   documentation ignores the runtime tree: a gate delta
   review is redone when the code its budget measures changes, and a documentation claim scoped to a
@@ -203,13 +203,14 @@ surface lists as exercised, or everything when it names no surface, a surface ei
 know, an execution context, or a proof surface that does not list what it exercises. A signal the
 next plan observes counts too, because it contradicts evidence produced before it. Within one
 revision, only an observation the previous plan did not already have counts, compared by what was
-observed (id, revision, signal, classification and surfaces), not by id: evidence produced beside an
-observation answers it. Evidence that answers observations, such as a failure attribution or a job
-rerun, is reused only for the observations it was produced for. A block lifts when the previous plan
-is planned again; the next plan does not revise its classification. A failure attributed to the
-proof infrastructure, or unattributed on a job that a confidently bounded impact places outside the
-change, concerns no product evidence. AssertLedger must still verify that reused evidence exists and
-carries the listed digests.
+observed (id, revision, signal, classification, exercises, attribution basis and surfaces), not by
+id: evidence produced beside an observation answers it. Evidence that answers observations, such as
+a failure attribution or a job rerun, is reused only for the observations it was produced for, each
+scoped by the surfaces it names; exact-revision evidence is reused within its revision whatever was
+observed. A block lifts when the previous plan is planned again; the next plan does not revise its
+classification. A failure attributed to the proof infrastructure, or unattributed on a job that a
+confidently bounded impact places outside the change, concerns no product evidence. AssertLedger
+must still verify that reused evidence exists and carries the listed digests.
 
 ### Escalations
 

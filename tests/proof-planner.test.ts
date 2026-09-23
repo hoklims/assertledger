@@ -2587,6 +2587,36 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
     );
     assert.match(suite?.reason ?? "", /answers an observation/);
 
+    // An unscoped observation stays behind every surface, even when a scoped observation of the
+    // same fact names one.
+    const preExisting = signal("p", "REGRESSION", {
+      surfaces: ["channel/replay-safe-keys"],
+      attribution: ["REPRODUCES_ON_BASELINE"],
+    });
+    const sibling = signal("c", "TIMEOUT", {
+      surfaces: ["harness/x"],
+      attribution: ["REPRODUCES_ON_BASELINE"],
+    });
+    const unscopedRepro = signal("a", "TIMEOUT", { attribution: ["REPRODUCES_ON_BASELINE"] });
+    const merged = carryOverEvidence(
+      planAssurance({ ...revision(R1, []), signals: [preExisting, sibling] }),
+      planAssurance({ ...revision(R1, []), signals: [preExisting, sibling, unscopedRepro] }),
+    );
+    assertIncludes(
+      merged.mustProduce
+        .filter((entry) => entry.kind === "FAILURE_ATTRIBUTION")
+        .flatMap((entry) => entry.surfaces),
+      ["channel/replay-safe-keys"],
+    );
+    // Within one revision, unscoped evidence answers only the observations it was produced for.
+    const lone = signal("t", "TIMEOUT");
+    const answeredLater = carryOverEvidence(
+      planAssurance({ ...revision(R1, []), signals: [lone] }),
+      planAssurance({ ...revision(R1, []), signals: [lone, unscopedRepro] }),
+    ).mustProduce.find((entry) => entry.kind === "FAILURE_ATTRIBUTION");
+    assert.deepEqual(answeredLater?.surfaces, []);
+    assert.match(answeredLater?.reason ?? "", /answers an observation/);
+
     // A regression reproduced on the baseline pre-exists; its reproduction is not another's.
     const preExistingAt = (id: string, signalId: string) =>
       planAssurance({

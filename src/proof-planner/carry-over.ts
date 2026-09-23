@@ -179,9 +179,11 @@ function observationsBehind(
   const keys = new Set<string>();
   for (const fact of plan.facts) {
     if (!fact.id.startsWith("observed:") || !requirement.because.includes(fact.id)) continue;
-    if (surface !== null && fact.surfaces.length > 0 && !fact.surfaces.includes(surface)) continue;
+    // A fact merges the surfaces of every signal behind it: scope each observation by its own.
     for (const ref of fact.refs) {
       const signal = plan.signals.find((entry) => entry.id === ref);
+      const scope = signal?.surfaces ?? [];
+      if (surface !== null && scope.length > 0 && !scope.includes(surface)) continue;
       keys.add(signal ? observationKey(signal) : `unknown:${ref}`);
     }
   }
