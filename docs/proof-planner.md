@@ -97,7 +97,8 @@ Subjects follow what the evidence is about, not only the role of the surface:
 - security, admission and decision boundaries keep their weight on a changed gate or oracle
   (proof-infrastructure surfaces, and test surfaces whose oracle changed), under the
   proof-infrastructure subject;
-- a claim is reached through the product only by product, execution-context or evaluation surfaces.
+- within the impact, a claim is reached through the product only by product, execution-context or
+  evaluation surfaces (outside an unbounded impact, its surfaces are treated as reached product).
   A high or critical claim whose test or gate changed (the test lists a claim surface in
   `exercises`, or the claim lists the test) gets `claim:<criticality>:oracle` under the
   proof-infrastructure subject: an `ORACLE_WITNESS` (the changed oracle still fails where the
@@ -187,8 +188,9 @@ Each kind declares what it stays valid for:
 Reuse is keyed on the kind's semantic digest (id, weight, binding, subjects, verification,
 `semanticsVersion`), never on its wording and never on the whole policy digest. Missing digests,
 a changed baseline (rebase) or a changed runtime tree force re-production of every kind that
-depends on them, and evidence never crosses to another revision on the surfaces of a product
-signal the previous plan left unresolved. AssertLedger must still verify that reused evidence
+depends on them, and evidence never crosses to another revision on the surfaces that a signal
+the previous plan left unresolved may concern (a product signal's surfaces, what a failing proof
+surface exercises, or everything when a failure cannot be mapped). AssertLedger must still verify that reused evidence
 exists and carries the listed digests.
 
 ### Escalations
@@ -216,7 +218,7 @@ decisions.
 | E tactical decision | P4 | acceptance test, affected tests, targeted regression and integration, production-path test, live shadow, rollback plan, full corpus, system requalification, independent review, static checks, revision identity | benchmark, holdout, full suite, multi-environment not required |
 | F holdout evaluator + empirical claim | P5 | preregistration, provenance, benchmark protocol, holdout evaluation, contamination check, independent review, affected tests, static checks, revision identity | live shadow, full suite, full corpus, system requalification not required |
 | G timeout ceiling repair | P1 | gate delta review, affected job rerun, static checks | all not required; no functional requalification |
-| G, the repaired test checks a critical claim | P3 (proof infrastructure) | G + oracle witness, independent review of the test, revision identity | no product evidence, no system requalification |
+| G, the repaired test checks a critical claim | P3 (proof infrastructure) | G + oracle witness, independent review of the test, revision identity | no product requalification: every requirement is scoped to the changed test or revision-wide |
 
 Rendered plan for the bounded replay fix (abridged):
 
@@ -309,15 +311,16 @@ no AssertLedger evidence type yet; kinds marked `attested` can only be recorded,
   check its non-negotiable rules against an independent list. A project that wants a looser policy
   must fork the default; that is deliberate in V1.
 - Signals carried across revisions need the caller to report the baseline and runtime tree they were
-  observed on. Without them, the carry-over still refuses reuse on the surfaces of an unresolved
-  product signal, but the next plan does not hold or block by itself.
+  observed on. Without them, the carry-over still refuses reuse on the surfaces an unresolved signal
+  may concern, but the next plan does not hold or block by itself.
 - Freshness is identity-based (digests, baseline, runtime tree), not time-based: the core forbids a
   clock. Time-bound validity windows remain an AssertLedger-side concern.
 - The satisfaction check (does evidence exist for each requirement, bound to the listed digests) is
   not implemented; the plan is advisory until it is.
-- Attribution bases are declared by whoever reports the signal. An attribution that rests on
-  `REPRODUCES_ON_BASELINE` requires `FAILURE_ATTRIBUTION`, which AssertLedger should eventually
-  verify; the other bases are trusted as declared, within the limits above.
+- Attribution bases are declared by whoever reports the signal. A pre-existing product defect, and
+  an infrastructure attribution that rests on `REPRODUCES_ON_BASELINE` alone, require
+  `FAILURE_ATTRIBUTION`, which AssertLedger should eventually verify; the other bases are trusted
+  as declared, within the limits above.
 - The module is compiled into `dist/proof-planner/` but not reachable through the package exports;
   its types and digests are not a public contract yet.
 

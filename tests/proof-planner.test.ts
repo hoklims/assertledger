@@ -450,7 +450,16 @@ describe("proof planner decisions", () => {
       impact: impact(REPLAY_FIX_SURFACES, { analysis: analysis({ method: "declared" }) }),
     });
     assert.equal(declared.impactBound, "bounded-uncertain");
-    assertIncludes(kinds(declared.recommendedEvidence), ["FULL_TEST_SUITE"]);
+    assert.equal(declared.level, "P3");
+    assert.deepEqual(
+      kinds(declared.requiredEvidence),
+      kinds(planAssurance(REPLAY_BOUNDED).requiredEvidence),
+    );
+    assert.deepEqual(kinds(declared.recommendedEvidence), [
+      "CHARACTERIZATION_TESTS",
+      "FULL_TEST_SUITE",
+      "INVARIANT_CHECK",
+    ]);
     assertExcludes(notRequired(declared), ["FULL_TEST_SUITE"]);
   });
 
@@ -527,7 +536,12 @@ describe("proof planner decisions", () => {
       "SYSTEM_REQUALIFICATION",
       "TARGETED_INTEGRATION",
     ]);
-    assertIncludes(notRequired(plan), ["LIVE_SHADOW", "SYSTEM_REQUALIFICATION"]);
+    assertIncludes(notRequired(plan), [
+      "FULL_CORPUS",
+      "FULL_TEST_SUITE",
+      "LIVE_SHADOW",
+      "SYSTEM_REQUALIFICATION",
+    ]);
   });
 
   it("G: repairs a timeout ceiling without any functional requalification", () => {
@@ -645,6 +659,44 @@ describe("product evidence versus proof-infrastructure evidence", () => {
     assert.equal(anonymous.signals[0]?.exercises, "unknown");
     assert.equal(anonymous.signals[0]?.classification, "unattributed");
     assert.equal(anonymous.status, "HOLD");
+  });
+
+  it("treats a failing proof surface that exercises the change as exercising it", () => {
+    const outside = { attribution: ["OUTSIDE_IMPACT", "PASSES_ON_SAME_REVISION"] as const };
+    const unlisted = planAssurance({
+      impact: impact([
+        ...LOCAL_BUGFIX.impact.surfaces,
+        surface("billing/suite.test", { role: "test", runtime: "build", behaviorChange: "fix" }),
+      ]),
+      signals: [
+        signal("t", "TIMEOUT", {
+          surfaces: ["billing/suite.test"],
+          attribution: [...outside.attribution],
+        }),
+      ],
+    });
+    assert.equal(unlisted.signals[0]?.exercises, "yes");
+    assert.equal(unlisted.signals[0]?.classification, "unattributed");
+    assert.equal(unlisted.status, "HOLD");
+
+    const harness = planAssurance({
+      impact: impact([
+        ...LOCAL_BUGFIX.impact.surfaces,
+        surface("billing/harness", {
+          role: "proof-infrastructure",
+          runtime: "build",
+          exercises: ["billing/rounding"],
+        }),
+      ]),
+      signals: [
+        signal("t", "TIMEOUT", {
+          surfaces: ["billing/harness"],
+          attribution: [...outside.attribution],
+        }),
+      ],
+    });
+    assert.equal(harness.signals[0]?.exercises, "yes");
+    assert.equal(harness.status, "HOLD");
   });
 
   it("classifies infrastructure signals only once product signals have reopened the bound", () => {
@@ -1240,6 +1292,35 @@ describe("impact bound", () => {
     assertIncludes(kinds(context.recommendedEvidence), ["MULTI_ENVIRONMENT"]);
   });
 
+  it("applies each unbounded rule alone to a proof-only change", () => {
+    const proofOnly = (patchAnalysis: Partial<ImpactInput["analysis"]>) =>
+      planAssurance({
+        impact: impact(CEILING_REPAIR.impact.surfaces, { analysis: analysis(patchAnalysis) }),
+      });
+    for (const [name, patchAnalysis] of Object.entries({
+      "completeness unknown": { completeness: "unknown" },
+      "omitted surfaces": { omittedSurfaceCount: 1 },
+      "partial without unknowns": { completeness: "partial" },
+      "unlocalized unknown": {
+        completeness: "partial",
+        unknowns: [{ description: "generated code", surfaces: [] }],
+      },
+    } satisfies Record<string, Partial<ImpactInput["analysis"]>>)) {
+      const plan = proofOnly(patchAnalysis);
+      assert.equal(plan.impactBound, "unbounded", name);
+      assertIncludes(kinds(plan.requiredEvidence), ["FULL_TEST_SUITE"]);
+      assert.deepEqual(notRequired(plan), [], name);
+    }
+    const highClaim = planAssurance({
+      ...perturbed(
+        { unknowns: [{ description: "reflection", surfaces: ["storage/ledger"] }] },
+        [],
+        [claim("ledger-balances", ["storage/ledger"], { criticality: "high" })],
+      ),
+    });
+    assert.equal(highClaim.impactBound, "unbounded");
+  });
+
   it("never grants a confident bound to an incomplete analysis of a proof-only change", () => {
     const plan = planAssurance({
       impact: impact(
@@ -1430,6 +1511,33 @@ describe("claims, boundaries and the subject they concern", () => {
       claims: [PINS_CLAIM],
     });
     assertExcludes(kinds(additive.requiredEvidence), ["ORACLE_WITNESS"]);
+
+    // A test that names nothing reaches the claims that list it, and says so.
+    const { exercises: _unnamed, ...unnamedTest } = pinsTest();
+    const listed = planAssurance({
+      impact: impact([unnamedTest]),
+      claims: [{ ...PINS_CLAIM, surfaces: ["channel/live-pins", "channel/live-pins.test"] }],
+    });
+    assertIncludes(kinds(listed.requiredEvidence), ["INDEPENDENT_REVIEW", "ORACLE_WITNESS"]);
+    assert.ok(listed.residualUncertainty.some((entry) => entry.id === "proof.exercises-unknown"));
+    const notListed = planAssurance({ impact: impact([unnamedTest]), claims: [PINS_CLAIM] });
+    assertExcludes(kinds(notListed.requiredEvidence), ["ORACLE_WITNESS"]);
+    assert.ok(
+      notListed.residualUncertainty.some((entry) => entry.id === "proof.exercises-unknown"),
+    );
+
+    const harness = planAssurance({
+      impact: impact([
+        surface("channel/pins-harness", {
+          role: "proof-infrastructure",
+          runtime: "build",
+          behaviorChange: "fix",
+          exercises: ["channel/live-pins"],
+        }),
+      ]),
+      claims: [PINS_CLAIM],
+    });
+    assertIncludes(kinds(harness.requiredEvidence), ["INDEPENDENT_REVIEW", "ORACLE_WITNESS"]);
   });
 
   it("never turns a claim reached only through its tests into product requalification", () => {
@@ -1901,6 +2009,81 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
     assertIncludes(kinds(carry.reusable), ["DOCUMENTATION_CHECK"]);
   });
 
+  it("blocks runtime-tree evidence and unmapped surfaces behind an unresolved signal", () => {
+    const mechanics = ceiling(MECHANICS_CEILING, "test", ["mechanics/catalog"]);
+    const partial = (id: string, extra: Surface[], signals: ProofSignal[] = []) =>
+      planAssurance({
+        impact: impact([...REPLAY_FIX_SURFACES, ...extra], {
+          revision: { id, baseline: BASE, runtimeTreeDigest: digest("tree@1") },
+          analysis: analysis({ completeness: "partial" }),
+        }),
+        claims: REPLAY_CLAIMS,
+        signals,
+      });
+    const regressed = partial(
+      R1,
+      [],
+      [signal("reg", "REGRESSION", { surfaces: ["channel/replay-safe-keys"] })],
+    );
+    assertIncludes(kinds(regressed.requiredEvidence), ["FULL_TEST_SUITE"]);
+    const suite = carryOverEvidence(regressed, partial(R2, [mechanics])).mustProduce.find(
+      (entry) => entry.kind === "FULL_TEST_SUITE",
+    );
+    assert.match(suite?.reason ?? "", /unresolved \(reg\)/);
+
+    const unnamed = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("odd", "UNEXPECTED_BEHAVIOR", { exercisesImpactedSurfaces: "yes" })],
+    });
+    const unnamedCarry = carryOverEvidence(unnamed, planAssurance(revision(R2, [mechanics])));
+    assert.ok(
+      unnamedCarry.mustProduce.some(
+        (entry) => entry.kind === "CAUSAL_WITNESS" && /unresolved \(odd\)/.test(entry.reason),
+      ),
+    );
+
+    // An unattributed failure of the changed test concerns what that test exercises.
+    const slow = planAssurance({
+      ...revision(R1, []),
+      signals: [
+        signal("slow", "TIMEOUT", {
+          surfaces: ["channel/replay-safe-keys.test"],
+          attribution: ["PASSES_ON_SAME_REVISION"],
+        }),
+      ],
+    });
+    assert.equal(slow.status, "HOLD");
+    const slowCarry = carryOverEvidence(slow, planAssurance(revision(R2, [mechanics])));
+    assert.ok(
+      slowCarry.mustProduce.some(
+        (entry) =>
+          entry.kind === "CAUSAL_WITNESS" &&
+          entry.surfaces.includes("channel/replay-safe-keys") &&
+          /unresolved \(slow\)/.test(entry.reason),
+      ),
+    );
+    assertIncludes(kinds(slowCarry.reusable), ["DOCUMENTATION_CHECK"]);
+
+    // A failure that may exercise the change on a job the impact cannot map concerns everything.
+    const unmapped = planAssurance({
+      ...revision(R1, []),
+      signals: [
+        signal("elsewhere", "TIMEOUT", {
+          surfaces: ["channel/replay.e2e.test"],
+          exercisesImpactedSurfaces: "yes",
+          attribution: ["PASSES_ON_SAME_REVISION"],
+        }),
+      ],
+    });
+    assert.equal(unmapped.status, "HOLD");
+    const unmappedCarry = carryOverEvidence(unmapped, planAssurance(revision(R2, [mechanics])));
+    assert.ok(
+      unmappedCarry.mustProduce.some(
+        (entry) => entry.kind === "CAUSAL_WITNESS" && /unresolved \(elsewhere\)/.test(entry.reason),
+      ),
+    );
+  });
+
   it("attributes a flake of a repaired ceiling to the proof infrastructure", () => {
     const mechanics = ceiling(MECHANICS_CEILING, "test", ["mechanics/catalog"]);
     const plan = planAssurance({
@@ -2030,21 +2213,55 @@ describe("assurance policy governance", () => {
     }
     assert.ok(POLICY.status.block.includes("observed:regression"));
     assert.equal(POLICY.raises.cap, "P4");
-    // Every observation of the fact vocabulary has an effect.
-    const observations = [
-      ...PRODUCT_SIGNALS.map((name) => name),
-      "infrastructure-failure",
-      "unattributed-failure",
-      "baseline-reproduction",
-    ];
-    assert.equal(
-      new Set(
-        POLICY.triggers
-          .filter((entry) => entry.fact.startsWith("observed:") && entry.require.length > 0)
-          .map((entry) => entry.fact),
-      ).size,
-      observations.length,
+    // Every observation of the fact vocabulary has an effect, named one by one.
+    const requiringObservations = new Set(
+      POLICY.triggers
+        .filter((entry) => entry.fact.startsWith("observed:") && entry.require.length > 0)
+        .map((entry) => entry.fact),
     );
+    for (const fact of [
+      "observed:unexpected-behavior",
+      "observed:unplanned-impact",
+      "observed:unknown-dependency",
+      "observed:live-runtime",
+      "observed:corpus-divergence",
+      "observed:witness-not-causal",
+      "observed:regression",
+      "observed:infrastructure-failure",
+      "observed:unattributed-failure",
+      "observed:baseline-reproduction",
+    ] as const) {
+      assert.ok(requiringObservations.has(fact), fact);
+    }
+    assert.equal(requiringObservations.size, 10);
+    for (const [fact, level] of [
+      ["claim:high:oracle", 2],
+      ["claim:critical:oracle", 3],
+      ["observed:live-runtime", 4],
+      ["observed:corpus-divergence", 4],
+    ] as const) {
+      assert.ok(floor(fact) >= level, `${fact} >= P${level}`);
+    }
+    for (const [fact, kind] of [
+      ["claim:high:oracle", "ORACLE_WITNESS"],
+      ["claim:critical:oracle", "INDEPENDENT_REVIEW"],
+      ["observed:live-runtime", "LIVE_SHADOW"],
+      ["observed:live-runtime", "ROLLBACK_PLAN"],
+      ["observed:corpus-divergence", "FULL_CORPUS"],
+    ] as const) {
+      assert.ok(
+        POLICY.triggers.some((entry) => entry.fact === fact && entry.require.includes(kind)),
+        `${fact} requires ${kind}`,
+      );
+    }
+    for (const fact of [
+      "uncertainty:high",
+      "witness:infeasible",
+      "observed:unexpected-behavior",
+      "observed:witness-not-causal",
+    ] as const) {
+      assert.ok(POLICY.raises.facts.includes(fact), `raise on ${fact}`);
+    }
   });
 
   it("refuses every policy that drops or weakens a rule of the default", () => {
@@ -2133,6 +2350,39 @@ describe("assurance policy governance", () => {
           );
         }
       }
+    }
+    // Downgrades are refusals too: a requirement kept only as a recommendation, a block kept
+    // only as a hold.
+    for (const entry of POLICY.triggers) {
+      for (const kind of entry.require) {
+        refused(
+          {
+            ...POLICY,
+            triggers: POLICY.triggers.map((other) =>
+              other.fact === entry.fact
+                ? {
+                    ...other,
+                    require: other.require.filter((item) => item !== kind),
+                    recommend: [...new Set([...other.recommend, kind])],
+                  }
+                : other,
+            ),
+          },
+          `trigger ${entry.fact} requires ${kind}`,
+        );
+      }
+    }
+    for (const fact of POLICY.status.block) {
+      refused(
+        {
+          ...POLICY,
+          status: {
+            hold: [...POLICY.status.hold, fact],
+            block: POLICY.status.block.filter((item) => item !== fact),
+          },
+        },
+        `status blocks on ${fact}`,
+      );
     }
     for (const fact of POLICY.raises.facts) {
       refused(

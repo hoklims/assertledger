@@ -1,5 +1,11 @@
 import { compareOrdinal, type EvidenceBinding, sortedUnique } from "./model.js";
-import type { AssurancePlan, EvidenceRequirement, PlanSurface } from "./plan.js";
+import {
+  type AssurancePlan,
+  type EvidenceRequirement,
+  isUnresolvedSignal,
+  type PlanSurface,
+  type SignalClassification,
+} from "./plan.js";
 
 export interface CarryOverEntry {
   kind: string;
@@ -26,17 +32,20 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
   const sameBaseline = previous.subject.baseline === next.subject.baseline;
   const sameRevision = previous.subject.revision === next.subject.revision;
   const runtimeTree = sameRuntimeTree(previous, next);
-  // Evidence produced alongside unresolved product signals never crosses to another revision.
+  // Evidence produced alongside an unresolved signal never crosses to another revision on the
+  // surfaces that signal may concern; the planner uses the same notion of "unresolved".
   const unresolved = sameRevision
     ? []
-    : previous.signals.filter((signal) => signal.classification === "product");
+    : previous.signals.filter(isUnresolvedSignal).map((signal) => ({
+        id: signal.id,
+        surfaces: concernedSurfaces(previous, signal),
+      }));
   const unresolvedOn = (surface: string | null): string | null => {
     const blocking = unresolved.filter(
-      (signal) =>
-        surface === null || signal.surfaces.length === 0 || signal.surfaces.includes(surface),
+      (entry) => surface === null || entry.surfaces === null || entry.surfaces.has(surface),
     );
     return blocking.length > 0
-      ? `a product signal of the previous revision is unresolved (${sortedUnique(blocking.map((signal) => signal.id)).join(", ")})`
+      ? `a signal of the previous revision is unresolved (${sortedUnique(blocking.map((entry) => entry.id)).join(", ")})`
       : null;
   };
 
@@ -93,6 +102,29 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
     reusable: reusable.sort(order),
     mustProduce: mustProduce.sort(order),
   };
+}
+
+/**
+ * Surfaces an unresolved signal may concern, or null for all of them. A failing proof surface
+ * concerns what it exercises; a failure that cannot be mapped concerns everything.
+ */
+function concernedSurfaces(plan: AssurancePlan, signal: SignalClassification): Set<string> | null {
+  if (signal.surfaces.length === 0) return null;
+  const concerned = new Set(signal.surfaces);
+  for (const id of signal.surfaces) {
+    const known = plan.subject.surfaces.find((entry) => entry.id === id);
+    if (!known) {
+      if (signal.classification === "product") continue;
+      return null;
+    }
+    if (known.role !== "test" && known.role !== "proof-infrastructure") continue;
+    if (known.exercises === null) {
+      if (known.role === "test") return null;
+      continue;
+    }
+    for (const exercised of known.exercises) concerned.add(exercised);
+  }
+  return concerned;
 }
 
 function sameRuntimeTree(previous: AssurancePlan, next: AssurancePlan): boolean {

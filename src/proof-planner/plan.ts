@@ -414,7 +414,7 @@ function planCore(input: NormalizedInput): CoreResult {
   const infrastructureSignals: ProofSignal[] = [];
   const record = ({ classification, facts: observed, source }: SignalOutcome) => {
     const carried = source.revision !== impact.revision.id;
-    if (carried && !isUnresolved(classification)) {
+    if (carried && !isUnresolvedSignal(classification)) {
       classifications.push(
         otherRevision(source, `observed on revision ${source.revision} and resolved there`),
       );
@@ -839,7 +839,7 @@ function observedSameProduct(signal: ProofSignal, impact: ChangeImpact): boolean
 }
 
 /** Evidence about the product, or a failure that may still be about the change. */
-function isUnresolved(classification: SignalClassification): boolean {
+export function isUnresolvedSignal(classification: SignalClassification): boolean {
   return (
     classification.classification === "product" ||
     (classification.classification === "unattributed" && classification.exercises !== "no")
