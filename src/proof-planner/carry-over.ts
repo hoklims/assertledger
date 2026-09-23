@@ -106,22 +106,17 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
 
 /**
  * Surfaces an unresolved signal may concern, or null for all of them. A failing proof surface
- * concerns what it exercises; a failure that cannot be mapped concerns everything.
+ * concerns what it exercises; a failure that cannot be mapped, or a proof surface that does not
+ * list what it exercises, concerns everything.
  */
 function concernedSurfaces(plan: AssurancePlan, signal: SignalClassification): Set<string> | null {
   if (signal.surfaces.length === 0) return null;
   const concerned = new Set(signal.surfaces);
   for (const id of signal.surfaces) {
     const known = plan.subject.surfaces.find((entry) => entry.id === id);
-    if (!known) {
-      if (signal.classification === "product") continue;
-      return null;
-    }
+    if (!known) return null;
     if (known.role !== "test" && known.role !== "proof-infrastructure") continue;
-    if (known.exercises === null) {
-      if (known.role === "test") return null;
-      continue;
-    }
+    if (known.exercises === null) return null;
     for (const exercised of known.exercises) concerned.add(exercised);
   }
   return concerned;

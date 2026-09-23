@@ -167,9 +167,10 @@ fixed order, after the bound is known:
 4. Otherwise the failure is unattributed: the plan holds and requires `FAILURE_ATTRIBUTION`, but the
    level does **not** rise automatically.
 
-An attributed infrastructure failure never changes the level, the status or the product evidence;
-it adds `AFFECTED_JOB_RERUN` on the failing job only. An unattributed one adds
-`FAILURE_ATTRIBUTION` on the failing job, without widening the product evidence to it.
+An attributed infrastructure failure never changes the level, the status or the evidence required
+on the changed surfaces; it adds `AFFECTED_JOB_RERUN` on the failing job, and
+`FAILURE_ATTRIBUTION` there too when a reproduction on the baseline is its only basis. An unattributed one adds `FAILURE_ATTRIBUTION` on
+the failing job, without widening the product evidence to it.
 
 ### Evidence bindings and carry-over
 
@@ -184,14 +185,17 @@ Each kind declares what it stays valid for:
 - `runtime-tree`: full suite, full corpus, multi-environment, live shadow, system requalification,
   benchmark and holdout runs: valid while the baseline and runtime tree digest are unchanged.
 
-`carryOverEvidence(previous, next)` lists what may be reused and what must be produced again.
-Reuse is keyed on the kind's semantic digest (id, weight, binding, subjects, verification,
-`semanticsVersion`), never on its wording and never on the whole policy digest. Missing digests,
-a changed baseline (rebase) or a changed runtime tree force re-production of every kind that
-depends on them, and evidence never crosses to another revision on the surfaces that a signal
-the previous plan left unresolved may concern (a product signal's surfaces, what a failing proof
-surface exercises, or everything when a failure cannot be mapped). AssertLedger must still verify that reused evidence
-exists and carries the listed digests.
+`carryOverEvidence(previous, next)` lists what may be reused and what must be produced again. Reuse
+is keyed on the kind's semantic digest (id, weight, binding, subjects, verification,
+`semanticsVersion`), never on its wording and never on the whole policy digest. Missing digests, a
+changed baseline (rebase) or a changed runtime tree force re-production of every kind that depends
+on them, and evidence never crosses to another revision on the surfaces that a signal the previous
+plan left unresolved may concern: the surfaces it names and what a named test or proof surface lists
+as exercised, or everything when it names no surface, a surface the previous impact does not know,
+or a proof surface that does not list what it exercises. A failure attributed to the proof
+infrastructure, or unattributed on a job that a confidently bounded impact places outside the
+change, concerns no product evidence. AssertLedger must still verify that reused evidence exists and
+carries the listed digests.
 
 ### Escalations
 
@@ -234,7 +238,7 @@ WHY
 
 REQUIRED
   - CAUSAL_WITNESS (surface-content) [channel/replay-safe-keys] <- product:fix
-  - TARGETED_CORPUS (surface-content) [channel/replay-fold, channel/replay-safe-keys] <- boundary:replay:behavior, …
+  - TARGETED_CORPUS (surface-content) [channel/replay-fold, channel/replay-safe-keys] <- boundary:analysis:behavior, boundary:replay:behavior
   - PRODUCTION_PATH_TEST, TARGETED_INTEGRATION, TARGETED_REGRESSION, AFFECTED_TESTS, REVISION_IDENTITY, STATIC_CHECKS, DOCUMENTATION_CHECK
 
 NOT REQUIRED
@@ -244,10 +248,11 @@ NOT REQUIRED
   - SYSTEM_REQUALIFICATION, INDEPENDENT_REVIEW, FULL_TEST_SUITE, BENCHMARK_PROTOCOL, HOLDOUT_EVALUATION, …
 
 ESCALATE IF
-  - CORPUS_DIVERGENCE (product): level moves P3 -> P4, adds FAILURE_ATTRIBUTION, FULL_CORPUS, INDEPENDENT_REVIEW.
-  - TIMEOUT (infrastructure-attributed, by a baseline reproduction): level stays P3, status PROVE,
-    adds AFFECTED_JOB_RERUN, FAILURE_ATTRIBUTION.
-  - TIMEOUT (infrastructure-unattributed): level stays P3, status HOLD, adds FAILURE_ATTRIBUTION.
+  - CORPUS_DIVERGENCE (product): Evidence about the product: level moves P3 -> P4, status PROVE, adds FAILURE_ATTRIBUTION, FULL_CORPUS, INDEPENDENT_REVIEW.
+  - REGRESSION (product): Evidence about the product: level stays P3, status BLOCKED, adds nothing.
+  - TIMEOUT (infrastructure-attributed): Evidence about the proof infrastructure: level stays P3, status PROVE, adds AFFECTED_JOB_RERUN, FAILURE_ATTRIBUTION.
+  - TIMEOUT (infrastructure-unattributed): Unattributed failure: level stays P3, status HOLD, adds FAILURE_ATTRIBUTION.
+  - …
 ```
 
 ## 4. Before and after: a localized fix with two peripheral timeouts
@@ -312,7 +317,9 @@ no AssertLedger evidence type yet; kinds marked `attested` can only be recorded,
   must fork the default; that is deliberate in V1.
 - Signals carried across revisions need the caller to report the baseline and runtime tree they were
   observed on. Without them, the carry-over still refuses reuse on the surfaces an unresolved signal
-  may concern, but the next plan does not hold or block by itself.
+  may concern, but the next plan does not hold or block by itself. An unattributed failure on a job
+  that a confidently bounded impact places outside the change holds its own revision only: it is
+  never carried and blocks no reuse, so the next revision must observe that job again.
 - Freshness is identity-based (digests, baseline, runtime tree), not time-based: the core forbids a
   clock. Time-bound validity windows remain an AssertLedger-side concern.
 - The satisfaction check (does evidence exist for each requirement, bound to the listed digests) is

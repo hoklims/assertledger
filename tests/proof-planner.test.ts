@@ -239,6 +239,19 @@ describe("proof planner decisions", () => {
     assert.deepEqual(kinds(plan.requiredEvidence), ["DOCUMENTATION_CHECK"]);
     assert.deepEqual(kinds(plan.recommendedEvidence), []);
     assertIncludes(notRequired(plan), BROAD_AND_CEREMONY);
+    assert.deepEqual([...BROAD_AND_CEREMONY].sort(), [
+      "BENCHMARK_PROTOCOL",
+      "CONTAMINATION_CHECK",
+      "FULL_CORPUS",
+      "FULL_TEST_SUITE",
+      "HOLDOUT_EVALUATION",
+      "INDEPENDENT_REVIEW",
+      "LIVE_SHADOW",
+      "MULTI_ENVIRONMENT",
+      "PREREGISTRATION",
+      "PROVENANCE_ATTESTATION",
+      "SYSTEM_REQUALIFICATION",
+    ]);
     for (const entry of plan.explicitlyNotRequired) {
       assert.equal(entry.evaluatedAgainst, "actual-change");
       assert.match(entry.rationale, /^Not required: /);
@@ -437,8 +450,17 @@ describe("proof planner decisions", () => {
       impact: impact(REPLAY_FIX_SURFACES, { analysis: analysis({ completeness: "partial" }) }),
     });
     assert.equal(plan.impactBound, "unbounded");
-    assertIncludes(kinds(plan.requiredEvidence), ["FULL_TEST_SUITE"]);
-    assertIncludes(kinds(plan.recommendedEvidence), ["FULL_CORPUS", "INDEPENDENT_REVIEW"]);
+    assert.equal(plan.level, "P3");
+    // The untouched critical claim is treated as reached: its invariant must be checked.
+    assert.deepEqual(
+      [...kinds(plan.requiredEvidence)].sort(),
+      [
+        ...kinds(planAssurance(REPLAY_BOUNDED).requiredEvidence),
+        "FULL_TEST_SUITE",
+        "INVARIANT_CHECK",
+      ].sort(),
+    );
+    assert.deepEqual(kinds(plan.recommendedEvidence), ["FULL_CORPUS", "INDEPENDENT_REVIEW"]);
     assert.deepEqual(notRequired(plan), []);
     assertIncludes(undetermined(plan), ["LIVE_SHADOW", "SYSTEM_REQUALIFICATION"]);
     // The claim outside the impact can no longer be declared unaffected.
@@ -789,24 +811,32 @@ describe("product evidence versus proof-infrastructure evidence", () => {
     });
     assert.equal(excused.status, "BLOCKED");
     assert.equal(excused.signals[0]?.classification, "product");
-    const preExisting = planAssurance({
-      ...LOCAL_BUGFIX,
-      signals: [
-        signal("r", "REGRESSION", {
-          surfaces: ["billing/rounding"],
-          attribution: ["REPRODUCES_ON_BASELINE"],
-        }),
-      ],
-    });
-    assert.equal(preExisting.status, "PROVE");
-    assert.equal(preExisting.signals[0]?.classification, "pre-existing");
-    assert.ok(
-      preExisting.residualUncertainty.some((entry) => entry.id === "signal.r.pre-existing"),
-    );
-    assert.deepEqual(
-      preExisting.requiredEvidence.find((entry) => entry.kind === "FAILURE_ATTRIBUTION")?.surfaces,
-      ["billing/rounding"],
-    );
+    // A defect that reproduces on the baseline neither blocks nor escalates, but must be shown.
+    const quiet = planAssurance(LOCAL_BUGFIX);
+    for (const name of ["REGRESSION", "UNEXPECTED_BEHAVIOR", "CORPUS_DIVERGENCE"] as const) {
+      const preExisting = planAssurance({
+        ...LOCAL_BUGFIX,
+        signals: [
+          signal("r", name, {
+            surfaces: ["billing/rounding"],
+            attribution: ["REPRODUCES_ON_BASELINE"],
+          }),
+        ],
+      });
+      assert.equal(preExisting.status, "PROVE", name);
+      assert.equal(preExisting.level, quiet.level, name);
+      assert.equal(preExisting.signals[0]?.classification, "pre-existing", name);
+      assert.ok(
+        preExisting.residualUncertainty.some((entry) => entry.id === "signal.r.pre-existing"),
+        name,
+      );
+      assert.deepEqual(
+        preExisting.requiredEvidence.find((entry) => entry.kind === "FAILURE_ATTRIBUTION")
+          ?.surfaces,
+        ["billing/rounding"],
+        name,
+      );
+    }
     // Only defects can pre-exist: an unplanned impact is about this change's reach.
     const unplanned = planAssurance({
       ...LOCAL_BUGFIX,
@@ -1032,23 +1062,44 @@ describe("proof planner properties", () => {
     }
   });
 
-  it("leaves level, status and product evidence unchanged for an attributed infrastructure failure", () => {
+  it("leaves level, status and the changed surfaces' evidence alone for an attributed infrastructure failure", () => {
     for (const [name, input] of Object.entries(SCENARIOS)) {
       const quiet = planAssurance(input);
       for (const infrastructure of INFRASTRUCTURE_SIGNALS) {
-        const loud = planAssurance({
-          ...input,
-          signals: [
-            signal("peripheral", infrastructure, {
-              surfaces: ["elsewhere/job"],
-              attribution: ["OUTSIDE_IMPACT"],
-            }),
-          ],
-        });
-        assert.equal(loud.signals[0]?.classification, "proof-infrastructure", name);
-        assert.equal(loud.level, quiet.level, name);
-        assert.equal(loud.status, quiet.status, name);
-        assert.deepEqual(productRequired(loud), productRequired(quiet), name);
+        for (const basis of ["OUTSIDE_IMPACT", "REPRODUCES_ON_BASELINE"] as const) {
+          const label = `${name} ${infrastructure} ${basis}`;
+          const loud = planAssurance({
+            ...input,
+            signals: [
+              signal("peripheral", infrastructure, {
+                surfaces: ["elsewhere/job"],
+                attribution: [basis],
+              }),
+            ],
+          });
+          assert.equal(loud.signals[0]?.classification, "proof-infrastructure", label);
+          assert.equal(loud.level, quiet.level, label);
+          assert.equal(loud.status, quiet.status, label);
+          // A reproduction on the baseline is the only basis that must itself be evidenced, and
+          // that evidence may concern the product: only the failing job gets it.
+          assert.deepEqual(
+            [...productRequired(loud)].sort(),
+            [
+              ...productRequired(quiet),
+              ...(basis === "REPRODUCES_ON_BASELINE" ? ["FAILURE_ATTRIBUTION:elsewhere/job"] : []),
+            ].sort(),
+            label,
+          );
+          assert.deepEqual(
+            kinds(
+              loud.requiredEvidence.filter((entry) => entry.surfaces.includes("elsewhere/job")),
+            ),
+            basis === "REPRODUCES_ON_BASELINE"
+              ? ["AFFECTED_JOB_RERUN", "FAILURE_ATTRIBUTION"]
+              : ["AFFECTED_JOB_RERUN"],
+            label,
+          );
+        }
       }
     }
   });
@@ -1311,6 +1362,20 @@ describe("impact bound", () => {
       assertIncludes(kinds(plan.requiredEvidence), ["FULL_TEST_SUITE"]);
       assert.deepEqual(notRequired(plan), [], name);
     }
+    // An unknown about what the repaired test exercises is sensitive once a high claim covers it.
+    const unknownUnder = (criticality: AssuranceClaim["criticality"]) =>
+      planAssurance({
+        impact: impact(CEILING_REPAIR.impact.surfaces, {
+          analysis: analysis({
+            completeness: "partial",
+            unknowns: [{ description: "reflection", surfaces: ["mechanics/catalog"] }],
+          }),
+        }),
+        claims: [claim("catalog-prefixes", ["mechanics/catalog"], { criticality })],
+      });
+    assert.equal(unknownUnder("high").impactBound, "unbounded");
+    assertIncludes(kinds(unknownUnder("high").requiredEvidence), ["FULL_TEST_SUITE"]);
+    assert.notEqual(unknownUnder("standard").impactBound, "unbounded");
     const highClaim = planAssurance({
       ...perturbed(
         { unknowns: [{ description: "reflection", surfaces: ["storage/ledger"] }] },
@@ -1669,6 +1734,24 @@ describe("claims, boundaries and the subject they concern", () => {
     });
     assert.equal(additiveTest.level, "P1");
   });
+
+  it("raises a product refactor by the scope of a direct claim and by a security boundary", () => {
+    const parser = (overrides: Partial<Surface> = {}) =>
+      impact([surface("core/parser", overrides)]);
+    const scoped = (scope: AssuranceClaim["scope"]) =>
+      planAssurance({ impact: parser(), claims: [claim("parses", ["core/parser"], { scope })] });
+    assert.deepEqual(scoped("local").levelBySubject, [{ subject: "product", level: "P1" }]);
+    assert.deepEqual(scoped("component").levelBySubject, [{ subject: "product", level: "P2" }]);
+    assertExcludes(kinds(scoped("component").requiredEvidence), ["SYSTEM_REQUALIFICATION"]);
+    assert.deepEqual(scoped("system").levelBySubject, [{ subject: "product", level: "P4" }]);
+    assertIncludes(kinds(scoped("system").requiredEvidence), ["SYSTEM_REQUALIFICATION"]);
+
+    const security = planAssurance({ impact: parser({ boundaries: ["security"] }) });
+    assert.deepEqual(security.levelBySubject, [{ subject: "product", level: "P3" }]);
+    assertIncludes(kinds(security.requiredEvidence), ["INDEPENDENT_REVIEW"]);
+    const plain = planAssurance({ impact: parser() });
+    assertExcludes(kinds(plain.requiredEvidence), ["INDEPENDENT_REVIEW"]);
+  });
 });
 
 // Abstract reproduction of an observed pull request: a three-line replay-adapter fix, legitimate
@@ -1781,6 +1864,14 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
         "TARGETED_INTEGRATION",
         "TARGETED_REGRESSION",
       ]);
+      // Job reruns follow the failing and the repaired jobs, never the product surfaces.
+      const reruns = (carry: EvidenceCarryOver) =>
+        carry.mustProduce
+          .filter((entry) => entry.kind === "AFFECTED_JOB_RERUN")
+          .flatMap((entry) => entry.surfaces)
+          .sort();
+      assert.deepEqual(reruns(first), [DECISION_GUARD, MECHANICS_CEILING], role);
+      assert.deepEqual(reruns(second), [DECISION_GUARD], role);
       const gate = second.mustProduce.find((entry) => entry.kind === "GATE_DELTA_REVIEW");
       assert.deepEqual(gate?.surfaces, [DECISION_GUARD], role);
       const reusedGate = second.reusable.find((entry) => entry.kind === "GATE_DELTA_REVIEW");
@@ -1809,6 +1900,7 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       plans.r1.requiredEvidence.length +
       mustProduceKinds(carryOverEvidence(plans.r1, plans.r2)).length +
       mustProduceKinds(carryOverEvidence(plans.r2, plans.r3)).length;
+    assert.equal(before.r1.level, "P3");
     assert.equal(before.r1.requiredEvidence.length, 12);
     assert.equal(after.r1.requiredEvidence.length, 10);
     assert.equal(mustProduceKinds(carryOverEvidence(before.r1, before.r2)).length, 13);
@@ -2007,6 +2099,23 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       );
     }
     assertIncludes(kinds(carry.reusable), ["DOCUMENTATION_CHECK"]);
+
+    // Reported under a name the impact does not know, the regression may concern anything.
+    const misnamed = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("reg-job", "REGRESSION", { surfaces: ["ci/e2e-job"] })],
+    });
+    assert.equal(misnamed.status, "BLOCKED");
+    const misnamedCarry = carryOverEvidence(misnamed, next);
+    assert.deepEqual(misnamedCarry.reusable, []);
+    assert.ok(
+      misnamedCarry.mustProduce.some(
+        (entry) =>
+          entry.kind === "CAUSAL_WITNESS" &&
+          entry.surfaces.includes("channel/replay-safe-keys") &&
+          /unresolved \(reg-job\)/.test(entry.reason),
+      ),
+    );
   });
 
   it("blocks runtime-tree evidence and unmapped surfaces behind an unresolved signal", () => {
@@ -2082,6 +2191,99 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
         (entry) => entry.kind === "CAUSAL_WITNESS" && /unresolved \(elsewhere\)/.test(entry.reason),
       ),
     );
+  });
+
+  it("treats a failure that names no surface as unresolved, unlike one confidently outside", () => {
+    const next = planAssurance(revision(R2, []));
+    const unnamed = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("t", "TIMEOUT", { attribution: ["PASSES_ON_SAME_REVISION"] })],
+    });
+    assert.equal(unnamed.status, "HOLD");
+    assert.equal(unnamed.signals[0]?.classification, "unattributed");
+    assert.equal(unnamed.signals[0]?.exercises, "unknown");
+    const unnamedCarry = carryOverEvidence(unnamed, next);
+    assert.deepEqual(unnamedCarry.reusable, []);
+    assert.ok(
+      unnamedCarry.mustProduce.some(
+        (entry) =>
+          entry.kind === "CAUSAL_WITNESS" &&
+          entry.surfaces.includes("channel/replay-safe-keys") &&
+          /unresolved \(t\)/.test(entry.reason),
+      ),
+    );
+
+    // Without an admissible basis the failing job still holds its own revision, but a job the
+    // bounded impact places outside the change concerns no product evidence.
+    const outside = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("lint", "TIMEOUT", { surfaces: ["tools/lint-job"] })],
+    });
+    assert.equal(outside.status, "HOLD");
+    assert.equal(outside.signals[0]?.classification, "unattributed");
+    assert.equal(outside.signals[0]?.exercises, "no");
+    const outsideCarry = carryOverEvidence(outside, next);
+    assertIncludes(kinds(outsideCarry.reusable), ["CAUSAL_WITNESS", "TARGETED_REGRESSION"]);
+    assert.ok(
+      outsideCarry.mustProduce.every((entry) => entry.reason === "bound to the exact revision"),
+    );
+  });
+
+  it("maps an unresolved failure of a proof surface to what it lists, or to everything", () => {
+    const carryPast = (id: string, proof: Surface, overrides: Partial<ProofSignal> = {}) => {
+      const previous = planAssurance({
+        ...revision(R1, [proof]),
+        signals: [
+          signal(id, "TIMEOUT", {
+            surfaces: [proof.id],
+            attribution: ["PASSES_ON_SAME_REVISION"],
+            ...overrides,
+          }),
+        ],
+      });
+      assert.equal(previous.status, "HOLD");
+      assert.equal(previous.signals[0]?.classification, "unattributed");
+      return carryOverEvidence(previous, planAssurance(revision(R2, [proof])));
+    };
+    const blockedOn = (carry: EvidenceCarryOver, kind: string, id: string) =>
+      carry.mustProduce.find(
+        (entry) => entry.kind === kind && entry.reason.includes(`unresolved (${id})`),
+      )?.surfaces;
+
+    // A harness that lists what it exercises concerns that, and only that.
+    const listed = carryPast(
+      "runner",
+      surface("harness/replay-runner", {
+        role: "proof-infrastructure",
+        runtime: "build",
+        exercises: ["channel/replay-fold"],
+      }),
+    );
+    assert.deepEqual(blockedOn(listed, "TARGETED_REGRESSION", "runner"), ["channel/replay-fold"]);
+    assert.deepEqual(
+      listed.reusable.find((entry) => entry.kind === "TARGETED_REGRESSION")?.surfaces,
+      ["channel/replay-safe-keys"],
+    );
+    assertIncludes(kinds(listed.reusable), ["CAUSAL_WITNESS", "DOCUMENTATION_CHECK"]);
+
+    // A harness or a test that does not list what it exercises may exercise anything.
+    const unlisted = {
+      harness: carryPast(
+        "harness",
+        surface("ci/harness", { role: "proof-infrastructure", runtime: "build" }),
+        { exercisesImpactedSurfaces: "yes" },
+      ),
+      extra: carryPast("extra", surface("channel/extra.test", { role: "test", runtime: "build" })),
+    };
+    for (const [id, carry] of Object.entries(unlisted)) {
+      assert.deepEqual(carry.reusable, [], id);
+      assert.deepEqual(blockedOn(carry, "CAUSAL_WITNESS", id), ["channel/replay-safe-keys"], id);
+      assert.deepEqual(
+        blockedOn(carry, "DOCUMENTATION_CHECK", id),
+        ["docs/live-active-status.md"],
+        id,
+      );
+    }
   });
 
   it("attributes a flake of a repaired ceiling to the proof infrastructure", () => {
@@ -2213,27 +2415,34 @@ describe("assurance policy governance", () => {
     }
     assert.ok(POLICY.status.block.includes("observed:regression"));
     assert.equal(POLICY.raises.cap, "P4");
-    // Every observation of the fact vocabulary has an effect, named one by one.
+    // Every observation of the fact vocabulary has an effect, named one by one with the evidence
+    // it must at least require.
     const requiringObservations = new Set(
       POLICY.triggers
         .filter((entry) => entry.fact.startsWith("observed:") && entry.require.length > 0)
         .map((entry) => entry.fact),
     );
-    for (const fact of [
-      "observed:unexpected-behavior",
-      "observed:unplanned-impact",
-      "observed:unknown-dependency",
-      "observed:live-runtime",
-      "observed:corpus-divergence",
-      "observed:witness-not-causal",
-      "observed:regression",
-      "observed:infrastructure-failure",
-      "observed:unattributed-failure",
-      "observed:baseline-reproduction",
-    ] as const) {
-      assert.ok(requiringObservations.has(fact), fact);
+    const OBSERVATIONS: Record<string, readonly string[]> = {
+      "observed:unexpected-behavior": ["CHARACTERIZATION_TESTS", "FAILURE_ATTRIBUTION"],
+      "observed:unplanned-impact": ["TARGETED_REGRESSION"],
+      "observed:unknown-dependency": ["TARGETED_REGRESSION"],
+      "observed:live-runtime": ["LIVE_SHADOW", "ROLLBACK_PLAN", "FULL_CORPUS"],
+      "observed:corpus-divergence": ["FULL_CORPUS", "FAILURE_ATTRIBUTION"],
+      "observed:witness-not-causal": ["CAUSAL_WITNESS"],
+      "observed:regression": ["TARGETED_REGRESSION"],
+      "observed:infrastructure-failure": ["AFFECTED_JOB_RERUN"],
+      "observed:unattributed-failure": ["FAILURE_ATTRIBUTION"],
+      "observed:baseline-reproduction": ["FAILURE_ATTRIBUTION"],
+    };
+    for (const [fact, required] of Object.entries(OBSERVATIONS)) {
+      for (const kind of required) {
+        assert.ok(
+          POLICY.triggers.some((entry) => entry.fact === fact && entry.require.includes(kind)),
+          `${fact} requires ${kind}`,
+        );
+      }
     }
-    assert.equal(requiringObservations.size, 10);
+    assert.deepEqual([...requiringObservations].sort(), Object.keys(OBSERVATIONS).sort());
     for (const [fact, level] of [
       ["claim:high:oracle", 2],
       ["claim:critical:oracle", 3],
