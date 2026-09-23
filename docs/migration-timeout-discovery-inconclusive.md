@@ -47,14 +47,14 @@ For a campaign where a candidate falls in the last row:
 - the `decisionDigest` and `artifactDigest` values of the manifest change. The digest projections
   do not.
 
-The core does not look at where those outcomes come from. They include a candidate that hangs on
-a target world and a structured-command adapter that dies without a report, writes a malformed
-report or reports `INFRA_ERROR` itself (each witnessed below), as well as other engine paths such as
-a `node:test` run without a valid report, a contradictory report, a process that fails to start or
-a container execution failure. A candidate that makes its own run end in `INFRA_ERROR`, for
-example by forcing a zero exit code despite failing tests, is therefore inconclusive rather than
-invalid. None of them can be selected: only an `ELIGIBLE` candidate is, so no `VERIFIED` decision
-changes.
+The core does not look at where those outcomes come from. They include a candidate that hangs on a
+target world and a structured-command adapter that dies without a report, writes a malformed report
+or reports `INFRA_ERROR` itself (each witnessed below), as well as other engine paths such as a run
+killed before it writes its report, a `node:test` run without a valid report, a contradictory
+report, a process that fails to start or a container execution failure. A candidate that makes its
+own run end in `INFRA_ERROR`, for example by forcing a zero exit code despite failing tests, is
+therefore inconclusive rather than invalid. None of them can be selected: only an `ELIGIBLE`
+candidate is, so no `VERIFIED` decision changes.
 
 ## Replay of existing manifests
 
@@ -79,10 +79,16 @@ the last row replay as before.
 change keeps `schemaVersion` and `policyVersion` unchanged:
 
 - the previous decision contradicted the proof model's own rule that `TIMEOUT` and `INFRA_ERROR`
-  are inconclusive. Versioning would have the engine emit a new policy version while the core keeps
-  deciding `1.0.0` inputs the old way, so every `1.0.0` input would keep the misclassification;
+  are inconclusive. Campaign requests declare `policyVersion`, and the core accepts only `1.0.0`;
+  versioning would make the core accept a second version that requests opt into, while every
+  request that does not opt in would keep the misclassification;
 - replay fails closed: an affected manifest never replays as valid under the other semantics, so no
   verdict is silently reinterpreted, and every other manifest replays unchanged.
+
+The cost of this choice: `policyVersion` `1.0.0` no longer names a single decision function, so
+archived manifests of the affected case, including `VERIFIED` ones with an affected neighbour, stop
+replaying; and a candidate can turn its own `REJECTED` into `INCONCLUSIVE` by ending its run in
+`INFRA_ERROR`, never into a selection.
 
 The alternative is a `policyVersion` bump under which `1.0.0` manifests keep replaying with the old
 rule. Choosing it would replace this section and the replay section above.
@@ -101,16 +107,16 @@ core campaign keeps its mutation anchors and its existing-test snapshot.
 ## Compatibility witnesses
 
 - `tests/core-inconclusive-discovery.test.ts` fails against the previous core for `TIMEOUT` and
-  `INFRA_ERROR` runs as the engine reports them, a candidate that hangs everywhere, a hung
-  neighbour of an eligible candidate, and a red reference with a timed-out target. It also pins,
-  to the values the previous core produced for the same host-independent fixtures, the decision
-  digests of the inputs whose verdict must not change (a completed run that disproves discovery
-  beside a `TIMEOUT` or an `INFRA_ERROR`, unattributed assertion, compile, collection and crash
-  outcomes, a run killed by a signal with no exit code, no test discovered, diverging timeouts, a
-  timed-out control, an attributed timeout), and shows that a manifest sealed before this change,
-  rebuilt with both of its digests, fails replay only on decision semantics. The reverse
-  direction was observed by replaying a manifest of this change with the previous core, which the
-  repository tests cannot import.
+  `INFRA_ERROR` runs as the engine reports them, a candidate that hangs everywhere, a hung neighbour
+  of an eligible candidate, and a red reference with a timed-out target. It also pins, to the values
+  the previous core produced for the same host-independent fixtures, the decision digests of the
+  inputs whose verdict must not change (a completed run that disproves discovery beside a `TIMEOUT`
+  or an `INFRA_ERROR`, unattributed assertion, compile, collection and crash outcomes, a completed
+  crash reported without an exit code, no test discovered, diverging timeouts, a timed-out control,
+  an attributed timeout), and shows that a manifest sealed before this change, rebuilt with both of
+  its digests, fails replay only on decision semantics. The reverse direction was observed by
+  replaying a manifest of this change with the previous core, which the repository tests cannot
+  import.
 - `tests/engine.test.ts` runs a real `node:test` candidate that hangs on the target world for every
   attempt, and a structured-command adapter that dies without a report, writes a malformed report
   or reports `INFRA_ERROR` on the target. All four fail against the previous core and pass now.
