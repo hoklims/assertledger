@@ -24,11 +24,13 @@ Once completeness and stability hold, `DISCOVERY` now distinguishes the runs tha
 
 In the last case the `DISCOVERY` gate is `FAILED` with reason `CANDIDATE_EXECUTION_INCONCLUSIVE`,
 and `REFERENCE`, `NEUTRAL` and `TARGET_STRENGTH` stay `NOT_RUN` with `PREREQUISITE_GATE_FAILED`, as
-after any failed prerequisite. The candidate kills nothing. Once its attempts are complete and
-agree, a completed run that disproves discovery still makes the candidate `INVALID`, whatever else
-timed out; missing attempts still make it `INCONCLUSIVE` and attempts that disagree `UNSTABLE`
-first. Inconclusive execution still takes precedence over a
-red reference or neutral world, as it already did for timeouts that passed discovery.
+after any failed prerequisite. The candidate kills nothing: a red reference or neutral world, or a
+target its other runs killed, is not recorded as a failed gate or a kill, whereas a timeout that
+passes discovery still lets those gates run. Once its attempts are complete and agree, a completed
+run that disproves discovery still makes the candidate `INVALID`, whatever else timed out; missing
+attempts still make it `INCONCLUSIVE` and attempts that disagree `UNSTABLE` first. Inconclusive
+execution still takes precedence over a red reference or neutral world, as it already did for
+timeouts that passed discovery.
 
 ## Observable effects
 
