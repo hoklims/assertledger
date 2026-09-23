@@ -2775,14 +2775,23 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       signals: [signal("r", "REGRESSION", { surfaces: ["config/runtime.env"] })],
     });
     const reclassified = planAssurance(revision(R2, [config("execution-context")]));
-    assert.deepEqual(carryOverEvidence(regressed, reclassified).reusable, []);
-    // Without that regression, evidence the configuration does not touch is reused.
+    const widened = carryOverEvidence(regressed, reclassified);
+    assert.deepEqual(widened.reusable, []);
+    assertIncludes(
+      widened.mustProduce.map(
+        (entry) => `${entry.kind}:${entry.surfaces.join(",")}:${entry.reason}`,
+      ),
+      [
+        "TARGETED_REGRESSION:channel/replay-fold,channel/replay-safe-keys,config/runtime.env:a signal is unresolved (r)",
+      ],
+    );
+    // Without that regression, the same evidence is reused on every surface.
     assertIncludes(
       carryOverEvidence(
         planAssurance(revision(R1, [config("product")])),
         reclassified,
-      ).reusable.map((entry) => entry.kind),
-      ["TARGETED_REGRESSION"],
+      ).reusable.map((entry) => `${entry.kind}:${entry.surfaces.join(",")}`),
+      ["TARGETED_REGRESSION:channel/replay-fold,channel/replay-safe-keys,config/runtime.env"],
     );
     // A failure observed while a harness listed nothing it exercised may concern anything, even
     // once the next plan lists what it exercises.
