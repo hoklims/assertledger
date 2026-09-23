@@ -32,17 +32,21 @@ export function carryOverEvidence(previous: AssurancePlan, next: AssurancePlan):
   const sameBaseline = previous.subject.baseline === next.subject.baseline;
   const sameRevision = previous.subject.revision === next.subject.revision;
   const runtimeTree = sameRuntimeTree(previous, next);
-  // Evidence never crosses to another revision on the surfaces that a signal unresolved on either
-  // side may concern: one observed beside it, or one that contradicts it on the next revision.
-  // The planner uses the same notion of "unresolved".
-  const unresolved = sameRevision
-    ? []
-    : [previous, next].flatMap((plan) =>
-        plan.signals.filter(isUnresolvedSignal).map((signal) => ({
-          id: signal.id,
-          surfaces: concernedSurfaces(plan, signal),
-        })),
-      );
+  // Evidence is not reused on the surfaces that an unresolved signal may concern: across
+  // revisions, one observed beside it or one the next plan observes; within one revision, only
+  // one the next plan newly observes, since evidence produced beside a signal answers it. The
+  // planner uses the same notion of "unresolved".
+  const previousUnresolved = previous.signals.filter(isUnresolvedSignal);
+  const answered = new Set(previousUnresolved.map((signal) => signal.id));
+  const unresolved = [
+    ...(sameRevision ? [] : previousUnresolved).map((signal) => ({
+      id: signal.id,
+      surfaces: concernedSurfaces(previous, signal),
+    })),
+    ...next.signals
+      .filter((signal) => isUnresolvedSignal(signal) && !(sameRevision && answered.has(signal.id)))
+      .map((signal) => ({ id: signal.id, surfaces: concernedSurfaces(next, signal) })),
+  ];
   const unresolvedOn = (surface: string | null): string | null => {
     const blocking = unresolved.filter(
       (entry) => surface === null || entry.surfaces === null || entry.surfaces.has(surface),

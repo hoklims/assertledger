@@ -2089,6 +2089,30 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       (entry) => entry.kind === "GATE_DELTA_REVIEW",
     );
     assert.equal(gate?.reason, "runtime tree changed or unknown");
+
+    // A changed harness that names nothing it exercises re-runs its own review only, and the plan
+    // reports what it cannot know.
+    const unlisted = (id: string, version: string) =>
+      planAssurance(
+        revision(id, [
+          surface("ci/harness", {
+            role: "proof-infrastructure",
+            runtime: "build",
+            behaviorChange: "fix",
+            contentDigest: digest(`ci/harness@${version}`),
+          }),
+        ]),
+      );
+    const afterHarness = unlisted(R2, "2");
+    const harnessCarry = carryOverEvidence(unlisted(R1, "1"), afterHarness);
+    assertIncludes(kinds(harnessCarry.reusable), ["CAUSAL_WITNESS", "TARGETED_REGRESSION"]);
+    assert.deepEqual(
+      harnessCarry.mustProduce.find((entry) => entry.kind === "GATE_DELTA_REVIEW")?.surfaces,
+      ["ci/harness"],
+    );
+    assert.ok(
+      afterHarness.residualUncertainty.some((entry) => entry.id === "proof.exercises-unknown"),
+    );
   });
 
   it("reuses runtime-tree and rollback evidence across a proof-only commit", () => {
@@ -2360,12 +2384,91 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       "channel/replay-safe-keys",
     ]);
 
-    // Within one revision the evidence is the same evidence; the plan itself stays blocked.
+    // Within one revision, a signal the next plan newly observes contradicts the earlier run too,
+    // even when it neither holds nor blocks the plan.
+    const divergedNow = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("div", "CORPUS_DIVERGENCE", { surfaces: ["channel/replay-fold"] })],
+    });
+    assert.equal(divergedNow.status, "PROVE");
+    assert.deepEqual(
+      carryOverEvidence(planAssurance(revision(R1, [])), divergedNow).mustProduce.find(
+        (entry) => entry.kind === "TARGETED_CORPUS",
+      )?.surfaces,
+      ["channel/replay-fold"],
+    );
+    // Evidence produced beside a signal answers it: within one revision it is reused.
+    assert.deepEqual(carryOverEvidence(divergedNow, divergedNow).mustProduce, []);
     const blocked = planAssurance({
       ...revision(R1, []),
       signals: [signal("reg", "REGRESSION", { surfaces: ["channel/replay-safe-keys"] })],
     });
     assert.deepEqual(carryOverEvidence(blocked, blocked).mustProduce, []);
+  });
+
+  it("never reuses evidence for a surface it was not produced for", () => {
+    const readme = claim("readme-exit-code-table", ["cli/exit-codes"], { kind: "documentation" });
+    const at = (id: string, behaviorChange: Surface["behaviorChange"]) =>
+      planAssurance({
+        impact: impact(
+          [
+            surface("cli/exit-codes", { behaviorChange }),
+            surface("docs/exit-codes.md", { role: "documentation", runtime: "none" }),
+          ],
+          { revision: { id, baseline: BASE, runtimeTreeDigest: digest("tree@1") } },
+        ),
+        claims: [readme],
+      });
+    // Same digests and tree: only the scope of the documentation check grew.
+    const carry = carryOverEvidence(at(R1, "none"), at(R2, "feature"));
+    const check = carry.mustProduce.find((entry) => entry.kind === "DOCUMENTATION_CHECK");
+    assert.deepEqual(check?.surfaces, ["cli/exit-codes"]);
+    assert.equal(check?.reason, "surface newly in scope");
+    assert.deepEqual(
+      carry.reusable.find((entry) => entry.kind === "DOCUMENTATION_CHECK")?.surfaces,
+      ["docs/exit-codes.md"],
+    );
+  });
+
+  it("accounts for every required kind and surface of the next plan", () => {
+    const unnamedAt = (id: string) =>
+      planAssurance({
+        ...revision(id, []),
+        signals: [
+          signal("t", "TIMEOUT", { revision: id, attribution: ["PASSES_ON_SAME_REVISION"] }),
+        ],
+      });
+    const { r1, r2, r3 } = sequence("test");
+    const pairs: [AssurancePlan, AssurancePlan][] = [
+      [r1, r2],
+      [r2, r3],
+      [r1, r1],
+      [unnamedAt(R1), unnamedAt(R2)],
+    ];
+    for (const [previous, next] of pairs) {
+      const carry = carryOverEvidence(previous, next);
+      const entries = [...carry.reusable, ...carry.mustProduce];
+      assert.deepEqual(
+        [...new Set(entries.map((entry) => entry.kind))].sort(),
+        [...new Set(kinds(next.requiredEvidence))].sort(),
+      );
+      for (const requirement of next.requiredEvidence) {
+        assert.deepEqual(
+          entries
+            .filter((entry) => entry.kind === requirement.kind)
+            .flatMap((entry) => entry.surfaces)
+            .sort(),
+          [...requirement.surfaces].sort(),
+          requirement.kind,
+        );
+      }
+    }
+    // Attribution of a failure that names no surface is revision-wide evidence.
+    const unscoped = carryOverEvidence(unnamedAt(R1), unnamedAt(R2)).mustProduce.find(
+      (entry) => entry.kind === "FAILURE_ATTRIBUTION",
+    );
+    assert.deepEqual(unscoped?.surfaces, []);
+    assert.equal(unscoped?.reason, "bound to the exact revision");
   });
 
   it("re-checks a documentation claim on a runtime surface when the runtime tree changes", () => {
@@ -2404,6 +2507,28 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
       "cli/exit-codes",
       "docs/exit-codes.md",
     ]);
+
+    // Evidence about a documentation file that is not documentation-only still follows the tree.
+    const linkCheck = (id: string, tree: string) =>
+      planAssurance({
+        impact: impact(documented, {
+          revision: { id, baseline: BASE, runtimeTreeDigest: digest(tree) },
+        }),
+        claims: [readme],
+        signals: [
+          signal("links", "TIMEOUT", {
+            revision: id,
+            surfaces: ["docs/exit-codes.md"],
+            attribution: ["REPRODUCES_ON_BASELINE"],
+          }),
+        ],
+      });
+    const attribution = carryOverEvidence(
+      linkCheck(R1, "tree@1"),
+      linkCheck(R2, "tree@2"),
+    ).mustProduce.find((entry) => entry.kind === "FAILURE_ATTRIBUTION");
+    assert.deepEqual(attribution?.surfaces, ["docs/exit-codes.md"]);
+    assert.equal(attribution?.reason, "runtime tree changed or unknown");
   });
 
   it("attributes a flake of a repaired ceiling to the proof infrastructure", () => {
