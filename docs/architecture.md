@@ -151,6 +151,13 @@ The emitted manifest contains normalized observations and stdout/stderr digests,
 output, candidate or world file bodies, or a repository archive. A self-contained audit bundle must
 preserve those inputs and logs beside the manifest.
 
+## Internal proof planner
+
+`src/proof-planner` decides which evidence is proportionate for a change, from a provider-neutral
+change impact, the affected claims and a versioned assurance policy. It follows the core's purity
+rules, is not exported from the package entry points, and never grants or verifies evidence: the
+gates above keep that authority. See [proof-planner.md](proof-planner.md).
+
 ## Extension points
 
 - Built-in adapters translate framework behavior into normalized observations.
