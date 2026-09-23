@@ -61,11 +61,15 @@ proportionate for a change, and **which** earlier evidence stays admissible afte
   `offline-analysis`, `live`), boundaries (protocol, persistence, replay, analysis, decision,
   admission, security, public-api, benchmark, holdout), a declared behavior change (`none`,
   `suspected`, `fix`, `feature`), coverage, environment sensitivity, an optional typed content
-  digest, and for tests the surfaces they exercise. The analysis states its method (`static-graph`
-  or `declared`), completeness, uncertainty, localized unknowns and omitted surfaces.
+  digest, and for test and proof-infrastructure surfaces the surfaces they exercise. The analysis
+  states its method (`static-graph` or `declared`), completeness, uncertainty, localized unknowns
+  and omitted surfaces.
 - `AssuranceClaim[]`: the project's claim registry or the claims a change makes. Pass the registry,
   not a hand-picked subset: untouched claims are filtered by the planner, not by the caller.
-- `ProofSignal[]`: what proof runs revealed, for one revision each.
+- `ProofSignal[]`: what proof runs revealed, for one revision each. A signal may also name the
+  baseline and runtime tree it was observed on: an unresolved signal (a product signal, or a failure
+  that may exercise the change) then still counts on a later revision whose product is
+  byte-identical, so a proof-only commit cannot erase a regression.
 - `AssurancePolicy`: versioned data, digested into the plan (default `DEFAULT_ASSURANCE_POLICY`).
 
 ### Facts, not a level table
@@ -80,18 +84,34 @@ The policy is data that maps facts to:
 - **status**: facts that put the plan on `HOLD` or `BLOCKED`.
 
 Levels are computed **per subject** (product, evaluation, proof infrastructure, documentation) and
-the plan level is their maximum. A level baseline (P1 static checks and affected tests, P2 targeted
-regression and revision identity, P3 targeted integration and production-path test, P4 independent
-review, P5 preregistration and provenance) only applies to the subjects that reached that level:
-a holdout change at P5 does not drag product ceremony in, and criticality deepens proof without
-widening it. Breadth (full suite, full corpus, multi-environment) comes only from impact facts.
+the plan level is their maximum. A fact may concern several subjects. A level baseline (P1 static
+checks and affected tests, P2 targeted regression and revision identity, P3 targeted integration and
+production-path test, P4 independent review, P5 preregistration and provenance) only applies to the
+subjects that reached that level, and only to the impact surfaces of that subject: a holdout change
+at P5 does not drag product ceremony in, and criticality deepens proof without widening it. Breadth
+(full suite, full corpus, multi-environment) comes only from impact facts.
+
+Subjects follow what the evidence is about, not only the role of the surface:
+
+- benchmark and holdout boundaries always concern the evaluation subject, whatever role carries them;
+- security, admission and decision boundaries keep their weight on a changed gate or oracle
+  (proof-infrastructure surfaces, and test surfaces whose oracle changed), under the
+  proof-infrastructure subject;
+- a claim is reached through the product only by product, execution-context or evaluation surfaces.
+  A high or critical claim whose test or gate changed (the test lists a claim surface in
+  `exercises`, or the claim lists the test) gets `claim:<criticality>:oracle` under the
+  proof-infrastructure subject: an `ORACLE_WITNESS` (the changed oracle still fails where the
+  violation is present) and, for a critical claim, an independent review, but no product
+  requalification;
+- a documentation claim whose documented surfaces change behavior requires the documentation check;
+  otherwise it is unaffected.
 
 | Level | Typical source facts |
 | --- | --- |
 | P0 | documentation only |
-| P1 | refactor, tests or proof infrastructure only, evaluation touched |
-| P2 | product behavior change, new behavior, execution context, compatibility boundary touched |
-| P3 | behavior across protocol, persistence, replay, analysis or public API; live surface touched; high claim reached directly; unbounded impact; costly reversal |
+| P1 | refactor; changed tests that no product evidence runs; proof infrastructure; evaluation touched |
+| P2 | product behavior change, new behavior, execution context, compatibility boundary touched; oracle of a high claim changed |
+| P3 | behavior across protocol, persistence, replay, analysis or public API; live surface touched; security boundary touched; high claim reached directly; oracle of a critical claim changed; unbounded impact; costly reversal |
 | P4 | live behavior; decision, admission or security behavior; critical claim reached directly; system-scope claim; irreversible change; observed corpus divergence or live runtime |
 | P5 | empirical claim; benchmark or holdout behavior |
 
@@ -99,10 +119,15 @@ widening it. Breadth (full suite, full corpus, multi-environment) comes only fro
 
 | Bound | When | Effect on heavy evidence |
 | --- | --- | --- |
-| `no-product-runtime` | no product, execution-context or evaluation surface changed | may be `NOT REQUIRED` |
-| `bounded-confident` | static analysis, complete, low uncertainty, nothing unknown | may be `NOT REQUIRED`; untouched claims are unaffected |
-| `bounded-uncertain` | declared analysis, partial with named unknowns, or non-low uncertainty | computed against the **worst case** of the enumerated surfaces; what the worst case needs becomes `RECOMMENDED`, the rest `NOT REQUIRED` |
-| `unbounded` | unknown completeness, unnamed unknowns, omitted surfaces, execution context changed, unknowns touching live or high-critical surfaces, observed unknown dependency or unplanned impact | full test suite `REQUIRED`; everything not selected is `UNDETERMINED`, never `NOT REQUIRED` |
+| `no-product-runtime` | a complete, static, low-uncertainty analysis finds no product, execution-context or evaluation surface | may be `NOT REQUIRED` |
+| `bounded-confident` | the same analysis, with runtime surfaces | may be `NOT REQUIRED`; untouched claims are unaffected |
+| `bounded-uncertain` | declared analysis, partial with named unknowns, non-low uncertainty or localized unknowns | computed against the **worst case** of the enumerated surfaces; what the worst case needs becomes `RECOMMENDED`, the rest `NOT REQUIRED`; a high or critical claim outside the impact earns a recommended invariant check, never a floor |
+| `unbounded` | unknown completeness, unnamed unknowns, omitted surfaces, execution context changed, unknowns touching live or high-critical surfaces, observed unknown dependency or unplanned impact, whatever the enumerated surfaces are | full test suite `REQUIRED`; claims outside the impact are treated as reached transitively; everything not selected is `UNDETERMINED`, never `NOT REQUIRED` |
+
+The bound is checked before the roles: an incomplete analysis of what looks like a proof-only change
+is unbounded, because the omitted part may be product. An unbounded impact is treated as reaching
+the product. The worst case keeps the declared analysis, so it is never more trusting than the plan;
+if the worst case is itself unbounded, nothing can be exempted.
 
 Size is not uncertainty: a large, enumerated transitive set bounds the targeted evidence's scope,
 it does not trigger a global suite. A declared impact recommends the full suite, because surfaces
@@ -117,48 +142,62 @@ the actual change or the worst case.
 
 Product signals (`UNEXPECTED_BEHAVIOR`, `UNPLANNED_IMPACT`, `UNKNOWN_DEPENDENCY`,
 `LIVE_RUNTIME_TOUCHED`, `CORPUS_DIVERGENCE`, `WITNESS_NOT_CAUSAL`, `REGRESSION`) become facts.
-A regression blocks unless it reproduces on the baseline; unexpected behavior and missing causality
-hold the plan and raise it; an unplanned impact reopens the bound unless the impact already names
-the observed surfaces.
+A regression blocks; unexpected behavior and missing causality hold the plan and raise it. A
+regression, an unexpected behavior or a corpus divergence that reproduces on the baseline is a
+pre-existing defect: it does not block or escalate, but the reproduction becomes required evidence
+(`FAILURE_ATTRIBUTION`). An unplanned impact reopens the bound unless the impact already names the
+observed surfaces; a live-runtime observation escalates unless every observed surface is already
+declared live.
 
 Infrastructure signals (`TIMEOUT`, `ENVIRONMENT_FAILURE`, `TOOLING_FAILURE`) are attributed in a
 fixed order, after the bound is known:
 
-1. `exercises` is recomputed: if the failing job's surfaces intersect the impact it is `yes`,
-   whatever was declared; a declared `no` is only trusted under a confident bound.
+1. `exercises` is recomputed: if the failing job's surfaces are changed runtime surfaces, or changed
+   proof surfaces that exercise one, it is `yes`, whatever was declared. A changed test that
+   exercises nothing changed stays proof evidence, so a repaired ceiling can still be attributed
+   when it flakes. A declared `no` is only trusted under a confident bound and when the failure
+   names its surfaces.
 2. A job that does not exercise the change is attributed to the proof infrastructure by any
    admissible basis (baseline reproduction, pass on the same revision, outside impact, reported
    infrastructure error, declared environment factor).
 3. A job that may exercise the change is attributed only by `REPRODUCES_ON_BASELINE`. A retry that
    passes proves nondeterminism, not innocence: a slower code path can time out once and pass once.
+   An attribution that rests on the reproduction alone requires `FAILURE_ATTRIBUTION`.
 4. Otherwise the failure is unattributed: the plan holds and requires `FAILURE_ATTRIBUTION`, but the
    level does **not** rise automatically.
 
 An attributed infrastructure failure never changes the level, the status or the product evidence;
-it adds `AFFECTED_JOB_RERUN` on the failing job only.
+it adds `AFFECTED_JOB_RERUN` on the failing job only. An unattributed one adds
+`FAILURE_ATTRIBUTION` on the failing job, without widening the product evidence to it.
 
 ### Evidence bindings and carry-over
 
 Each kind declares what it stays valid for:
 
 - `exact-revision`: static checks and revision identity (cheap, re-run on every revision);
-- `surface-content`: valid per scoped surface while that surface, the tests that exercise it (a test
-  without an `exercises` list exercises everything), the baseline and, for product and evaluation
-  evidence, the runtime tree keep their digests;
+- `surface-content`: valid per scoped surface while that surface, the proof surfaces that exercise
+  it (a test without an `exercises` list exercises everything; a proof-infrastructure surface
+  counts where it names the surface), the baseline and, for every kind that is not
+  documentation-only, the runtime tree keep their digests. A gate delta review, for instance, is
+  redone when the code its budget measures changes. Without a scope, it is revision-wide;
 - `runtime-tree`: full suite, full corpus, multi-environment, live shadow, system requalification,
   benchmark and holdout runs: valid while the baseline and runtime tree digest are unchanged.
 
 `carryOverEvidence(previous, next)` lists what may be reused and what must be produced again.
 Reuse is keyed on the kind's semantic digest (id, weight, binding, subjects, verification,
 `semanticsVersion`), never on its wording and never on the whole policy digest. Missing digests,
-a changed baseline (rebase) or a changed runtime tree always force re-production. AssertLedger must
-still verify that reused evidence exists and carries the listed digests.
+a changed baseline (rebase) or a changed runtime tree force re-production of every kind that
+depends on them, and evidence never crosses to another revision on the surfaces of a product
+signal the previous plan left unresolved. AssertLedger must still verify that reused evidence
+exists and carries the listed digests.
 
 ### Escalations
 
 Each plan precomputes, by replanning with a canonical hypothetical signal, what every product
 signal and an attributed or unattributed infrastructure failure would do to its level, status and
-required evidence. Tests check that each row equals an independent replan.
+required evidence. The tests pin every row of the bounded replay fix with values derived from the
+policy by hand, and check the product rows for consistency with a replan through the public API
+(the same planner, so that check alone would not catch a planner error).
 
 ## 3. Examples
 
@@ -170,13 +209,14 @@ decisions.
 | A documentation only | P0 | documentation check | all 11 broad or ceremonial kinds not required |
 | B local refactor | P1 | static checks, affected tests (+ characterization tests if untested) | all not required |
 | C local bugfix | P2 | causal witness, affected tests, targeted regression, static checks, revision identity | all not required |
-| D bounded replay fix | P3 | C + targeted integration, production-path test, targeted corpus | all not required, including full corpus and system requalification |
-| D, declared impact | P3 | D + invariant check (an untouched critical claim can no longer be dismissed) | full test suite and characterization tests recommended; the rest not required against the worst case |
-| D, partial analysis | P3 | D + full test suite, invariant check | full corpus and independent review recommended; everything else undetermined |
-| E live decoder fix | P4 | D-like + boundary compatibility, live shadow, rollback plan, full corpus, independent review | benchmark, holdout, full suite, system requalification not required |
-| E tactical decision | P4 | acceptance test, live shadow, rollback plan, full corpus, system requalification, independent review | benchmark and holdout not required |
-| F holdout evaluator + empirical claim | P5 | preregistration, provenance, benchmark protocol, holdout evaluation, contamination check, independent review, affected tests | live shadow, full suite, full corpus, system requalification not required |
+| D bounded replay fix | P3 | C + targeted integration, production-path test, targeted corpus, documentation check | all not required, including full corpus and system requalification |
+| D, declared impact | P3 | D | full test suite, characterization tests and an invariant check for the untouched critical claim recommended; the rest not required against the worst case |
+| D, partial analysis | P3 | D + full test suite, invariant check (the untouched critical claim is treated as reached) | full corpus and independent review recommended; everything else undetermined |
+| E live decoder fix | P4 | C + boundary compatibility, targeted integration, production-path test, live shadow, rollback plan, full corpus, independent review | benchmark, holdout, full suite, multi-environment, system requalification not required |
+| E tactical decision | P4 | acceptance test, affected tests, targeted regression and integration, production-path test, live shadow, rollback plan, full corpus, system requalification, independent review, static checks, revision identity | benchmark, holdout, full suite, multi-environment not required |
+| F holdout evaluator + empirical claim | P5 | preregistration, provenance, benchmark protocol, holdout evaluation, contamination check, independent review, affected tests, static checks, revision identity | live shadow, full suite, full corpus, system requalification not required |
 | G timeout ceiling repair | P1 | gate delta review, affected job rerun, static checks | all not required; no functional requalification |
+| G, the repaired test checks a critical claim | P3 (proof infrastructure) | G + oracle witness, independent review of the test, revision identity | no product evidence, no system requalification |
 
 Rendered plan for the bounded replay fix (abridged):
 
@@ -186,7 +226,7 @@ policy assertledger.default-assurance@1.0.0; impact bounded-confident; product P
 
 WHY
   - impact: bounded-confident: static analysis, complete, low uncertainty
-  - claim: live-decoder-pins-unchanged: none of its surfaces is in an impact bounded with confidence
+  - claim: live-decoder-pins-unchanged: none of its runtime surfaces is in an impact bounded with confidence
   - floor P3 boundary:replay:behavior: channel/replay-fold, channel/replay-safe-keys: replay behavior may change
   - floor P2 product:behavior-change: channel/replay-safe-keys: product behavior may change
 
@@ -203,7 +243,8 @@ NOT REQUIRED
 
 ESCALATE IF
   - CORPUS_DIVERGENCE (product): level moves P3 -> P4, adds FAILURE_ATTRIBUTION, FULL_CORPUS, INDEPENDENT_REVIEW.
-  - TIMEOUT (infrastructure-attributed): level stays P3, status PROVE, adds AFFECTED_JOB_RERUN.
+  - TIMEOUT (infrastructure-attributed, by a baseline reproduction): level stays P3, status PROVE,
+    adds AFFECTED_JOB_RERUN, FAILURE_ATTRIBUTION.
   - TIMEOUT (infrastructure-unattributed): level stays P3, status HOLD, adds FAILURE_ATTRIBUTION.
 ```
 
@@ -224,15 +265,16 @@ global policy (every kind bound to the exact revision, full suite and independen
 | --- | --- | --- |
 | r1, replay fix | P3, 12 required kinds | P3, 10 required kinds (full suite and audit not required) |
 | timeout 1 (outside impact, passed on the same tree) | proof infrastructure | proof infrastructure; level, status and product evidence unchanged |
-| r1 → r2, first ceiling routed | 13 kinds re-produced | 4 kinds: static checks, revision identity, gate delta review and job rerun on the ceiling only |
+| r1 → r2, first ceiling routed | 13 kinds re-produced | 4 kinds: static checks, revision identity, gate delta review on the ceiling, job reruns on the ceiling and on the job of timeout 2 |
 | timeout 2 (outside impact, environment factor) | proof infrastructure | proof infrastructure |
 | r2 → r3, second ceiling routed | 13 kinds re-produced | 4 kinds, on the new ceiling only; the first ceiling's review is reused |
 
 The planner stays conservative on the same path: a corpus divergence moves the plan to P4 with the
 full corpus; a timeout on a job that exercises the replay surface holds the plan unless it
-reproduces on the baseline; a rebase, a changed runtime tree, a test without an `exercises` list
-or a product digest changed by a so-called infrastructure commit forces the product evidence to be
-produced again.
+reproduces on the baseline; a rebase, a changed runtime tree, a missing digest, a test without an
+`exercises` list, a harness that names the replay surface, or a product digest changed by a
+so-called infrastructure commit forces the product evidence to be produced again; and a regression
+left unresolved on r1 blocks the reuse of the evidence on its surfaces. Each of these is a test.
 
 ## 5. Mapping to neighbours
 
@@ -254,18 +296,28 @@ no AssertLedger evidence type yet; kinds marked `attested` can only be recorded,
 
 - Inputs are trusted declarations. A caller can mislabel a live surface as offline or omit a surface;
   the planner limits the damage (declared analysis never yields confident exemptions, contradicted
-  `exercises` values are overridden, untouched critical claims come back under uncertainty) but
-  cannot detect a consistent lie. A policy-owned surface classifier is not in V1.
-- Claims come from the caller. Pass the full registry; V1 has no registry of its own.
-- The default policy is a first calibration, not a measured optimum. Its minimum (live, decision,
-  admission and security floors, regression blocks, unattributed failures hold, empirical claims at
-  P5, …) is enforced; stricter policies are accepted, looser ones are refused.
+  `exercises` values are overridden, incomplete analyses are unbounded whatever they enumerate,
+  untouched critical claims come back as recommendations under uncertainty and as requirements when
+  unbounded) but cannot detect a consistent lie. A policy-owned surface classifier is not in V1.
+- Claims come from the caller. Pass the full registry; V1 has no registry of its own. A changed proof
+  surface without an `exercises` list only reaches the claims that list it; the plan reports it as
+  residual uncertainty (`proof.exercises-unknown`).
+- The default policy is a first calibration, not a measured optimum. A caller-supplied policy must be
+  at least as strict as the default: every kind (verification, binding, subjects), baseline, floor,
+  trigger, raise and status rule of the default must still hold with at least the same strength, or
+  parsing fails with `PROOF_PLANNER_POLICY_BELOW_MINIMUM`. The tests pin the default by digest and
+  check its non-negotiable rules against an independent list. A project that wants a looser policy
+  must fork the default; that is deliberate in V1.
+- Signals carried across revisions need the caller to report the baseline and runtime tree they were
+  observed on. Without them, the carry-over still refuses reuse on the surfaces of an unresolved
+  product signal, but the next plan does not hold or block by itself.
 - Freshness is identity-based (digests, baseline, runtime tree), not time-based: the core forbids a
   clock. Time-bound validity windows remain an AssertLedger-side concern.
 - The satisfaction check (does evidence exist for each requirement, bound to the listed digests) is
   not implemented; the plan is advisory until it is.
-- Attribution bases are declared by whoever reports the signal; `REPRODUCES_ON_BASELINE` is itself
-  evidence that AssertLedger should eventually verify.
+- Attribution bases are declared by whoever reports the signal. An attribution that rests on
+  `REPRODUCES_ON_BASELINE` requires `FAILURE_ATTRIBUTION`, which AssertLedger should eventually
+  verify; the other bases are trusted as declared, within the limits above.
 - The module is compiled into `dist/proof-planner/` but not reachable through the package exports;
   its types and digests are not a public contract yet.
 

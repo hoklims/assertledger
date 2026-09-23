@@ -92,8 +92,9 @@ export type EvidenceWeight = (typeof EVIDENCE_WEIGHTS)[number];
 /**
  * What a piece of evidence stays valid for.
  * - exact-revision: only the revision it was produced on.
- * - surface-content: each scoped surface, while that surface, the tests that exercise it, the
- *   baseline and (for product and evaluation evidence) the runtime tree keep their digests.
+ * - surface-content: each scoped surface, while that surface, the test and proof-infrastructure
+ *   surfaces that exercise it, the baseline and (for every kind that is not documentation-only)
+ *   the runtime tree keep their digests. Without a scope it is revision-wide: exact-revision.
  * - runtime-tree: any revision with the same baseline and runtime tree digest.
  */
 export const EVIDENCE_BINDINGS = ["exact-revision", "surface-content", "runtime-tree"] as const;
@@ -133,7 +134,10 @@ export const SurfaceSchema = z.strictObject({
   coverage: z.enum(COVERAGES),
   environmentSensitive: z.boolean(),
   contentDigest: ContentDigestSchema.optional(),
-  /** Test surfaces only: identifiers of the surfaces this test exercises. Absent means all. */
+  /**
+   * Test and proof-infrastructure surfaces: identifiers of the surfaces they exercise. For a
+   * test, absent means all; a proof-infrastructure surface only counts where it names them.
+   */
   exercises: z.array(IdentifierSchema).max(512).optional(),
 });
 export type Surface = z.infer<typeof SurfaceSchema>;
@@ -179,8 +183,14 @@ export type AssuranceClaim = z.infer<typeof AssuranceClaimSchema>;
 
 export const ProofSignalSchema = z.strictObject({
   id: IdentifierSchema,
-  /** Signals only count for the revision they were observed on. */
+  /**
+   * Signals count for the revision they were observed on. An unresolved signal from another
+   * revision still counts when it names the same baseline and runtime tree as the planned change:
+   * the product it observed is byte-identical.
+   */
   revision: RevisionIdSchema,
+  baseline: RevisionIdSchema.optional(),
+  runtimeTreeDigest: ContentDigestSchema.optional(),
   signal: z.enum([...PRODUCT_SIGNALS, ...INFRASTRUCTURE_SIGNALS]),
   surfaces: z.array(IdentifierSchema).max(512),
   exercisesImpactedSurfaces: z.enum(["yes", "no", "unknown"]),

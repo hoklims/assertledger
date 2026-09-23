@@ -3,7 +3,6 @@ import { sha256Canonical } from "../core/index.js";
 import {
   ASSURANCE_LEVELS,
   ATTRIBUTION_BASES,
-  type AssuranceLevel,
   BOUNDARIES,
   type Boundary,
   EvidenceKindIdSchema,
@@ -20,7 +19,7 @@ import {
  */
 export const STATIC_FACT_IDS = [
   "documentation:changed",
-  "tests:only",
+  "tests:changed",
   "oracle:changed",
   "proof-infrastructure:changed",
   "execution-context:changed",
@@ -41,6 +40,10 @@ export const STATIC_FACT_IDS = [
   "claim:high:direct",
   "claim:critical:transitive",
   "claim:critical:direct",
+  "claim:high:oracle",
+  "claim:critical:oracle",
+  "claim:outside-impact",
+  "claim:documentation",
   "claim:scope:component",
   "claim:scope:system",
   "claim:empirical",
@@ -59,6 +62,7 @@ export const STATIC_FACT_IDS = [
   "observed:regression",
   "observed:infrastructure-failure",
   "observed:unattributed-failure",
+  "observed:baseline-reproduction",
 ] as const;
 export const BOUNDARY_FACT_QUALIFIERS = ["touched", "behavior", "transitive"] as const;
 export type FactId =
@@ -146,6 +150,7 @@ const BEHAVIOR_BOUNDARIES_P3: Boundary[] = [
   "public-api",
 ];
 const COMPATIBILITY_BOUNDARIES: Boundary[] = ["protocol", "persistence", "public-api"];
+const EVALUATION_BOUNDARIES: Boundary[] = ["benchmark", "holdout"];
 
 export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
   schemaVersion: PROOF_PLANNER_SCHEMA_VERSION,
@@ -173,7 +178,7 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
     kind(
       "DOCUMENTATION_CHECK",
       "Documentation check",
-      "Format, link and rendering checks on the changed documentation.",
+      "Format, link and rendering checks on the changed documentation, and a check that documentation claims whose surfaces change behavior still describe the revision.",
       "targeted",
       "surface-content",
       ["documentation"],
@@ -282,6 +287,15 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
       "AFFECTED_JOB_RERUN",
       "Affected job rerun",
       "Rerun of the jobs whose tests or gates changed or failed, in the environment where they ran.",
+      "targeted",
+      "surface-content",
+      ["proof-infrastructure"],
+      "executed",
+    ),
+    kind(
+      "ORACLE_WITNESS",
+      "Oracle witness",
+      "The changed test or gate still detects a named violation of the high or critical claim it protects: it fails where the violation is present (an AssertLedger TARGET world) and passes on the revision.",
       "targeted",
       "surface-content",
       ["proof-infrastructure"],
@@ -418,7 +432,7 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
   ],
   floors: [
     { fact: "documentation:changed", level: "P0" },
-    { fact: "tests:only", level: "P1" },
+    { fact: "tests:changed", level: "P1" },
     { fact: "oracle:changed", level: "P1" },
     { fact: "proof-infrastructure:changed", level: "P1" },
     { fact: "evaluation:touched", level: "P1" },
@@ -444,6 +458,8 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
     { fact: "claim:high:direct", level: "P3" },
     { fact: "claim:critical:transitive", level: "P3" },
     { fact: "claim:critical:direct", level: "P4" },
+    { fact: "claim:high:oracle", level: "P2" },
+    { fact: "claim:critical:oracle", level: "P3" },
     { fact: "claim:scope:component", level: "P2" },
     { fact: "claim:scope:system", level: "P4" },
     { fact: "claim:empirical", level: "P5" },
@@ -466,7 +482,7 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
   },
   triggers: [
     trigger("documentation:changed", ["DOCUMENTATION_CHECK"]),
-    trigger("tests:only", ["AFFECTED_JOB_RERUN"]),
+    trigger("tests:changed", ["AFFECTED_JOB_RERUN"]),
     trigger("oracle:changed", ["GATE_DELTA_REVIEW", "AFFECTED_JOB_RERUN"]),
     trigger("proof-infrastructure:changed", ["GATE_DELTA_REVIEW", "AFFECTED_JOB_RERUN"]),
     trigger("product:fix", ["CAUSAL_WITNESS"]),
@@ -479,9 +495,11 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
     ]),
     trigger("boundary:replay:behavior", ["TARGETED_CORPUS"]),
     trigger("boundary:analysis:behavior", ["TARGETED_CORPUS"]),
-    ...BOUNDARIES.map((boundary) =>
+    ...BOUNDARIES.filter((boundary) => !EVALUATION_BOUNDARIES.includes(boundary)).map((boundary) =>
       trigger(`boundary:${boundary}:transitive`, [], ["TARGETED_INTEGRATION"]),
     ),
+    trigger("boundary:benchmark:transitive", [], ["BENCHMARK_PROTOCOL"]),
+    trigger("boundary:holdout:transitive", [], ["HOLDOUT_EVALUATION"]),
     trigger("runtime:live:behavior", ["LIVE_SHADOW", "ROLLBACK_PLAN", "FULL_CORPUS"]),
     trigger("observed:live-runtime", ["LIVE_SHADOW", "ROLLBACK_PLAN", "FULL_CORPUS"]),
     trigger("boundary:decision:behavior", ["FULL_CORPUS", "SYSTEM_REQUALIFICATION"]),
@@ -491,6 +509,10 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
     trigger("claim:high:direct", ["INVARIANT_CHECK"]),
     trigger("claim:critical:transitive", ["INVARIANT_CHECK"]),
     trigger("claim:critical:direct", ["INVARIANT_CHECK"]),
+    trigger("claim:high:oracle", ["ORACLE_WITNESS"]),
+    trigger("claim:critical:oracle", ["ORACLE_WITNESS", "INDEPENDENT_REVIEW"]),
+    trigger("claim:outside-impact", [], ["INVARIANT_CHECK"]),
+    trigger("claim:documentation", ["DOCUMENTATION_CHECK"]),
     trigger("claim:scope:system", ["SYSTEM_REQUALIFICATION"]),
     trigger("claim:empirical", [
       "BENCHMARK_PROTOCOL",
@@ -526,6 +548,7 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
     trigger("observed:unknown-dependency", ["TARGETED_REGRESSION"]),
     trigger("observed:infrastructure-failure", ["AFFECTED_JOB_RERUN"]),
     trigger("observed:unattributed-failure", ["FAILURE_ATTRIBUTION"]),
+    trigger("observed:baseline-reproduction", ["FAILURE_ATTRIBUTION"]),
   ],
   status: {
     hold: [
@@ -547,44 +570,6 @@ export const DEFAULT_ASSURANCE_POLICY: AssurancePolicy = {
     ],
   },
 };
-
-/**
- * Non-negotiable minima. A caller may supply a stricter policy, never a looser one: the planner
- * must not become a way to reduce proof in order to go faster.
- */
-const MINIMUM_FLOORS: ReadonlyArray<readonly [FactId, AssuranceLevel]> = [
-  ["runtime:live:behavior", "P4"],
-  ["boundary:decision:behavior", "P4"],
-  ["boundary:admission:behavior", "P4"],
-  ["boundary:security:behavior", "P4"],
-  ["claim:critical:direct", "P4"],
-  ["claim:empirical", "P5"],
-  ["impact:unbounded", "P3"],
-  ["product:behavior-change", "P2"],
-  ["execution-context:changed", "P2"],
-];
-const MINIMUM_REQUIREMENTS: ReadonlyArray<readonly [FactId, string]> = [
-  ["runtime:live:behavior", "LIVE_SHADOW"],
-  ["runtime:live:behavior", "ROLLBACK_PLAN"],
-  ["impact:unbounded", "FULL_TEST_SUITE"],
-  ["execution-context:changed", "FULL_TEST_SUITE"],
-  ["product:fix", "CAUSAL_WITNESS"],
-  ["product:new-behavior", "ACCEPTANCE_TEST"],
-  ["claim:empirical", "PREREGISTRATION"],
-  ["claim:empirical", "HOLDOUT_EVALUATION"],
-  ["observed:unattributed-failure", "FAILURE_ATTRIBUTION"],
-  ["proof-infrastructure:changed", "GATE_DELTA_REVIEW"],
-  ["oracle:changed", "GATE_DELTA_REVIEW"],
-];
-const MINIMUM_HOLDS: readonly FactId[] = [
-  "observed:unattributed-failure",
-  "observed:unplanned-impact",
-  "observed:unknown-dependency",
-];
-const MINIMUM_BLOCKS: readonly FactId[] = ["observed:regression"];
-const PRODUCT_OBSERVATION_FACTS: readonly FactId[] = STATIC_FACT_IDS.filter((fact) =>
-  fact.startsWith("observed:"),
-);
 
 export function parseAssurancePolicy(input: unknown): AssurancePolicy {
   const parsed = AssurancePolicySchema.safeParse(input);
@@ -618,40 +603,79 @@ export function parseAssurancePolicy(input: unknown): AssurancePolicy {
   return policy;
 }
 
+/**
+ * A caller may supply a stricter policy, never a looser one: the planner must not become a way to
+ * reduce proof in order to go faster. "Stricter" is relational to the default policy: every kind,
+ * baseline, floor, trigger, raise and status rule of the default must still hold with at least the
+ * same strength. The default itself is pinned by digest in the tests, so loosening it is a
+ * reviewed change, not a silent one.
+ */
 function assertPolicyMinimum(policy: AssurancePolicy): void {
+  const reference = DEFAULT_ASSURANCE_POLICY;
   const violations: string[] = [];
-  for (const [fact, level] of MINIMUM_FLOORS) {
+  for (const expected of reference.evidence) {
+    const actual = policy.evidence.find((spec) => spec.id === expected.id);
+    if (!actual) {
+      violations.push(`kind ${expected.id} is missing`);
+      continue;
+    }
+    if (expected.verification === "executed" && actual.verification !== "executed") {
+      violations.push(`kind ${expected.id} verification weakened to ${actual.verification}`);
+    }
+    if (actual.binding !== expected.binding && actual.binding !== "exact-revision") {
+      violations.push(`kind ${expected.id} binding weakened to ${actual.binding}`);
+    }
+    const lost = expected.subjects.filter((subject) => !actual.subjects.includes(subject));
+    if (lost.length > 0)
+      violations.push(`kind ${expected.id} subjects narrowed (${lost.join(", ")})`);
+  }
+  for (const expected of reference.baselines) {
+    const present = policy.baselines.some(
+      (entry) =>
+        entry.kind === expected.kind && levelIndex(entry.level) <= levelIndex(expected.level),
+    );
+    if (!present) violations.push(`baseline ${expected.kind}@${expected.level}`);
+  }
+  for (const expected of reference.floors) {
     const floor = Math.max(
       -1,
       ...policy.floors
-        .filter((entry) => entry.fact === fact)
+        .filter((entry) => entry.fact === expected.fact)
         .map((entry) => levelIndex(entry.level)),
     );
-    if (floor < levelIndex(level)) violations.push(`floor ${fact} >= ${level}`);
+    if (floor < levelIndex(expected.level)) {
+      violations.push(`floor ${expected.fact} >= ${expected.level}`);
+    }
   }
-  for (const [fact, required] of MINIMUM_REQUIREMENTS) {
-    const present = policy.triggers.some(
-      (entry) => entry.fact === fact && entry.require.includes(required),
-    );
-    if (!present) violations.push(`trigger ${fact} requires ${required}`);
+  for (const expected of reference.triggers) {
+    const entries = policy.triggers.filter((entry) => entry.fact === expected.fact);
+    for (const kind of expected.require) {
+      if (!entries.some((entry) => entry.require.includes(kind))) {
+        violations.push(`trigger ${expected.fact} requires ${kind}`);
+      }
+    }
+    for (const kind of expected.recommend) {
+      if (
+        !entries.some((entry) => entry.require.includes(kind) || entry.recommend.includes(kind))
+      ) {
+        violations.push(`trigger ${expected.fact} recommends ${kind}`);
+      }
+    }
   }
-  for (const fact of MINIMUM_HOLDS) {
+  for (const fact of reference.raises.facts) {
+    if (!policy.raises.facts.includes(fact)) violations.push(`raise on ${fact}`);
+  }
+  // A raise never creates an empirical claim, and never stops short of the default cap.
+  if (policy.raises.cap !== reference.raises.cap) {
+    violations.push(`raise cap = ${reference.raises.cap}`);
+  }
+  for (const fact of reference.status.hold) {
     if (!policy.status.hold.includes(fact) && !policy.status.block.includes(fact)) {
       violations.push(`status holds on ${fact}`);
     }
   }
-  for (const fact of MINIMUM_BLOCKS) {
+  for (const fact of reference.status.block) {
     if (!policy.status.block.includes(fact)) violations.push(`status blocks on ${fact}`);
-  }
-  for (const fact of PRODUCT_OBSERVATION_FACTS) {
-    const consumed =
-      policy.triggers.some((entry) => entry.fact === fact && entry.require.length > 0) ||
-      policy.status.hold.includes(fact) ||
-      policy.status.block.includes(fact);
-    if (!consumed) violations.push(`observation fact ${fact} has no requirement or status effect`);
-  }
-  if (levelIndex(policy.raises.cap) > levelIndex("P4")) {
-    violations.push("raise cap <= P4 (a raise never creates an empirical claim)");
   }
   if (violations.length > 0) {
     throw new ProofPlannerError("PROOF_PLANNER_POLICY_BELOW_MINIMUM", violations.join("; "));

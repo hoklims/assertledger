@@ -127,6 +127,7 @@ export interface SignalClassification {
   classification: SignalClassificationName;
   exercises: "yes" | "no" | "unknown";
   basis: AttributionBasis[];
+  surfaces: string[];
   reason: string;
 }
 
@@ -190,7 +191,7 @@ interface CoreResult {
   factIds: Set<FactId>;
   signals: SignalClassification[];
   unaffectedClaims: { id: string; reason: string }[];
-  claimsTreatedTransitive: string[];
+  claimsOutsideImpact: string[];
   required: Map<string, Accumulator>;
   recommended: Map<string, Accumulator>;
   rationale: PlannerDecision[];
@@ -207,6 +208,8 @@ const PRODUCT_RUNTIME_ROLES: ReadonlySet<SurfaceRole> = new Set([
   "evaluation",
 ]);
 const EVALUATION_BOUNDARIES: ReadonlySet<Boundary> = new Set(["benchmark", "holdout"]);
+/** Boundaries that keep their weight when declared on a test or a proof-infrastructure surface. */
+const SENSITIVE_BOUNDARIES: ReadonlySet<Boundary> = new Set(["security", "admission", "decision"]);
 const PRE_EXISTING_CAPABLE: ReadonlySet<SignalName> = new Set([
   "UNEXPECTED_BEHAVIOR",
   "CORPUS_DIVERGENCE",
@@ -342,7 +345,11 @@ function normalizeInput(input: PlanAssuranceInput): NormalizedInput {
           description: unknown.description,
           surfaces: sortedUnique(unknown.surfaces),
         }))
-        .sort((left, right) => compareOrdinal(left.description, right.description)),
+        .sort(
+          (left, right) =>
+            compareOrdinal(left.description, right.description) ||
+            compareOrdinal(left.surfaces.join("\u0000"), right.surfaces.join("\u0000")),
+        ),
       omittedSurfaceCount: raw.analysis.omittedSurfaceCount,
     },
     reversibility: raw.reversibility,
@@ -361,12 +368,18 @@ function normalizeInput(input: PlanAssuranceInput): NormalizedInput {
     }))
     .sort((left, right) => compareOrdinal(left.id, right.id));
   assertUniqueIds(signals, "signal");
-  for (const signal of signals) {
-    if (signal.id.startsWith(HYPOTHETICAL_PREFIX)) {
-      throw new ProofPlannerError(
-        "PROOF_PLANNER_INPUT_INCONSISTENT",
-        `signal id prefix ${HYPOTHETICAL_PREFIX} is reserved`,
-      );
+  for (const [label, items] of [
+    ["surface", impact.surfaces],
+    ["claim", claims],
+    ["signal", signals],
+  ] as const) {
+    for (const item of items) {
+      if (item.id.startsWith(HYPOTHETICAL_PREFIX)) {
+        throw new ProofPlannerError(
+          "PROOF_PLANNER_INPUT_INCONSISTENT",
+          `${label} id prefix ${HYPOTHETICAL_PREFIX} is reserved: ${item.id}`,
+        );
+      }
     }
   }
   return { impact, claims, signals, policy, policyDigest: assurancePolicyDigest(policy) };
@@ -389,29 +402,52 @@ function planCore(input: NormalizedInput): CoreResult {
   const { impact, policy } = input;
   const facts = new FactSet();
   const rationale: PlannerDecision[] = [];
-  const impactIds = new Set(impact.surfaces.map((surface) => surface.id));
   const productRuntimeTouched = impact.surfaces.some((surface) =>
     PRODUCT_RUNTIME_ROLES.has(surface.role),
   );
 
-  deriveSurfaceFacts(impact, productRuntimeTouched, facts);
+  deriveSurfaceFacts(impact, facts);
 
-  // 1. Product signals first: they can reopen the impact bound.
-  const current = input.signals.filter((signal) => signal.revision === impact.revision.id);
-  const classifications: SignalClassification[] = input.signals
-    .filter((signal) => signal.revision !== impact.revision.id)
-    .map((signal) => ({
-      id: signal.id,
-      signal: signal.signal,
-      classification: "other-revision" as const,
-      exercises: signal.exercisesImpactedSurfaces,
-      basis: [],
-      reason: `observed on revision ${signal.revision}, not on the planned revision`,
-    }));
-  for (const signal of current) {
+  // 1. Product signals first: they can reopen the impact bound. A signal observed on another
+  // revision still counts while it is unresolved and the product it observed is byte-identical.
+  const classifications: SignalClassification[] = [];
+  const infrastructureSignals: ProofSignal[] = [];
+  const record = ({ classification, facts: observed, source }: SignalOutcome) => {
+    const carried = source.revision !== impact.revision.id;
+    if (carried && !isUnresolved(classification)) {
+      classifications.push(
+        otherRevision(source, `observed on revision ${source.revision} and resolved there`),
+      );
+      return;
+    }
+    for (const fact of observed) {
+      facts.add(fact.id, fact.subject, fact.surfaces, fact.refs, fact.detail);
+    }
+    classifications.push(
+      carried
+        ? {
+            ...classification,
+            reason: `carried from revision ${source.revision}, same baseline and runtime tree: ${classification.reason}`,
+          }
+        : classification,
+    );
+  };
+  for (const signal of input.signals) {
+    if (signal.revision !== impact.revision.id && !observedSameProduct(signal, impact)) {
+      classifications.push(
+        otherRevision(
+          signal,
+          `observed on revision ${signal.revision}, not on the planned revision`,
+        ),
+      );
+      continue;
+    }
     const name = signal.signal;
-    if (!isProductSignal(name)) continue;
-    classifications.push(classifyProductSignal(signal, name, impactIds, facts));
+    if (!isProductSignal(name)) {
+      infrastructureSignals.push(signal);
+      continue;
+    }
+    record(classifyProductSignal(signal, name, impact));
   }
 
   // 2. Impact bound, after product signals.
@@ -426,20 +462,19 @@ function planCore(input: NormalizedInput): CoreResult {
 
   // 3. Claims, which need the bound to decide whether an untouched claim is unaffected.
   const claimOutcome = deriveClaimFacts(input, boundResult.bound, facts);
-  for (const claim of claimOutcome.unaffected) {
+  for (const note of [...claimOutcome.unaffected, ...claimOutcome.throughProof]) {
     rationale.push({
       step: "claim",
       subject: null,
       fact: null,
       level: null,
-      detail: `${claim.id}: ${claim.reason}`,
+      detail: `${note.id}: ${note.reason}`,
     });
   }
 
   // 4. Infrastructure signals last, with the final bound.
-  for (const signal of current) {
-    if (isProductSignal(signal.signal)) continue;
-    classifications.push(classifyInfrastructureSignal(signal, input, boundResult.bound, facts));
+  for (const signal of infrastructureSignals) {
+    record(classifyInfrastructureSignal(signal, input, boundResult.bound));
   }
   classifications.sort((left, right) => compareOrdinal(left.id, right.id));
   for (const classification of classifications) {
@@ -534,8 +569,12 @@ function planCore(input: NormalizedInput): CoreResult {
   for (const kind of required.keys()) recommended.delete(kind);
 
   // 7. Status.
-  const blocking = facts.list().filter((fact) => policy.status.block.includes(fact.id));
-  const holding = facts.list().filter((fact) => policy.status.hold.includes(fact.id));
+  const blocking = sortedUnique(
+    facts.list().flatMap((fact) => (policy.status.block.includes(fact.id) ? [fact.id] : [])),
+  );
+  const holding = sortedUnique(
+    facts.list().flatMap((fact) => (policy.status.hold.includes(fact.id) ? [fact.id] : [])),
+  );
   const status: PlanStatus =
     blocking.length > 0 ? "BLOCKED" : holding.length > 0 ? "HOLD" : "PROVE";
   rationale.push({
@@ -546,7 +585,7 @@ function planCore(input: NormalizedInput): CoreResult {
     detail:
       status === "PROVE"
         ? "no blocking or holding fact"
-        : `${status}: ${[...blocking, ...holding].map((fact) => fact.id).join(", ")}`,
+        : `${status}: ${[...blocking, ...holding].join(", ")}`,
   });
 
   return {
@@ -559,15 +598,16 @@ function planCore(input: NormalizedInput): CoreResult {
     factIds: new Set(facts.list().map((fact) => fact.id)),
     signals: classifications,
     unaffectedClaims: claimOutcome.unaffected,
-    claimsTreatedTransitive: claimOutcome.treatedTransitive,
+    claimsOutsideImpact: claimOutcome.outsideImpact,
     required,
     recommended,
     rationale,
   };
 }
 
+/** Facts keyed by id and subject: one observation can concern several subjects. */
 class FactSet {
-  private readonly facts = new Map<FactId, PlannerFact>();
+  private readonly facts = new Map<string, PlannerFact>();
 
   add(
     id: FactId,
@@ -576,14 +616,14 @@ class FactSet {
     refs: Iterable<string>,
     detail: string,
   ): void {
-    const existing = this.facts.get(id);
+    const key = `${id}|${subject}`;
+    const existing = this.facts.get(key);
     if (existing) {
       existing.surfaces = sortedUnique([...existing.surfaces, ...surfaces]);
       existing.refs = sortedUnique([...existing.refs, ...refs]);
-      if (subject === "product") existing.subject = "product";
       return;
     }
-    this.facts.set(id, {
+    this.facts.set(key, {
       id,
       subject,
       surfaces: sortedUnique(surfaces),
@@ -593,15 +633,14 @@ class FactSet {
   }
 
   has(id: FactId): boolean {
-    return this.facts.has(id);
-  }
-
-  get(id: FactId): PlannerFact | undefined {
-    return this.facts.get(id);
+    return [...this.facts.values()].some((fact) => fact.id === id);
   }
 
   list(): PlannerFact[] {
-    return [...this.facts.values()].sort((left, right) => compareOrdinal(left.id, right.id));
+    return [...this.facts.values()].sort(
+      (left, right) =>
+        compareOrdinal(left.id, right.id) || compareOrdinal(left.subject, right.subject),
+    );
   }
 }
 
@@ -613,11 +652,7 @@ function describe(surfaces: ReadonlyArray<Surface>, what: string): string {
   return `${ids(surfaces).join(", ")}: ${what}`;
 }
 
-function deriveSurfaceFacts(
-  impact: ChangeImpact,
-  productRuntimeTouched: boolean,
-  facts: FactSet,
-): void {
+function deriveSurfaceFacts(impact: ChangeImpact, facts: FactSet): void {
   const direct = impact.surfaces.filter((surface) => surface.reach === "direct");
   const directOf = (...roles: SurfaceRole[]) =>
     direct.filter((surface) => roles.includes(surface.role));
@@ -629,11 +664,19 @@ function deriveSurfaceFacts(
   ) => {
     if (surfaces.length > 0) facts.add(id, subject, ids(surfaces), [], describe(surfaces, what));
   };
+  const runtime = impact.surfaces.filter((surface) => PRODUCT_RUNTIME_ROLES.has(surface.role));
+  const directRuntime = runtime.filter((surface) => surface.reach === "direct");
+  const directRuntimeIds = new Set(ids(directRuntime));
 
   add("documentation:changed", "documentation", directOf("documentation"), "documentation changed");
-  if (direct.length > 0 && direct.every((surface) => surface.role === "test")) {
-    add("tests:only", "proof-infrastructure", direct, "only tests changed");
-  }
+  add(
+    "tests:changed",
+    "proof-infrastructure",
+    directOf("test").filter(
+      (surface) => !(surface.exercises?.some((id) => directRuntimeIds.has(id)) ?? false),
+    ),
+    "tests changed that the product evidence does not run",
+  );
   add(
     "oracle:changed",
     "proof-infrastructure",
@@ -697,35 +740,51 @@ function deriveSurfaceFacts(
     "live runtime behavior may change",
   );
 
-  const runtimeSurfaces = impact.surfaces.filter((surface) =>
-    PRODUCT_RUNTIME_ROLES.has(surface.role),
-  );
   for (const boundary of BOUNDARIES) {
-    const withBoundary = runtimeSurfaces.filter((surface) => surface.boundaries.includes(boundary));
-    const subject = (surfaces: ReadonlyArray<Surface>): EvidenceSubject =>
-      surfaces.some((surface) => subjectOfRole(surface.role) === "product")
-        ? "product"
-        : "evaluation";
-    const touched = withBoundary.filter((surface) => surface.reach === "direct");
-    add(`boundary:${boundary}:touched`, subject(touched), touched, `${boundary} boundary changed`);
-    const behavior = withBoundary.filter(
+    const evaluationBoundary = EVALUATION_BOUNDARIES.has(boundary);
+    // Security, admission and decision boundaries keep their weight on a changed gate or oracle.
+    const withBoundary = impact.surfaces.filter(
       (surface) =>
-        surface.behaviorChange !== "none" &&
-        (surface.reach === "direct" || !EVALUATION_BOUNDARIES.has(boundary)),
+        surface.boundaries.includes(boundary) &&
+        (PRODUCT_RUNTIME_ROLES.has(surface.role) ||
+          (SENSITIVE_BOUNDARIES.has(boundary) &&
+            (surface.role === "proof-infrastructure" ||
+              (surface.role === "test" && surface.behaviorChange !== "none")))),
     );
-    add(
+    // Evaluation boundaries call for evaluation evidence, whatever role carries them.
+    const bySubject = (id: FactId, surfaces: ReadonlyArray<Surface>, what: string) => {
+      for (const subject of EVIDENCE_SUBJECTS) {
+        add(
+          id,
+          subject,
+          surfaces.filter(
+            (surface) =>
+              (evaluationBoundary ? "evaluation" : subjectOfRole(surface.role)) === subject,
+          ),
+          what,
+        );
+      }
+    };
+    bySubject(
+      `boundary:${boundary}:touched`,
+      withBoundary.filter((surface) => surface.reach === "direct"),
+      `${boundary} boundary changed`,
+    );
+    bySubject(
       `boundary:${boundary}:behavior`,
-      subject(behavior),
-      behavior,
+      withBoundary.filter(
+        (surface) =>
+          surface.behaviorChange !== "none" && (surface.reach === "direct" || !evaluationBoundary),
+      ),
       `${boundary} behavior may change`,
     );
-    const transitive = withBoundary.filter(
-      (surface) => surface.reach === "transitive" && surface.behaviorChange === "none",
-    );
-    add(
+    bySubject(
       `boundary:${boundary}:transitive`,
-      subject(transitive),
-      transitive,
+      withBoundary.filter(
+        (surface) =>
+          surface.reach === "transitive" &&
+          (surface.behaviorChange === "none" || evaluationBoundary),
+      ),
       `${boundary} boundary reached transitively`,
     );
   }
@@ -751,11 +810,13 @@ function deriveSurfaceFacts(
     ),
     "environment-sensitive behavior may change",
   );
-  if (productRuntimeTouched && impact.reversibility === "costly") {
-    facts.add("reversibility:costly", "product", [], [], "the change is costly to reverse");
+  // Scoped to the runtime surfaces, so that a later proof-only commit keeps the rollback plan.
+  const reversibilityScope = directRuntime.length > 0 ? directRuntime : runtime;
+  if (impact.reversibility === "costly") {
+    add("reversibility:costly", "product", reversibilityScope, "the change is costly to reverse");
   }
-  if (productRuntimeTouched && impact.reversibility === "irreversible") {
-    facts.add("reversibility:irreversible", "product", [], [], "the change is irreversible");
+  if (impact.reversibility === "irreversible") {
+    add("reversibility:irreversible", "product", reversibilityScope, "the change is irreversible");
   }
 }
 
@@ -763,66 +824,169 @@ function isProductSignal(signal: SignalName): signal is ProductSignal {
   return (PRODUCT_SIGNALS as readonly string[]).includes(signal);
 }
 
+interface SignalOutcome {
+  source: ProofSignal;
+  classification: SignalClassification;
+  facts: PlannerFact[];
+}
+
+function observedSameProduct(signal: ProofSignal, impact: ChangeImpact): boolean {
+  return (
+    signal.baseline === impact.revision.baseline &&
+    signal.runtimeTreeDigest !== undefined &&
+    signal.runtimeTreeDigest === impact.revision.runtimeTreeDigest
+  );
+}
+
+/** Evidence about the product, or a failure that may still be about the change. */
+function isUnresolved(classification: SignalClassification): boolean {
+  return (
+    classification.classification === "product" ||
+    (classification.classification === "unattributed" && classification.exercises !== "no")
+  );
+}
+
+function otherRevision(signal: ProofSignal, reason: string): SignalClassification {
+  return {
+    id: signal.id,
+    signal: signal.signal,
+    classification: "other-revision",
+    exercises: signal.exercisesImpactedSurfaces,
+    basis: [],
+    surfaces: signal.surfaces,
+    reason,
+  };
+}
+
+function observedFact(
+  id: FactId,
+  subject: EvidenceSubject,
+  signal: ProofSignal,
+  detail: string,
+): PlannerFact {
+  return { id, subject, surfaces: signal.surfaces, refs: [signal.id], detail };
+}
+
 function classifyProductSignal(
   signal: ProofSignal,
   name: ProductSignal,
-  impactIds: ReadonlySet<string>,
-  facts: FactSet,
-): SignalClassification {
+  impact: ChangeImpact,
+): SignalOutcome {
   const base = {
     id: signal.id,
     signal: name,
     exercises: signal.exercisesImpactedSurfaces,
     basis: [] as AttributionBasis[],
+    surfaces: signal.surfaces,
   };
   if (PRE_EXISTING_CAPABLE.has(name) && signal.attribution.includes("REPRODUCES_ON_BASELINE")) {
     return {
-      ...base,
-      classification: "pre-existing",
-      basis: ["REPRODUCES_ON_BASELINE"],
-      reason: "reproduces on the baseline: a product defect this change did not introduce",
+      source: signal,
+      classification: {
+        ...base,
+        classification: "pre-existing",
+        basis: ["REPRODUCES_ON_BASELINE"],
+        reason: "reproduces on the baseline: a product defect this change did not introduce",
+      },
+      // The reproduction is itself evidence that must exist.
+      facts: [
+        observedFact(
+          "observed:baseline-reproduction",
+          "product",
+          signal,
+          `${name} attributed to the baseline: ${signal.detail}`,
+        ),
+      ],
+    };
+  }
+  const byId = new Map(impact.surfaces.map((surface) => [surface.id, surface]));
+  const declared = signal.surfaces.map((id) => byId.get(id));
+  const allDeclared = declared.length > 0 && declared.every((surface) => surface !== undefined);
+  if (name === "UNPLANNED_IMPACT" && allDeclared) {
+    return {
+      source: signal,
+      classification: {
+        ...base,
+        classification: "absorbed",
+        reason: "the impact already contains every observed surface",
+      },
+      facts: [],
     };
   }
   if (
-    name === "UNPLANNED_IMPACT" &&
-    signal.surfaces.length > 0 &&
-    signal.surfaces.every((surface) => impactIds.has(surface))
+    name === "LIVE_RUNTIME_TOUCHED" &&
+    allDeclared &&
+    declared.every(
+      (surface) =>
+        surface?.runtime === "live" &&
+        (surface.role === "product" || surface.role === "execution-context"),
+    )
   ) {
     return {
-      ...base,
-      classification: "absorbed",
-      reason: "the impact already contains every observed surface",
+      source: signal,
+      classification: {
+        ...base,
+        classification: "absorbed",
+        reason: "the impact already declares every observed surface as live runtime",
+      },
+      facts: [],
     };
   }
-  facts.add(
-    SIGNAL_FACTS[name],
-    "product",
-    signal.surfaces,
-    [signal.id],
-    `${name} observed: ${signal.detail}`,
-  );
-  return { ...base, classification: "product", reason: "new evidence about the product" };
+  return {
+    source: signal,
+    classification: {
+      ...base,
+      classification: "product",
+      reason: "new evidence about the product",
+    },
+    facts: [
+      observedFact(SIGNAL_FACTS[name], "product", signal, `${name} observed: ${signal.detail}`),
+    ],
+  };
 }
 
 function classifyInfrastructureSignal(
   signal: ProofSignal,
   input: NormalizedInput,
   bound: ImpactBound,
-  facts: FactSet,
-): SignalClassification {
-  const impactIds = new Set(input.impact.surfaces.map((surface) => surface.id));
-  const overlapping = signal.surfaces.filter((surface) => impactIds.has(surface));
+): SignalOutcome {
+  const { impact } = input;
+  // Only a changed runtime surface, or a proof surface that exercises one, can make a job fail
+  // because of the change. A changed test that exercises nothing changed stays proof evidence.
+  const runtimeIds = new Set(
+    impact.surfaces
+      .filter((surface) => PRODUCT_RUNTIME_ROLES.has(surface.role))
+      .map((surface) => surface.id),
+  );
+  const exercisingChange = new Set([
+    ...runtimeIds,
+    ...impact.surfaces
+      .filter(
+        (surface) =>
+          (surface.role === "test" || surface.role === "proof-infrastructure") &&
+          (surface.exercises === undefined
+            ? surface.role === "test" && runtimeIds.size > 0
+            : surface.exercises.some((id) => runtimeIds.has(id))),
+      )
+      .map((surface) => surface.id),
+  ]);
+  const overlapping = signal.surfaces.filter((surface) => exercisingChange.has(surface));
   const trustsImpact = bound === "bounded-confident" || bound === "no-product-runtime";
   let exercises: "yes" | "no" | "unknown";
   let note = "";
   if (overlapping.length > 0) {
     exercises = "yes";
     if (signal.exercisesImpactedSurfaces === "no") {
-      note = "; declared outside the impact but its surfaces intersect it";
+      note = "; declared outside the impact but its surfaces exercise the change";
     }
   } else if (signal.exercisesImpactedSurfaces === "no") {
-    exercises = trustsImpact ? "no" : "unknown";
-    if (!trustsImpact) note = "; the impact is not bounded with confidence";
+    if (signal.surfaces.length === 0) {
+      exercises = "unknown";
+      note = "; the failure names no surface to check against the impact";
+    } else {
+      exercises = trustsImpact ? "no" : "unknown";
+      if (!trustsImpact) note = "; the impact is not bounded with confidence";
+    }
   } else {
     exercises = signal.exercisesImpactedSurfaces;
   }
@@ -835,40 +999,61 @@ function classifyInfrastructureSignal(
   } else if (signal.attribution.includes("REPRODUCES_ON_BASELINE")) {
     basis = ["REPRODUCES_ON_BASELINE"];
   }
-  if (basis.length > 0) {
-    facts.add(
-      "observed:infrastructure-failure",
-      "proof-infrastructure",
-      signal.surfaces,
-      [signal.id],
-      `${signal.signal} attributed to the proof infrastructure: ${signal.detail}`,
-    );
-    return {
-      id: signal.id,
-      signal: signal.signal,
-      classification: "proof-infrastructure",
-      exercises,
-      basis,
-      reason: `new evidence about the proof infrastructure (${basis.join(", ")})${note}`,
-    };
-  }
-  facts.add(
-    "observed:unattributed-failure",
-    exercises === "no" ? "proof-infrastructure" : "product",
-    signal.surfaces,
-    [signal.id],
-    `${signal.signal} not attributed: ${signal.detail}`,
-  );
-  return {
+  const base = {
     id: signal.id,
     signal: signal.signal,
-    classification: "unattributed",
     exercises,
-    basis: [],
-    reason:
-      exercises === "no"
-        ? `no admissible attribution basis${note}`
-        : `the failing job may exercise the change; only REPRODUCES_ON_BASELINE can attribute it${note}`,
+    surfaces: signal.surfaces,
+  };
+  if (basis.length > 0) {
+    const facts = [
+      observedFact(
+        "observed:infrastructure-failure",
+        "proof-infrastructure",
+        signal,
+        `${signal.signal} attributed to the proof infrastructure: ${signal.detail}`,
+      ),
+    ];
+    if (basis.every((entry) => entry === "REPRODUCES_ON_BASELINE")) {
+      facts.push(
+        observedFact(
+          "observed:baseline-reproduction",
+          "proof-infrastructure",
+          signal,
+          `${signal.signal} attributed only by a reproduction on the baseline: ${signal.detail}`,
+        ),
+      );
+    }
+    return {
+      source: signal,
+      classification: {
+        ...base,
+        classification: "proof-infrastructure",
+        basis,
+        reason: `new evidence about the proof infrastructure (${basis.join(", ")})${note}`,
+      },
+      facts,
+    };
+  }
+  return {
+    source: signal,
+    classification: {
+      ...base,
+      classification: "unattributed",
+      basis: [],
+      reason:
+        exercises === "no"
+          ? `no admissible attribution basis${note}`
+          : `the failing job may exercise the change; only REPRODUCES_ON_BASELINE can attribute it${note}`,
+    },
+    facts: [
+      observedFact(
+        "observed:unattributed-failure",
+        exercises === "no" ? "proof-infrastructure" : "product",
+        signal,
+        `${signal.signal} not attributed: ${signal.detail}`,
+      ),
+    ],
   };
 }
 
@@ -879,17 +1064,27 @@ function computeBound(
 ): { bound: ImpactBound; reasons: string[] } {
   const { impact, claims } = input;
   const { analysis } = impact;
+  // Facts about the analysis concern the runtime subjects it reaches, otherwise what changed.
+  const analysisSubjects: EvidenceSubject[] = sortedUnique(
+    impact.surfaces
+      .filter((surface) =>
+        productRuntimeTouched
+          ? PRODUCT_RUNTIME_ROLES.has(surface.role)
+          : surface.reach === "direct",
+      )
+      .map((surface) => subjectOfRole(surface.role)),
+  );
+  const addAnalysisFact = (id: FactId, surfaces: Iterable<string>, detail: string) => {
+    for (const subject of analysisSubjects) facts.add(id, subject, surfaces, [], detail);
+  };
+  const highUncertainty = "the impact analysis reports high uncertainty";
+
+  // An incomplete analysis is unbounded whatever it enumerates: the omitted part may be product.
   const unbounded: string[] = [];
   if (facts.has("observed:unknown-dependency"))
     unbounded.push("an unknown dependency was observed");
   if (facts.has("observed:unplanned-impact")) {
     unbounded.push("an impact outside the analysis was observed");
-  }
-  if (!productRuntimeTouched && unbounded.length === 0) {
-    return {
-      bound: "no-product-runtime",
-      reasons: ["no product, execution-context or evaluation surface changed"],
-    };
   }
   if (analysis.completeness === "unknown") unbounded.push("analysis completeness is unknown");
   if (analysis.omittedSurfaceCount > 0) {
@@ -915,100 +1110,155 @@ function computeBound(
     unbounded.push("an unknown touches a live surface or a high or critical claim");
   }
   if (unbounded.length > 0) {
+    // An unbounded impact may reach the product, whatever was enumerated.
     facts.add("impact:unbounded", "product", [], [], `impact not bounded: ${unbounded.join("; ")}`);
-    if (analysis.uncertainty === "high") {
-      facts.add(
-        "uncertainty:high",
-        "product",
-        [],
-        [],
-        "the impact analysis reports high uncertainty",
-      );
-    }
+    if (analysis.uncertainty === "high")
+      facts.add("uncertainty:high", "product", [], [], highUncertainty);
     return { bound: "unbounded", reasons: unbounded };
   }
 
   const uncertain: string[] = [];
+  if (analysis.method === "declared") uncertain.push("the impact is declared, not derived");
+  if (analysis.completeness === "partial") uncertain.push("the analysis is partial");
+  if (analysis.uncertainty !== "low")
+    uncertain.push(`analysis uncertainty is ${analysis.uncertainty}`);
+  if (localized.size > 0) uncertain.push("localized unknowns remain");
+  if (uncertain.length === 0) {
+    return productRuntimeTouched
+      ? { bound: "bounded-confident", reasons: ["static analysis, complete, low uncertainty"] }
+      : {
+          bound: "no-product-runtime",
+          reasons: [
+            "no product, execution-context or evaluation surface changed, per a complete static analysis",
+          ],
+        };
+  }
   if (analysis.method === "declared") {
-    uncertain.push("the impact is declared, not derived");
-    facts.add(
+    addAnalysisFact(
       "impact:declared",
-      "product",
-      [],
       [],
       "the surface list is declared by the caller; surfaces it omits are not bounded",
     );
   }
-  if (analysis.completeness === "partial") uncertain.push("the analysis is partial");
-  if (analysis.uncertainty !== "low")
-    uncertain.push(`analysis uncertainty is ${analysis.uncertainty}`);
   if (localized.size > 0) {
-    uncertain.push("localized unknowns remain");
-    facts.add(
+    addAnalysisFact(
       "impact:localized-unknowns",
-      "product",
       localized,
-      [],
       `unknowns localized to ${[...localized].sort(compareOrdinal).join(", ")}`,
     );
   }
-  if (analysis.uncertainty === "high") {
-    facts.add(
-      "uncertainty:high",
-      "product",
-      [],
-      [],
-      "the impact analysis reports high uncertainty",
-    );
-  }
-  if (uncertain.length > 0) {
-    facts.add(
-      "impact:bounded-uncertain",
-      "product",
-      [],
-      [],
-      `impact bounded with uncertainty: ${uncertain.join("; ")}`,
-    );
-    return { bound: "bounded-uncertain", reasons: uncertain };
-  }
-  return { bound: "bounded-confident", reasons: ["static analysis, complete, low uncertainty"] };
+  if (analysis.uncertainty === "high") addAnalysisFact("uncertainty:high", [], highUncertainty);
+  addAnalysisFact(
+    "impact:bounded-uncertain",
+    [],
+    `impact bounded with uncertainty: ${uncertain.join("; ")}`,
+  );
+  return { bound: "bounded-uncertain", reasons: uncertain };
+}
+
+interface ClaimNote {
+  id: string;
+  reason: string;
 }
 
 function deriveClaimFacts(
   input: NormalizedInput,
   bound: ImpactBound,
   facts: FactSet,
-): { unaffected: { id: string; reason: string }[]; treatedTransitive: string[] } {
-  const reachById = new Map(input.impact.surfaces.map((surface) => [surface.id, surface.reach]));
-  const unaffected: { id: string; reason: string }[] = [];
-  const treatedTransitive: string[] = [];
+): { unaffected: ClaimNote[]; throughProof: ClaimNote[]; outsideImpact: string[] } {
+  const { impact } = input;
+  const runtimeById = new Map(
+    impact.surfaces
+      .filter((surface) => PRODUCT_RUNTIME_ROLES.has(surface.role))
+      .map((surface) => [surface.id, surface]),
+  );
+  // A modified oracle, budget, selection or gate can stop protecting the claims it checks.
+  const changedProof = impact.surfaces.filter(
+    (surface) =>
+      surface.reach === "direct" &&
+      (surface.role === "test" || surface.role === "proof-infrastructure") &&
+      surface.behaviorChange !== "none",
+  );
+  const unaffected: ClaimNote[] = [];
+  const throughProof: ClaimNote[] = [];
+  const outsideImpact: string[] = [];
   const trustsImpact = bound === "bounded-confident" || bound === "no-product-runtime";
   for (const claim of input.claims) {
+    const critical = claim.criticality === "high" || claim.criticality === "critical";
     if (claim.kind === "documentation") {
-      unaffected.push({
-        id: claim.id,
-        reason: "documentation claims are covered by the documentation check",
+      const stale = claim.surfaces.flatMap((id) => {
+        const surface = runtimeById.get(id);
+        return surface && surface.behaviorChange !== "none" ? [id] : [];
       });
-      continue;
-    }
-    const inImpact = claim.surfaces.filter((surface) => reachById.has(surface));
-    let reach: "direct" | "transitive";
-    let surfaces = inImpact;
-    if (inImpact.length === 0) {
-      if (trustsImpact) {
+      if (stale.length > 0) {
+        facts.add(
+          "claim:documentation",
+          "documentation",
+          stale,
+          [claim.id],
+          `documentation claim ${claim.id} describes ${stale.join(", ")}, whose behavior may change`,
+        );
+      } else {
         unaffected.push({
           id: claim.id,
-          reason: "none of its surfaces is in an impact bounded with confidence",
+          reason: "no surface it documents changes behavior within the impact",
         });
+      }
+      continue;
+    }
+    const protectors = changedProof.filter(
+      (surface) =>
+        claim.surfaces.includes(surface.id) ||
+        (surface.exercises?.some((id) => claim.surfaces.includes(id)) ?? false),
+    );
+    if (protectors.length > 0 && critical) {
+      facts.add(
+        `claim:${claim.criticality === "critical" ? "critical" : "high"}:oracle`,
+        "proof-infrastructure",
+        ids(protectors),
+        [claim.id],
+        `claim ${claim.id} (${claim.criticality}) is checked by changed proof surfaces ${ids(protectors).join(", ")}`,
+      );
+    }
+    const inImpact = claim.surfaces.filter((id) => runtimeById.has(id));
+    let reach: "direct" | "transitive";
+    let surfaces: string[];
+    if (inImpact.length > 0) {
+      reach = inImpact.some((id) => runtimeById.get(id)?.reach === "direct")
+        ? "direct"
+        : "transitive";
+      surfaces = inImpact;
+    } else if (trustsImpact) {
+      if (protectors.length > 0) {
+        throughProof.push({
+          id: claim.id,
+          reason: `its runtime surfaces are unchanged; only its proof changed (${ids(protectors).join(", ")})`,
+        });
+      } else {
+        unaffected.push({
+          id: claim.id,
+          reason: "none of its runtime surfaces is in an impact bounded with confidence",
+        });
+      }
+      continue;
+    } else {
+      outsideImpact.push(claim.id);
+      if (bound === "bounded-uncertain" && claim.kind !== "empirical") {
+        // Criticality deepens the proof of what the change reaches; under a bounded but
+        // uncertain impact, a claim outside it earns a recommendation, not a floor.
+        if (critical) {
+          facts.add(
+            "claim:outside-impact",
+            "product",
+            claim.surfaces,
+            [claim.id],
+            `claim ${claim.id} (${claim.criticality}) lies outside an impact bounded with uncertainty`,
+          );
+        }
         continue;
       }
       reach = "transitive";
       surfaces = claim.surfaces;
-      treatedTransitive.push(claim.id);
-    } else {
-      reach = inImpact.some((surface) => reachById.get(surface) === "direct")
-        ? "direct"
-        : "transitive";
     }
     const detail = `claim ${claim.id} (${claim.criticality}, ${claim.scope}, ${claim.kind}) reached ${reach}ly`;
     // An empirical claim is proved by evaluation evidence; its criticality and scope do not
@@ -1023,26 +1273,38 @@ function deriveClaimFacts(
       );
       continue;
     }
-    if (claim.criticality === "high" || claim.criticality === "critical") {
-      facts.add(`claim:${claim.criticality}:${reach}`, "product", surfaces, [claim.id], detail);
-    }
-    if (reach === "direct" && claim.scope !== "local") {
-      facts.add(`claim:scope:${claim.scope}`, "product", surfaces, [claim.id], detail);
+    for (const subject of ["product", "evaluation"] as const) {
+      const scoped = surfaces.filter((id) => {
+        const surface = runtimeById.get(id);
+        return (surface ? subjectOfRole(surface.role) : "product") === subject;
+      });
+      if (scoped.length === 0) continue;
+      if (claim.criticality === "high" || claim.criticality === "critical") {
+        facts.add(`claim:${claim.criticality}:${reach}`, subject, scoped, [claim.id], detail);
+      }
+      if (reach === "direct" && claim.scope !== "local") {
+        facts.add(`claim:scope:${claim.scope}`, subject, scoped, [claim.id], detail);
+      }
     }
   }
-  return { unaffected, treatedTransitive };
+  return { unaffected, throughProof, outsideImpact };
 }
 
+/** Impact surfaces a baseline of `subject` is about: its direct ones and those its facts name. */
 function subjectSurfaces(impact: ChangeImpact, facts: FactSet, subject: EvidenceSubject): string[] {
-  return sortedUnique([
-    ...impact.surfaces
-      .filter((surface) => surface.reach === "direct" && subjectOfRole(surface.role) === subject)
-      .map((surface) => surface.id),
-    ...facts
+  const named = new Set(
+    facts
       .list()
       .filter((fact) => fact.subject === subject)
       .flatMap((fact) => fact.surfaces),
-  ]);
+  );
+  return impact.surfaces
+    .filter(
+      (surface) =>
+        subjectOfRole(surface.role) === subject &&
+        (surface.reach === "direct" || named.has(surface.id)),
+    )
+    .map((surface) => surface.id);
 }
 
 function accumulate(
@@ -1091,6 +1353,7 @@ function materialize(
 /**
  * Worst case of the declared uncertainty over enumerated surfaces: every transitive runtime surface
  * becomes direct, every "no change" becomes "suspected", every unknown coverage becomes untested.
+ * The analysis itself is kept, so the worst case is never more trusting than the actual plan.
  */
 function worstCaseInput(input: NormalizedInput): NormalizedInput {
   return {
@@ -1106,13 +1369,6 @@ function worstCaseInput(input: NormalizedInput): NormalizedInput {
           coverage: surface.coverage === "unknown" ? "untested" : surface.coverage,
         };
       }),
-      analysis: {
-        method: "static-graph",
-        completeness: "complete",
-        uncertainty: "low",
-        unknowns: [],
-        omittedSurfaceCount: 0,
-      },
     },
   };
 }
@@ -1127,10 +1383,9 @@ function partitionCatalog(
 } {
   const selected = new Set([...core.required.keys(), ...core.recommended.keys()]);
   const worstCaseRecommended = new Map<string, Accumulator>();
-  let evaluation: CoreResult = core;
-  let evaluatedAgainst: NotRequiredEvidence["evaluatedAgainst"] = "actual-change";
+  let worst: CoreResult | null = null;
   if (core.bound === "bounded-uncertain") {
-    const worst = planCore(worstCaseInput(input));
+    worst = planCore(worstCaseInput(input));
     for (const source of [worst.required, worst.recommended]) {
       for (const [kind, entry] of source) {
         if (selected.has(kind)) continue;
@@ -1140,23 +1395,38 @@ function partitionCatalog(
       }
     }
     for (const kind of worstCaseRecommended.keys()) selected.add(kind);
-    evaluation = worst;
-    evaluatedAgainst = "worst-case";
   }
+  const evaluatedAgainst: NotRequiredEvidence["evaluatedAgainst"] = worst
+    ? "worst-case"
+    : "actual-change";
+  // Activation values report the stricter of the actual plan and its worst case.
+  const levels = new Map<EvidenceSubject, number>();
+  for (const subject of EVIDENCE_SUBJECTS) {
+    const values = [core.levelBySubject.get(subject), worst?.levelBySubject.get(subject)].filter(
+      (value): value is number => value !== undefined,
+    );
+    if (values.length > 0) levels.set(subject, Math.max(...values));
+  }
+  const unbounded =
+    core.bound === "unbounded"
+      ? `the impact is not bounded (${core.boundReasons.join("; ")})`
+      : worst?.bound === "unbounded"
+        ? `the worst case of the declared uncertainty is not bounded (${worst.boundReasons.join("; ")})`
+        : null;
 
   const notRequired: NotRequiredEvidence[] = [];
   const undetermined: UndeterminedEvidence[] = [];
   for (const spec of input.policy.evidence) {
     if (selected.has(spec.id)) continue;
     const requirement = requirementOf(spec, [], []);
-    if (core.bound === "unbounded") {
+    if (unbounded !== null) {
       undetermined.push({
         requirement,
-        rationale: `Undetermined: the impact is not bounded (${core.boundReasons.join("; ")}), so its absence cannot be justified.`,
+        rationale: `Undetermined: ${unbounded}, so its absence cannot be justified.`,
       });
       continue;
     }
-    const activation = activationOf(spec, input.policy, evaluation);
+    const activation = activationOf(spec, input.policy, levels);
     notRequired.push({
       requirement,
       rationale: notRequiredRationale(spec, activation, core, evaluatedAgainst),
@@ -1176,7 +1446,7 @@ function partitionCatalog(
 function activationOf(
   spec: EvidenceKindSpec,
   policy: AssurancePolicy,
-  evaluation: CoreResult,
+  levels: ReadonlyMap<EvidenceSubject, number>,
 ): ActivationCondition {
   const triggers = policy.triggers
     .flatMap((entry) => [
@@ -1195,7 +1465,7 @@ function activationOf(
     .map((baseline) => ({
       level: baseline.level,
       subjects: spec.subjects.map((subject) => {
-        const level = evaluation.levelBySubject.get(subject);
+        const level = levels.get(subject);
         return { subject, level: level === undefined ? null : levelAt(level) };
       }),
     }));
@@ -1257,6 +1527,14 @@ function computeEscalations(input: NormalizedInput, core: CoreResult): Escalatio
     const next = planCore({ ...input, signals: [...input.signals, synthetic] });
     const classification =
       next.signals.find((entry) => entry.id === synthetic.id)?.classification ?? "product";
+    const label: Record<SignalClassificationName, string> = {
+      product: "Evidence about the product",
+      "proof-infrastructure": "Evidence about the proof infrastructure",
+      unattributed: "Unattributed failure",
+      "pre-existing": "Attributed to the baseline",
+      absorbed: "Absorbed by the declared impact",
+      "other-revision": "Observed on another revision",
+    };
     const addsRequired = [...next.required.keys()]
       .filter((kind) => !core.required.has(kind))
       .sort(compareOrdinal);
@@ -1269,7 +1547,7 @@ function computeEscalations(input: NormalizedInput, core: CoreResult): Escalatio
       resultingLevel: next.level,
       resultingStatus: next.status,
       addsRequired,
-      rationale: `${classification === "proof-infrastructure" ? "Evidence about the proof infrastructure" : classification === "unattributed" ? "Unattributed failure" : "Evidence about the product"}: level ${levelChange}, status ${next.status}${addsRequired.length > 0 ? `, adds ${addsRequired.join(", ")}` : ", adds nothing"}.`,
+      rationale: `${label[classification]}: level ${levelChange}, status ${next.status}${addsRequired.length > 0 ? `, adds ${addsRequired.join(", ")}` : ", adds nothing"}.`,
     };
   };
   for (const signal of PRODUCT_SIGNALS) {
@@ -1340,11 +1618,28 @@ function computeUncertainty(
       mitigatedBy: ["PRODUCTION_PATH_TEST", "TARGETED_CORPUS"],
     });
   }
-  for (const claim of core.claimsTreatedTransitive) {
+  for (const claim of core.claimsOutsideImpact) {
     entries.push({
       id: `claim.${claim}.outside-impact`,
-      statement: `Claim ${claim} references surfaces outside an impact that is not bounded with confidence; it is treated as transitively reached.`,
-      mitigatedBy: [],
+      statement:
+        core.bound === "unbounded"
+          ? `Claim ${claim} references surfaces outside an unbounded impact; it is treated as transitively reached.`
+          : `Claim ${claim} references surfaces outside an impact bounded with uncertainty; a high or critical one earns a recommended invariant check.`,
+      mitigatedBy: core.bound === "unbounded" ? ["INVARIANT_CHECK"] : [],
+    });
+  }
+  const unnamed = impact.surfaces.filter(
+    (surface) =>
+      surface.reach === "direct" &&
+      (surface.role === "test" || surface.role === "proof-infrastructure") &&
+      surface.behaviorChange !== "none" &&
+      surface.exercises === undefined,
+  );
+  if (unnamed.length > 0) {
+    entries.push({
+      id: "proof.exercises-unknown",
+      statement: `Changed proof surfaces ${ids(unnamed).join(", ")} name no exercised surface; only the claims that list them are known to depend on them.`,
+      mitigatedBy: ["GATE_DELTA_REVIEW"],
     });
   }
   if (core.factIds.has("claim:empirical:transitive")) {
@@ -1360,7 +1655,7 @@ function computeUncertainty(
       entries.push({
         id: `signal.${signal.id}.${signal.classification}`,
         statement: `${signal.signal} ${signal.id}: ${signal.reason}.`,
-        mitigatedBy: signal.classification === "unattributed" ? ["FAILURE_ATTRIBUTION"] : [],
+        mitigatedBy: ["FAILURE_ATTRIBUTION"],
       });
     }
   }
