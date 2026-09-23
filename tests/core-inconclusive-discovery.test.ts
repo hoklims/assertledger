@@ -361,8 +361,9 @@ describe("verdicts the inconclusive classification must not change", () => {
   }
 
   it("keeps a candidate invalid when a completed crash reports no exit code", () => {
-    // Shaped like a timeout (no exit code, nothing discovered), but the crash was reported. A run
-    // killed before it writes any report is an INFRA_ERROR instead, and inconclusive.
+    // Shaped like a timeout (no exit code, nothing discovered), but with a valid crash report, which
+    // only node:test can produce. A run without an exit code and a valid report (for the
+    // structured-command adapter, any report but PASS) is an INFRA_ERROR instead, and inconclusive.
     const input = campaign(["candidate-a"]);
     for (const run of input.observations) {
       if (run.candidateId === "candidate-a" && run.worldId === "target-off-by-one") {

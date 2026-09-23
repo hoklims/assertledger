@@ -25,12 +25,12 @@ Once completeness and stability hold, `DISCOVERY` now distinguishes the runs tha
 In the last case the `DISCOVERY` gate is `FAILED` with reason `CANDIDATE_EXECUTION_INCONCLUSIVE`,
 and `REFERENCE`, `NEUTRAL` and `TARGET_STRENGTH` stay `NOT_RUN` with `PREREQUISITE_GATE_FAILED`, as
 after any failed prerequisite. The candidate kills nothing: a red reference or neutral world, or a
-target its other runs killed, is not recorded as a failed gate or a kill, whereas a timeout that
-passes discovery still lets those gates run. Once its attempts are complete and agree, a completed
-run that disproves discovery still makes the candidate `INVALID`, whatever else timed out; missing
-attempts still make it `INCONCLUSIVE` and attempts that disagree `UNSTABLE` first. Inconclusive
-execution still takes precedence over a red reference or neutral world, as it already did for
-timeouts that passed discovery.
+target its other runs killed, is not recorded as a failed gate or a kill, whereas a timeout reported
+with an attributed candidate test, a core input the engine does not produce, still lets those gates
+run. Once its attempts are complete and agree, a completed run that disproves discovery still makes
+the candidate `INVALID`, whatever else timed out; missing attempts still make it `INCONCLUSIVE` and
+attempts that disagree `UNSTABLE` first. Inconclusive execution still takes precedence over a red
+reference or neutral world, as it already did for timeouts that passed discovery.
 
 ## Observable effects
 
@@ -52,11 +52,12 @@ For a campaign where a candidate falls in the last row:
 The core does not look at where those outcomes come from. They include a candidate that hangs on a
 target world and a structured-command adapter that dies without a report, writes a malformed report
 or reports `INFRA_ERROR` itself (each witnessed below), as well as other engine paths such as a run
-killed before it writes its report, a `node:test` run without a valid report, a contradictory
-report, a process that fails to start or a container execution failure. A candidate that makes its
-own run end in `INFRA_ERROR`, for example by forcing a zero exit code despite failing tests, is
-therefore inconclusive rather than invalid. None of them can be selected: only an `ELIGIBLE`
-candidate is, so no `VERIFIED` decision changes.
+that ends without an exit code and without a valid report (for the structured-command adapter, with
+any report but `PASS`), a `node:test` run without a valid report, a contradictory report, a process
+that fails to start or a container execution failure. A candidate that makes its own run end in
+`INFRA_ERROR`, for example by forcing a zero exit code despite failing tests, is therefore
+inconclusive rather than invalid. None of them can be selected: only an `ELIGIBLE` candidate is, so
+no `VERIFIED` decision changes.
 
 ## Replay of existing manifests
 
@@ -89,8 +90,9 @@ change keeps `schemaVersion` and `policyVersion` unchanged:
 
 The cost of this choice: `policyVersion` `1.0.0` no longer names a single decision function, so
 archived manifests of the affected case, including `VERIFIED` ones with an affected neighbour, stop
-replaying; and a candidate can turn its own `REJECTED` into `INCONCLUSIVE` by ending its run in
-`INFRA_ERROR`, never into a selection.
+replaying; and a candidate can turn its own `INVALID` status into `INCONCLUSIVE` by ending its run
+in `INFRA_ERROR`, which can turn the campaign decision from `REJECTED` into `INCONCLUSIVE` (exit
+code 3 instead of 2), never into a selection.
 
 The alternative is a `policyVersion` bump under which `1.0.0` manifests keep replaying with the old
 rule. Choosing it would replace this section and the replay section above.
