@@ -168,9 +168,13 @@ fixed order, after the bound is known:
    level does **not** rise automatically.
 
 An attributed infrastructure failure never changes the level, the status or the evidence required
-on the changed surfaces; it adds `AFFECTED_JOB_RERUN` on the failing job, and
-`FAILURE_ATTRIBUTION` there too when a reproduction on the baseline is its only basis. An unattributed one adds `FAILURE_ATTRIBUTION` on
-the failing job, without widening the product evidence to it.
+on the changed surfaces; it adds `AFFECTED_JOB_RERUN` on the failing job, and `FAILURE_ATTRIBUTION`
+there too when a reproduction on the baseline is its only basis. An unattributed one adds
+`FAILURE_ATTRIBUTION` on the failing job; it widens the product evidence only to a failing job that
+is itself a product surface of the impact, never to a test, a harness or a job outside the impact.
+A proof-infrastructure surface without an `exercises` list is taken not to exercise the change when
+its failure is classified, so an outside-impact attribution declared for it stands under a
+confident bound.
 
 ### Evidence bindings and carry-over
 
@@ -179,9 +183,11 @@ Each kind declares what it stays valid for:
 - `exact-revision`: static checks and revision identity (cheap, re-run on every revision);
 - `surface-content`: valid per scoped surface while that surface, the proof surfaces that exercise
   it (a test without an `exercises` list exercises everything; a proof-infrastructure surface
-  counts where it names the surface), the baseline and, for every kind that is not
-  documentation-only, the runtime tree keep their digests. A gate delta review, for instance, is
-  redone when the code its budget measures changes. Without a scope, it is revision-wide;
+  counts where it names the surface), the baseline and the runtime tree keep their digests. Only
+  documentation-only evidence about a documentation file ignores the runtime tree: a gate delta
+  review is redone when the code its budget measures changes, and a documentation claim scoped to a
+  runtime surface is checked again when the behavior it describes may have changed. Without a
+  scope, it is revision-wide;
 - `runtime-tree`: full suite, full corpus, multi-environment, live shadow, system requalification,
   benchmark and holdout runs: valid while the baseline and runtime tree digest are unchanged.
 
@@ -189,10 +195,12 @@ Each kind declares what it stays valid for:
 is keyed on the kind's semantic digest (id, weight, binding, subjects, verification,
 `semanticsVersion`), never on its wording and never on the whole policy digest. Missing digests, a
 changed baseline (rebase) or a changed runtime tree force re-production of every kind that depends
-on them, and evidence never crosses to another revision on the surfaces that a signal the previous
-plan left unresolved may concern: the surfaces it names and what a named test or proof surface lists
-as exercised, or everything when it names no surface, a surface the previous impact does not know,
-or a proof surface that does not list what it exercises. A failure attributed to the proof
+on them, and evidence never crosses to another revision on the surfaces that a signal unresolved in
+either plan may concern: the surfaces it names and what a named test or proof surface lists as
+exercised, or everything when it names no surface, a surface its plan's impact does not know, an
+execution context, or a proof surface that does not list what it exercises. A signal of the next
+revision counts because it contradicts evidence produced before it. Within one revision, evidence is
+reused as is: the plan of that revision still holds or blocks. A failure attributed to the proof
 infrastructure, or unattributed on a job that a confidently bounded impact places outside the
 change, concerns no product evidence. AssertLedger must still verify that reused evidence exists and
 carries the listed digests.

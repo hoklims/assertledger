@@ -483,6 +483,11 @@ describe("proof planner decisions", () => {
       "INVARIANT_CHECK",
     ]);
     assertExcludes(notRequired(declared), ["FULL_TEST_SUITE"]);
+    assert.ok(declared.explicitlyNotRequired.length > 0);
+    for (const entry of declared.explicitlyNotRequired) {
+      assert.equal(entry.evaluatedAgainst, "worst-case");
+      assert.match(entry.rationale, /worst case/);
+    }
   });
 
   it("E: escalates a live decoder fix and a tactical decision change strongly", () => {
@@ -776,6 +781,31 @@ describe("product evidence versus proof-infrastructure evidence", () => {
     });
     assert.equal(onChangedTest.status, "HOLD");
     assert.deepEqual(withoutAttribution(productRequired(onChangedTest)), productRequired(quiet));
+
+    // A failing job that is itself a product surface of the impact joins the product scope.
+    const withIndex: PlanAssuranceInput = {
+      ...REPLAY_BOUNDED,
+      impact: impact([
+        ...REPLAY_FIX_SURFACES,
+        surface("channel/replay-index", { reach: "transitive" }),
+      ]),
+    };
+    const scoped = (input: PlanAssuranceInput) =>
+      planAssurance(input).requiredEvidence.find((entry) => entry.kind === "TARGETED_REGRESSION")
+        ?.surfaces ?? [];
+    assertExcludes(scoped(withIndex), ["channel/replay-index"]);
+    assertIncludes(
+      scoped({
+        ...withIndex,
+        signals: [
+          signal("idx", "TIMEOUT", {
+            surfaces: ["channel/replay-index"],
+            attribution: ["PASSES_ON_SAME_REVISION"],
+          }),
+        ],
+      }),
+      ["channel/replay-index"],
+    );
   });
 
   it("does not trust an outside-impact attribution when the impact is uncertain", () => {
@@ -2266,13 +2296,25 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
     );
     assertIncludes(kinds(listed.reusable), ["CAUSAL_WITNESS", "DOCUMENTATION_CHECK"]);
 
-    // A harness or a test that does not list what it exercises may exercise anything.
+    // A harness that does not list what it exercises is taken not to exercise the change when its
+    // failure is classified, so a declared outside-impact attribution stands.
+    const harness = surface("ci/harness", { role: "proof-infrastructure", runtime: "build" });
+    const declaredOutside = planAssurance({
+      ...revision(R1, [harness]),
+      signals: [
+        signal("harness", "TIMEOUT", {
+          surfaces: ["ci/harness"],
+          attribution: ["PASSES_ON_SAME_REVISION"],
+        }),
+      ],
+    });
+    assert.equal(declaredOutside.signals[0]?.classification, "proof-infrastructure");
+    assert.equal(declaredOutside.status, "PROVE");
+
+    // Once such a failure is unresolved, a harness or a test that does not list what it
+    // exercises may exercise anything.
     const unlisted = {
-      harness: carryPast(
-        "harness",
-        surface("ci/harness", { role: "proof-infrastructure", runtime: "build" }),
-        { exercisesImpactedSurfaces: "yes" },
-      ),
+      harness: carryPast("harness", harness, { exercisesImpactedSurfaces: "yes" }),
       extra: carryPast("extra", surface("channel/extra.test", { role: "test", runtime: "build" })),
     };
     for (const [id, carry] of Object.entries(unlisted)) {
@@ -2284,6 +2326,84 @@ describe("evidence carry-over across a localized fix and two peripheral timeouts
         id,
       );
     }
+  });
+
+  it("treats an execution context and a signal of the next revision as unresolved too", () => {
+    const lockfile = surface("pnpm-lock.yaml", { role: "execution-context", runtime: "build" });
+    const locked = planAssurance({
+      ...revision(R1, [lockfile]),
+      signals: [signal("lock", "REGRESSION", { surfaces: ["pnpm-lock.yaml"] })],
+    });
+    assert.equal(locked.status, "BLOCKED");
+    // An execution context reaches what static analysis cannot bound.
+    assert.deepEqual(
+      carryOverEvidence(locked, planAssurance(revision(R2, [lockfile]))).reusable,
+      [],
+    );
+
+    // A divergence observed on the next revision voids the earlier corpus run on its surfaces.
+    const diverged = planAssurance({
+      ...revision(R2, []),
+      signals: [
+        signal("div", "CORPUS_DIVERGENCE", { revision: R2, surfaces: ["channel/replay-fold"] }),
+      ],
+    });
+    assert.equal(diverged.status, "PROVE");
+    const carry = carryOverEvidence(planAssurance(revision(R1, [])), diverged);
+    assert.deepEqual(
+      carry.mustProduce.find(
+        (entry) => entry.kind === "TARGETED_CORPUS" && entry.reason.includes("unresolved (div)"),
+      )?.surfaces,
+      ["channel/replay-fold"],
+    );
+    assert.deepEqual(carry.reusable.find((entry) => entry.kind === "TARGETED_CORPUS")?.surfaces, [
+      "channel/replay-safe-keys",
+    ]);
+
+    // Within one revision the evidence is the same evidence; the plan itself stays blocked.
+    const blocked = planAssurance({
+      ...revision(R1, []),
+      signals: [signal("reg", "REGRESSION", { surfaces: ["channel/replay-safe-keys"] })],
+    });
+    assert.deepEqual(carryOverEvidence(blocked, blocked).mustProduce, []);
+  });
+
+  it("re-checks a documentation claim on a runtime surface when the runtime tree changes", () => {
+    const readme = claim("readme-exit-code-table", ["cli/exit-codes"], { kind: "documentation" });
+    const documented = [
+      surface("cli/exit-codes", { behaviorChange: "feature" }),
+      surface("docs/exit-codes.md", { role: "documentation", runtime: "none" }),
+    ];
+    const at = (id: string, tree: string, extra: Surface[] = []) =>
+      planAssurance({
+        impact: impact([...documented, ...extra], {
+          revision: { id, baseline: BASE, runtimeTreeDigest: digest(tree) },
+        }),
+        claims: [readme],
+      });
+    const r1 = at(R1, "tree@1");
+    const docCheck = (entries: ReadonlyArray<{ kind: string; surfaces: string[] }>) =>
+      entries.find((entry) => entry.kind === "DOCUMENTATION_CHECK");
+    assert.deepEqual(docCheck(r1.requiredEvidence)?.surfaces, [
+      "cli/exit-codes",
+      "docs/exit-codes.md",
+    ]);
+    // The documented surface keeps its digest while code it depends on changes.
+    const moved = carryOverEvidence(
+      r1,
+      at(R2, "tree@2", [surface("lib/exit-mapping", { behaviorChange: "fix" })]),
+    );
+    assert.deepEqual(docCheck(moved.mustProduce)?.surfaces, ["cli/exit-codes"]);
+    assert.equal(
+      moved.mustProduce.find((entry) => entry.kind === "DOCUMENTATION_CHECK")?.reason,
+      "runtime tree changed or unknown",
+    );
+    // A documentation file is checked against its own text.
+    assert.deepEqual(docCheck(moved.reusable)?.surfaces, ["docs/exit-codes.md"]);
+    assert.deepEqual(docCheck(carryOverEvidence(r1, at(R2, "tree@1")).reusable)?.surfaces, [
+      "cli/exit-codes",
+      "docs/exit-codes.md",
+    ]);
   });
 
   it("attributes a flake of a repaired ceiling to the proof infrastructure", () => {
@@ -2741,5 +2861,16 @@ describe("proof planner isolation and presentation", () => {
       text,
       /TIMEOUT \(infrastructure-attributed\): Evidence about the proof infrastructure: level stays P3/,
     );
+    // The lines the documentation quotes from this rendering.
+    const lines = text.split("\n");
+    for (const line of [
+      "  - TARGETED_CORPUS (surface-content) [channel/replay-fold, channel/replay-safe-keys] <- boundary:analysis:behavior, boundary:replay:behavior",
+      "  - CORPUS_DIVERGENCE (product): Evidence about the product: level moves P3 -> P4, status PROVE, adds FAILURE_ATTRIBUTION, FULL_CORPUS, INDEPENDENT_REVIEW.",
+      "  - REGRESSION (product): Evidence about the product: level stays P3, status BLOCKED, adds nothing.",
+      "  - TIMEOUT (infrastructure-attributed): Evidence about the proof infrastructure: level stays P3, status PROVE, adds AFFECTED_JOB_RERUN, FAILURE_ATTRIBUTION.",
+      "  - TIMEOUT (infrastructure-unattributed): Unattributed failure: level stays P3, status HOLD, adds FAILURE_ATTRIBUTION.",
+    ]) {
+      assert.ok(lines.includes(line), line);
+    }
   });
 });
