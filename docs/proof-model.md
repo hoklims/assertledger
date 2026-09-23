@@ -55,15 +55,32 @@ Candidate statuses are:
 
 - `ELIGIBLE`: every gate needed by policy passed;
 - `WEAK_ORACLE`: reference and neutral evidence passed, but target strength did not;
-- `INVALID`: discovery, reference, or neutral evidence failed;
+- `INVALID`: a completed run disproved discovery, or reference or neutral evidence failed;
 - `UNSTABLE`: complete attempts produced different normalized outcomes;
 - `INCONCLUSIVE`: required observations were missing or execution produced `TIMEOUT` or
   `INFRA_ERROR`.
 
+When several apply, the first gate that fails decides, and inconclusive execution takes precedence
+over later failures:
+
+1. missing observations make the candidate `INCONCLUSIVE` (`COMPLETENESS`);
+2. diverging attempts make it `UNSTABLE` (`STABILITY`);
+3. a completed run without an attributed candidate test makes it `INVALID`
+   (`CANDIDATE_DISCOVERY_INVALID`);
+4. when only `TIMEOUT` or `INFRA_ERROR` runs lack an attributed candidate test, `DISCOVERY` is
+   not established and the candidate is `INCONCLUSIVE` (`CANDIDATE_EXECUTION_INCONCLUSIVE`): such a
+   run never reached a verdict, so it can neither prove nor disprove discovery;
+5. after discovery, any `TIMEOUT` or `INFRA_ERROR` run makes the candidate `INCONCLUSIVE` before a
+   red reference or neutral world makes it `INVALID`.
+
+See [the migration note](migration-timeout-discovery-inconclusive.md) for the effect on existing
+manifests.
+
 ## Campaign statuses
 
 - `VERIFIED`: at least one eligible candidate was selected.
-- `REJECTED`: evidence was complete and conclusive, but no candidate was eligible.
+- `REJECTED`: evidence was complete and conclusive, but no candidate was eligible. A completed run
+  that disproves discovery is conclusive, even if other runs timed out.
 - `INCONCLUSIVE`: controls were invalid, or at least one candidate was unstable or inconclusive.
 - `ENGINE_ERROR`: the core could not normalize the supplied evidence safely.
 

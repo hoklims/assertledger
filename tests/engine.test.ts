@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { parseEvidenceManifest } from "../src/contracts/index.js";
-import { verifyManifestIntegrity } from "../src/core/index.js";
+import { replayEvidenceManifest, verifyManifestIntegrity } from "../src/core/index.js";
 
 type EngineApi = {
   analyzeRepository(root: string): Promise<any>;
@@ -692,6 +692,131 @@ describe("campaign orchestration", () => {
       true,
     );
   });
+
+  it("classifies a candidate that hangs on the target world as inconclusive, not invalid", async () => {
+    const root = await createFixtureRepository();
+    const request = verificationRequest(root);
+    request.budgets.timeoutMsPerExecution = 3_000;
+    request.candidates = [
+      {
+        id: "hangs-on-bug",
+        files: [
+          {
+            path: "tests/candidates/hangs-on-bug.test.js",
+            content: [
+              'import test from "node:test";',
+              'import assert from "node:assert/strict";',
+              'import { isEven } from "../../src/is-even.js";',
+              'test("two is even", async () => {',
+              "  if (!isEven(2)) await new Promise(() => setInterval(() => {}, 1_000));",
+              "  assert.equal(isEven(2), true);",
+              "});",
+              "",
+            ].join("\n"),
+          },
+        ],
+      },
+    ];
+
+    const manifest = await engine.verifyCampaign(request);
+
+    const runs = (candidateId: string | null) =>
+      manifest.observations.filter(
+        (observation: { candidateId: string | null }) => observation.candidateId === candidateId,
+      );
+    assert.ok(
+      runs(null).every((observation: { outcome: string }) => observation.outcome === "PASS"),
+    );
+    assert.deepEqual(
+      runs("hangs-on-bug").map(
+        (observation: {
+          worldId: string;
+          attempt: number;
+          outcome: string;
+          attributed: boolean;
+        }) => [
+          observation.worldId,
+          observation.attempt,
+          observation.outcome,
+          observation.attributed,
+        ],
+      ),
+      [
+        ["neutral-equivalent-refactor", 1, "PASS", true],
+        ["neutral-equivalent-refactor", 2, "PASS", true],
+        ["reference", 1, "PASS", true],
+        ["reference", 2, "PASS", true],
+        ["target-parity-inversion", 1, "TIMEOUT", false],
+        ["target-parity-inversion", 2, "TIMEOUT", false],
+      ],
+    );
+    const [candidate] = manifest.candidates;
+    assert.equal(candidate.status, "INCONCLUSIVE");
+    assert.deepEqual(candidate.reasonCodes, ["CANDIDATE_EXECUTION_INCONCLUSIVE"]);
+    assert.deepEqual(
+      candidate.gates.find((gate: { name: string }) => gate.name === "DISCOVERY").reasonCodes,
+      ["CANDIDATE_EXECUTION_INCONCLUSIVE"],
+    );
+    assert.equal(manifest.decision.status, "INCONCLUSIVE");
+    assert.deepEqual(manifest.decision.reasonCodes, ["CANDIDATE_EVIDENCE_INCONCLUSIVE"]);
+    assert.equal(replayEvidenceManifest(manifest).valid, true);
+  });
+
+  for (const [variant, onTarget] of [
+    ["dies without a report", "process.exit(1);"],
+    [
+      "reports an infrastructure error itself",
+      'await writeFile(resultPath, JSON.stringify({ protocolVersion: "1.0.0", outcome: "INFRA_ERROR", testsDiscovered: 0, candidateTestsDiscovered: 0, attributed: false })); process.exit(1);',
+    ],
+  ] as const) {
+    it(`classifies a structured command that ${variant} on the target as inconclusive`, async () => {
+      const root = await createFixtureRepository();
+      await writeFile(
+        path.join(root, "runner.mjs"),
+        [
+          'import { readFile, writeFile } from "node:fs/promises";',
+          "const resultPath = process.env.TESTFORGE_RESULT_FILE;",
+          'const candidateFiles = JSON.parse(process.env.TESTFORGE_CANDIDATE_FILES ?? "[]");',
+          'const implementation = await readFile("src/is-even.js", "utf8");',
+          `if (candidateFiles.length > 0 && implementation.includes("% 2 === 1")) { ${onTarget} }`,
+          "await writeFile(resultPath, JSON.stringify({",
+          '  protocolVersion: "1.0.0",',
+          '  outcome: "PASS",',
+          "  testsDiscovered: candidateFiles.length === 0 ? 1 : 2,",
+          "  candidateTestsDiscovered: candidateFiles.length === 0 ? 0 : 1,",
+          "  attributed: candidateFiles.length > 0,",
+          "}));",
+          "process.exitCode = 0;",
+          "",
+        ].join("\n"),
+      );
+      const request = verificationRequest(root);
+      request.candidates = [request.candidates[0] as (typeof request.candidates)[number]];
+      request.adapter = {
+        kind: "testforge-command",
+        executable: process.execPath,
+        arguments: ["runner.mjs"],
+        protocolVersion: "1.0.0",
+      } as any;
+
+      const manifest = await engine.verifyCampaign(request);
+
+      const targetRuns = manifest.observations.filter(
+        (observation: { candidateId: string | null; worldId: string }) =>
+          observation.candidateId !== null && observation.worldId === "target-parity-inversion",
+      );
+      assert.equal(targetRuns.length, 2);
+      assert.ok(
+        targetRuns.every(
+          (observation: { outcome: string; attributed: boolean }) =>
+            observation.outcome === "INFRA_ERROR" && observation.attributed === false,
+        ),
+      );
+      assert.equal(manifest.candidates[0].status, "INCONCLUSIVE");
+      assert.equal(manifest.decision.status, "INCONCLUSIVE");
+      assert.deepEqual(manifest.decision.reasonCodes, ["CANDIDATE_EVIDENCE_INCONCLUSIVE"]);
+    });
+  }
 
   it("never treats candidate syntax failure as a target kill", async () => {
     const root = await createFixtureRepository();
