@@ -148,6 +148,9 @@ const DIGESTS_BEFORE_CHANGE: Record<string, string> = {
     "sha256:a2ea83df33d42acd49f1b751833654f87ffd1ffd505f82e9f88c90e0c3a35d0f",
   "mixed-discovery-failure-INFRA_ERROR":
     "sha256:32a86bba8bb649cd44b7a43996db6238300ffca37c39ddd450c18dba6a77cb0a",
+  "conclusive-ASSERTION_FAILURE":
+    "sha256:cabb7680901e6887027df58a8784031d72b9b6b3d4d0822bca7b1af785ca85f2",
+  "killed-by-signal": "sha256:d0253cf1f5c0f4fcf6a89cc73b69c3bd8c827a9e1067d874ac8e7635805bbe0e",
   "conclusive-COMPILE_FAILURE":
     "sha256:881acf56a31331cd16722cd0941ec82fdee452be82e4448af1f0f0ed77fd26ad",
   "conclusive-COLLECTION_FAILURE":
@@ -333,7 +336,12 @@ describe("verdicts the inconclusive classification must not change", () => {
     });
   }
 
-  for (const outcome of ["COMPILE_FAILURE", "COLLECTION_FAILURE", "PROCESS_CRASH"] as const) {
+  for (const outcome of [
+    "ASSERTION_FAILURE",
+    "COMPILE_FAILURE",
+    "COLLECTION_FAILURE",
+    "PROCESS_CRASH",
+  ] as const) {
     it(`keeps a candidate invalid when a target run ends in unattributed ${outcome}`, () => {
       const input = campaign(["candidate-a"]);
       for (const run of input.observations) {
@@ -350,6 +358,29 @@ describe("verdicts the inconclusive classification must not change", () => {
       assertUnchanged(manifest, `conclusive-${outcome}`);
     });
   }
+
+  it("keeps a candidate invalid when a signal kills a target run before any report", () => {
+    // Engine-shaped like a timeout (no exit code, nothing discovered), but the run completed.
+    const input = campaign(["candidate-a"]);
+    for (const run of input.observations) {
+      if (run.candidateId === "candidate-a" && run.worldId === "target-off-by-one") {
+        Object.assign(run, {
+          outcome: "PROCESS_CRASH",
+          testsDiscovered: 0,
+          candidateTestsDiscovered: 0,
+          attributed: false,
+          exitCode: null,
+        });
+      }
+    }
+
+    const manifest = decideEvidence(input);
+
+    assert.equal(manifest.candidates[0]?.status, "INVALID");
+    assert.deepEqual(manifest.candidates[0]?.reasonCodes, ["CANDIDATE_DISCOVERY_INVALID"]);
+    assert.equal(manifest.decision.status, "REJECTED");
+    assertUnchanged(manifest, "killed-by-signal");
+  });
 
   it("keeps a candidate that discovers no test invalid", () => {
     const input = campaign(["candidate-a"]);
