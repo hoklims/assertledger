@@ -161,7 +161,9 @@ node dist/cli.js setup path/to/your-repository --client codex --write
 
 Utilisez `--client claude-code` pour Claude Code. Sans option de mode, `setup` reste une
 prévisualisation. La commande contrôle toutes les cibles avant sa première écriture ; un conflit
-laisse tous les fichiers gérés inchangés.
+apparu après l’initialisation ne retire que les fichiers créés par cette invocation et restés
+strictement identiques. Si une restauration sûre est impossible, la commande renvoie
+`PARTIAL_FAILURE`, le code 5 et la liste explicite des fichiers non restaurés.
 
 `WOULD_CREATE` signifie qu’une configuration peut être préparée. Vous fournissez encore le test
 candidat et les contrôles. Le [guide d’initialisation](docs/repository-init.md) décrit `init`,

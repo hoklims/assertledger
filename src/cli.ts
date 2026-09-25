@@ -381,9 +381,8 @@ function evidenceContentMap(value: unknown): Map<string, Uint8Array> {
   return new Map(entries);
 }
 
-function decisionExitCode(result: unknown): number {
-  if (!isRecord(result) || !isRecord(result.decision)) return 5;
-  switch (result.decision.status) {
+function decisionStatusExitCode(status: unknown): number {
+  switch (status) {
     case "VERIFIED":
       return 0;
     case "REJECTED":
@@ -393,6 +392,11 @@ function decisionExitCode(result: unknown): number {
     default:
       return 5;
   }
+}
+
+function decisionExitCode(result: unknown): number {
+  if (!isRecord(result) || !isRecord(result.decision)) return 5;
+  return decisionStatusExitCode(result.decision.status);
 }
 
 function profileExitCode(result: unknown): number {
@@ -727,6 +731,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           for (const artifact of result.artifacts) {
             io.writeStdout(`${artifact.state}: ${artifact.path}\n`);
           }
+          if (result.rollback.status !== "NOT_REQUIRED") {
+            io.writeStdout(`Rollback: ${result.rollback.status}\n`);
+            for (const unresolved of result.rollback.unresolved) {
+              io.writeStdout(`Unresolved managed file: ${unresolved}\n`);
+            }
+          }
           for (const limitation of result.limitations) io.writeStdout(`Limit: ${limitation}\n`);
           if (!parsed.write && result.status === "WOULD_CREATE") {
             io.writeStdout("No files changed. Re-run with --write to apply this plan.\n");
@@ -734,6 +744,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         }
         if (result.status === "BLOCKED") return 3;
         if (result.status === "CONFLICT") return 4;
+        if (result.status === "PARTIAL_FAILURE") return 5;
         return 0;
       }
       case "demo": {
@@ -759,13 +770,14 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
             [
               `Demo status: ${result.status}`,
               `Selected candidates: ${result.selectedCandidateIds.join(", ")}`,
+              `Reason codes: ${result.reasonCodes.join(", ")}`,
               `Artifact digest: ${result.artifactDigest}`,
               `Limit: ${result.limitation}`,
               "",
             ].join("\n"),
           );
         }
-        return result.status === "VERIFIED" ? 0 : 3;
+        return decisionStatusExitCode(result.status);
       }
       case "connect": {
         const parsed = parseClientArguments(argv, io.cwd, "connect");

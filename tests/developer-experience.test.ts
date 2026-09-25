@@ -16,6 +16,7 @@ import {
   disconnectClient,
 } from "../src/engine/connection.js";
 import { runFixtureDemo } from "../src/engine/demo.js";
+import { verifyCampaign as executeCampaign } from "../src/engine/index.js";
 import { setupRepository } from "../src/engine/setup.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
@@ -73,6 +74,71 @@ function captureIo(cwd: string): { io: CliIo; stdout(): string; stderr(): string
 }
 
 describe("developer entry points", () => {
+  it("rolls back only byte-identical init files when a connection conflict appears after init", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-race-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(
+      path.join(builtRoot, "integrations", "skill", "SKILL.md"),
+      "---\nname: assertledger\n---\n",
+    );
+    const conflictPath = path.join(root, ".agents", "skills", "assertledger", "SKILL.md");
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      async afterInitApplied() {
+        await mkdir(path.dirname(conflictPath), { recursive: true });
+        await writeFile(conflictPath, "operator-owned race\n");
+      },
+    });
+
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.rollback, {
+      status: "COMPLETE",
+      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      unresolved: [],
+    });
+    assert.equal(await readFile(conflictPath, "utf8"), "operator-owned race\n");
+    for (const managed of ["assertledger.config.json", "assertledger.lock.json"]) {
+      await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
+    }
+  });
+
+  it("reports a partial setup failure instead of deleting an init file changed after creation", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-partial-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(
+      path.join(builtRoot, "integrations", "skill", "SKILL.md"),
+      "---\nname: assertledger\n---\n",
+    );
+    const conflictPath = path.join(root, ".agents", "skills", "assertledger", "SKILL.md");
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      async afterInitApplied() {
+        await writeFile(path.join(root, "assertledger.config.json"), '{"operator":"changed"}\n');
+        await mkdir(path.dirname(conflictPath), { recursive: true });
+        await writeFile(conflictPath, "operator-owned race\n");
+      },
+    });
+
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "PARTIAL",
+      removed: ["assertledger.lock.json"],
+      unresolved: ["assertledger.config.json"],
+    });
+    assert.equal(
+      await readFile(path.join(root, "assertledger.config.json"), "utf8"),
+      '{"operator":"changed"}\n',
+    );
+  });
+
   it("preflights initialization and client conflicts before setup writes any managed file", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-entry-"));
@@ -130,6 +196,76 @@ describe("developer entry points", () => {
     assert.deepEqual(result.selectedCandidateIds, ["strong"]);
     assert.match(result.limitation, /does not prove.*user repository/iu);
     assert.equal(result.temporaryWorkspaceRemoved, true);
+  });
+
+  it("preserves INCONCLUSIVE and ENGINE_ERROR demo decisions instead of relabeling them", async () => {
+    const builtEntry = path.resolve("dist", "cli.js");
+    const inconclusive = await runFixtureDemo(builtEntry, true, {
+      transformRequest(value) {
+        const request = structuredClone(value) as {
+          budgets: { timeoutMsPerExecution: number };
+          policy: { requiredAttempts: number };
+          candidates: Array<{ files: Array<{ content: string }> }>;
+        };
+        request.budgets.timeoutMsPerExecution = 1_000;
+        request.policy.requiredAttempts = 1;
+        request.candidates = [request.candidates[0] as (typeof request.candidates)[number]];
+        const candidate = request.candidates[0];
+        const file = candidate?.files[0];
+        if (candidate === undefined || file === undefined)
+          throw new Error("fixture candidate missing");
+        candidate.files = [{ ...file, content: "while (true) {}\n" }];
+        return request;
+      },
+    });
+    assert.equal(inconclusive.status, "INCONCLUSIVE");
+    assert.deepEqual(inconclusive.selectedCandidateIds, []);
+    assert.deepEqual(inconclusive.reasonCodes, ["CANDIDATE_EVIDENCE_INCONCLUSIVE"]);
+
+    const engineError = await runFixtureDemo(builtEntry, true, {
+      async verifyCampaign(request) {
+        const manifest = (await executeCampaign(request)) as {
+          repositoryDigest: string;
+          evidenceContext: Record<string, unknown>;
+          policy: Record<string, unknown>;
+          worlds: unknown[];
+          candidates: unknown[];
+          observations: unknown[];
+          decision: Record<string, unknown>;
+        };
+        manifest.repositoryDigest = "invalid";
+        manifest.evidenceContext = {
+          engine: { name: "invalid", version: "invalid" },
+          adapter: { name: "invalid", version: "invalid", configuration: {} },
+          execution: {
+            isolation: "invalid",
+            environmentAllowlist: [],
+            budgets: {},
+            candidateRoots: [],
+          },
+          worlds: [],
+        };
+        manifest.policy = {
+          policyVersion: "invalid",
+          requiredAttempts: 1,
+          minimumTargetWeightPermille: 1_000,
+          maximumSelectedCandidates: 0,
+          acceptedTargetOutcomes: [],
+        };
+        manifest.worlds = [];
+        manifest.candidates = [];
+        manifest.observations = [];
+        manifest.decision = {
+          status: "ENGINE_ERROR",
+          selectedCandidateIds: [],
+          reasonCodes: ["EVIDENCE_INPUT_INVALID"],
+        };
+        return manifest;
+      },
+    });
+    assert.equal(engineError.status, "ENGINE_ERROR");
+    assert.deepEqual(engineError.selectedCandidateIds, []);
+    assert.deepEqual(engineError.reasonCodes, ["EVIDENCE_INPUT_INVALID"]);
   });
 
   it("exposes setup preview, setup write, and the bounded demo through the built CLI", async () => {

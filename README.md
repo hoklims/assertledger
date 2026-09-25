@@ -153,7 +153,9 @@ node dist/cli.js setup path/to/your-repository --client codex --write
 
 Use `--client claude-code` for Claude Code. The preview is also the default when neither mode flag
 is present. Setup checks every initialization and connection target before its first managed-file
-write; a conflict leaves all managed files unchanged.
+write. If a connection conflict appears after initialization, setup removes only init files that
+this invocation created and that still match its exact bytes. Anything it cannot safely restore is
+reported as `PARTIAL_FAILURE` with exit code 5 and an explicit unresolved-file list.
 
 `WOULD_CREATE` means a configuration can be planned. You still supply the candidate and controls.
 The [initialization guide](docs/repository-init.md) explains `init`, the configuration and evidence

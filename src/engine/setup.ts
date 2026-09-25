@@ -1,3 +1,4 @@
+import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { RepositoryInitResult } from "../contracts/index.js";
 import { type ClientConnectionResult, connectClient, planClientConnection } from "./connection.js";
@@ -9,8 +10,21 @@ export type RepositorySetupStatus =
   | "CREATED"
   | "UNCHANGED"
   | "BLOCKED"
-  | "CONFLICT";
-export type RepositorySetupArtifactState = "WOULD_CREATE" | "CREATED" | "UNCHANGED" | "CONFLICT";
+  | "CONFLICT"
+  | "PARTIAL_FAILURE";
+export type RepositorySetupArtifactState =
+  | "WOULD_CREATE"
+  | "CREATED"
+  | "UNCHANGED"
+  | "CONFLICT"
+  | "ROLLED_BACK"
+  | "PARTIAL";
+
+export interface RepositorySetupRollback {
+  status: "NOT_REQUIRED" | "COMPLETE" | "PARTIAL";
+  removed: string[];
+  unresolved: string[];
+}
 
 export interface RepositorySetupArtifact {
   owner: "init" | "connection";
@@ -25,7 +39,12 @@ export interface RepositorySetupResult {
   init: RepositoryInitResult;
   connection: ClientConnectionResult;
   artifacts: RepositorySetupArtifact[];
+  rollback: RepositorySetupRollback;
   limitations: string[];
+}
+
+export interface SetupRepositoryDependencies {
+  afterInitApplied?(): Promise<void>;
 }
 
 function initArtifactState(
@@ -36,11 +55,66 @@ function initArtifactState(
   return result.actions.some((action) => action.path === file) ? "WOULD_CREATE" : "UNCHANGED";
 }
 
+async function rollbackCreatedInitFiles(
+  root: string,
+  plan: RepositoryInitResult,
+): Promise<RepositorySetupRollback> {
+  const removed: string[] = [];
+  const unresolved: string[] = [];
+  for (const action of plan.actions) {
+    if (action.kind !== "CREATE") {
+      unresolved.push(action.path);
+      continue;
+    }
+    const plannedFile = plan.files.find((file) => file.path === action.path);
+    if (plannedFile === undefined) {
+      unresolved.push(action.path);
+      continue;
+    }
+    const target = path.join(root, action.path);
+    try {
+      const metadata = await lstat(target);
+      if (
+        !metadata.isFile() ||
+        metadata.isSymbolicLink() ||
+        !(await readFile(target)).equals(Buffer.from(plannedFile.content, "utf8"))
+      ) {
+        unresolved.push(action.path);
+        continue;
+      }
+      await unlink(target);
+      removed.push(action.path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") removed.push(action.path);
+      else unresolved.push(action.path);
+    }
+  }
+  removed.sort((left, right) => left.localeCompare(right));
+  unresolved.sort((left, right) => left.localeCompare(right));
+  return {
+    status: unresolved.length === 0 ? "COMPLETE" : "PARTIAL",
+    removed,
+    unresolved,
+  };
+}
+
+function rollbackArtifactState(
+  artifact: RepositorySetupArtifact,
+  rollback: RepositorySetupRollback,
+): RepositorySetupArtifactState {
+  if (artifact.owner === "connection") return "CONFLICT";
+  const relative = path.basename(artifact.path);
+  if (rollback.removed.includes(relative)) return "ROLLED_BACK";
+  if (rollback.unresolved.includes(relative)) return "PARTIAL";
+  return artifact.state;
+}
+
 export async function setupRepository(
   root: string,
   cliEntry: string,
   client: SetupClient,
   write: boolean,
+  dependencies: SetupRepositoryDependencies = {},
 ): Promise<RepositorySetupResult> {
   const initPlan = await initializeRepository(root, { dryRun: true });
   const connectionPlan = await planClientConnection(root, cliEntry, client);
@@ -70,9 +144,11 @@ export async function setupRepository(
     init: initPlan,
     connection: connectionPlan.result,
     artifacts,
+    rollback: { status: "NOT_REQUIRED" as const, removed: [], unresolved: [] },
     limitations: [
       "Setup configures static initialization and a read-only client connection only.",
       "It does not authorize UNSANDBOXED execution, reload the client, or prove repository behavior.",
+      "Rollback byte checks assume the trusted repository tree stays stable during the operation.",
     ],
   };
   if (initPlan.status === "CONFLICT" || connectionPlan.result.status === "CONFLICT") {
@@ -90,13 +166,36 @@ export async function setupRepository(
       init: appliedInit,
     };
   }
-  const appliedConnection = await connectClient(root, cliEntry, client, true);
-  if (appliedConnection.status === "CONFLICT") {
+  let appliedConnection: ClientConnectionResult;
+  try {
+    await dependencies.afterInitApplied?.();
+    appliedConnection = await connectClient(root, cliEntry, client, true);
+  } catch (error) {
+    const rollback = await rollbackCreatedInitFiles(root, appliedInit);
+    if (rollback.status === "COMPLETE") throw error;
     return {
-      status: "CONFLICT",
+      status: "PARTIAL_FAILURE",
+      ...base,
+      init: appliedInit,
+      artifacts: artifacts.map((artifact) => ({
+        ...artifact,
+        state: rollbackArtifactState(artifact, rollback),
+      })),
+      rollback,
+    };
+  }
+  if (appliedConnection.status === "CONFLICT") {
+    const rollback = await rollbackCreatedInitFiles(root, appliedInit);
+    return {
+      status: rollback.status === "COMPLETE" ? "CONFLICT" : "PARTIAL_FAILURE",
       ...base,
       init: appliedInit,
       connection: appliedConnection,
+      artifacts: artifacts.map((artifact) => ({
+        ...artifact,
+        state: rollbackArtifactState(artifact, rollback),
+      })),
+      rollback,
     };
   }
   const appliedArtifacts = artifacts.map((artifact) => ({

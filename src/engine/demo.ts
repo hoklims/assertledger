@@ -2,15 +2,22 @@ import { cp, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/pr
 import os from "node:os";
 import path from "node:path";
 import { parseEvidenceManifest, parseVerificationRequest } from "../contracts/index.js";
+import type { DecisionStatus } from "../core/index.js";
 import { verifyCampaign } from "./index.js";
 
 export interface FixtureDemoResult {
-  status: "VERIFIED" | "REJECTED";
+  status: DecisionStatus;
   scope: "SHIPPED_FIXTURE_ONLY";
   artifactDigest: string;
   selectedCandidateIds: string[];
+  reasonCodes: string[];
   limitation: string;
   temporaryWorkspaceRemoved: true;
+}
+
+export interface FixtureDemoDependencies {
+  transformRequest?(request: unknown): unknown;
+  verifyCampaign?(request: unknown): Promise<unknown>;
 }
 
 async function packageRoot(requestedCliEntry: string): Promise<string> {
@@ -28,6 +35,7 @@ async function packageRoot(requestedCliEntry: string): Promise<string> {
 export async function runFixtureDemo(
   requestedCliEntry: string,
   allowUnsafeExecution: boolean,
+  dependencies: FixtureDemoDependencies = {},
 ): Promise<FixtureDemoResult> {
   if (!allowUnsafeExecution) throw new Error("UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED");
   const root = await packageRoot(requestedCliEntry);
@@ -40,18 +48,25 @@ export async function runFixtureDemo(
       recursive: true,
       errorOnExist: true,
     });
-    const request = JSON.parse(await readFile(path.join(exampleRoot, "request.json"), "utf8")) as {
+    let request: unknown = JSON.parse(
+      await readFile(path.join(exampleRoot, "request.json"), "utf8"),
+    ) as {
       repository: { root: string };
     };
-    request.repository.root = repository;
+    (request as { repository: { root: string } }).repository.root = repository;
+    request = dependencies.transformRequest?.(request) ?? request;
+    const parsedRequest = parseVerificationRequest(request);
     const requestPath = path.join(temporaryRoot, "request.json");
-    await writeFile(requestPath, `${JSON.stringify(request)}\n`, { flag: "wx" });
-    const manifest = parseEvidenceManifest(await verifyCampaign(parseVerificationRequest(request)));
+    await writeFile(requestPath, `${JSON.stringify(parsedRequest)}\n`, { flag: "wx" });
+    const manifest = parseEvidenceManifest(
+      await (dependencies.verifyCampaign ?? verifyCampaign)(parsedRequest),
+    );
     result = {
-      status: manifest.decision.status === "VERIFIED" ? "VERIFIED" : "REJECTED",
+      status: manifest.decision.status,
       scope: "SHIPPED_FIXTURE_ONLY",
       artifactDigest: manifest.artifactDigest,
       selectedCandidateIds: [...manifest.decision.selectedCandidateIds],
+      reasonCodes: [...manifest.decision.reasonCodes],
       limitation:
         "This demonstration verifies only AssertLedger's shipped disposable fixture; it does not prove any user repository.",
     };

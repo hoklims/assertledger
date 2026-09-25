@@ -21,8 +21,11 @@ assertledger setup . --client claude-code --write --json
 
 `setup` previews when neither `--dry-run` nor `--write` is supplied. It checks every managed init
 and connection target before writing any of them. A blocked initialization or any conflict leaves
-the full managed set unchanged. It preserves the existing exit codes: 3 for blocked readiness, 4
-for conflicts, 5 for unexpected I/O, and 64 for invalid CLI usage.
+the full managed set unchanged during preflight. If a connection conflict appears after init,
+rollback removes only files created by this invocation whose bytes still match the plan. A changed
+or regenerated file is preserved and yields `PARTIAL_FAILURE`, with the unresolved paths in JSON.
+Exit codes are 3 for blocked readiness, 4 for a fully rolled-back conflict, 5 for partial failure or
+unexpected I/O, and 64 for invalid CLI usage.
 
 To confirm the installed engine can run its packaged example, execute:
 
@@ -32,7 +35,8 @@ assertledger demo --allow-unsafe-execution --json
 
 The authorization applies only to a copy of the shipped fixture in a disposable temporary
 directory. The result is explicitly scoped to `SHIPPED_FIXTURE_ONLY`; it is not evidence about the
-user repository and does not change that repository.
+user repository and does not change that repository. Its `status` preserves the exact decision:
+`VERIFIED`, `REJECTED`, `INCONCLUSIVE`, or `ENGINE_ERROR`. Exit codes match `verify`: 0, 2, 3, or 5.
 
 After installing and building AssertLedger, generate a project-local Codex MCP descriptor:
 
