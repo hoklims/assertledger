@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { parseRepositoryInitResult } from "../src/contracts/index.js";
+import { AssertLedger } from "../src/sdk/index.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -195,6 +196,81 @@ describe("MCP 2026 stdio transport", () => {
       );
       await assert.rejects(readFile(path.join(root, "assertledger.lock.json"), "utf8"), /ENOENT/u);
       await assert.rejects(readFile(executionSentinel, "utf8"), /ENOENT/u);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("reports an undeclared link and accepts declared exclusions through the static doctor", {
+    timeout: 15_000,
+  }, async (context) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-mcp-exclude-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "test"));
+    await mkdir(path.join(root, ".local-tools"));
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "fixture",
+        packageManager: "pnpm@11.0.0",
+        scripts: { test: "node --test test/*.test.js" },
+      }),
+    );
+    await writeFile(path.join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(path.join(root, "test", "base.test.js"), "import test from 'node:test';\n");
+    try {
+      await symlink(
+        path.join(root, "test", "base.test.js"),
+        path.join(root, ".local-tools", "linked.test.js"),
+        "file",
+      );
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      if (!["EACCES", "EPERM", "UNKNOWN"].includes(code)) throw error;
+      context.skip(`symlink creation is unavailable: ${code}`);
+      return;
+    }
+    const { client, stderr } = await connectBuilt(root);
+
+    try {
+      const undeclared = await client.callTool({
+        name: "assertledger_doctor",
+        arguments: { root },
+      });
+      assert.equal(undeclared.isError, undefined, stderr.join(""));
+      assert.deepEqual(parseRepositoryInitResult(undeclared.structuredContent).reasonCodes, [
+        "UNSUPPORTED_REPOSITORY_SYMLINK",
+      ]);
+      const declared = await client.callTool({
+        name: "assertledger_doctor",
+        arguments: { root, exclude: [".local-tools"] },
+      });
+      assert.equal(declared.isError, undefined, stderr.join(""));
+      assert.equal(parseRepositoryInitResult(declared.structuredContent).status, "WOULD_CREATE");
+      for (const exclude of [["nested/name"], [""]]) {
+        const invalid = await client.callTool({
+          name: "assertledger_doctor",
+          arguments: { root, exclude },
+        });
+        assert.equal(invalid.isError, undefined, stderr.join(""));
+        assert.deepEqual(parseRepositoryInitResult(invalid.structuredContent).reasonCodes, [
+          "INVALID_REPOSITORY_EXCLUDE",
+        ]);
+      }
+
+      assert.equal(
+        (await new AssertLedger().init(root, { exclude: [".local-tools"] })).status,
+        "CREATED",
+      );
+      const inherited = await client.callTool({ name: "assertledger_doctor", arguments: { root } });
+      assert.equal(parseRepositoryInitResult(inherited.structuredContent).status, "UNCHANGED");
+      const emptied = await client.callTool({
+        name: "assertledger_doctor",
+        arguments: { root, exclude: [] },
+      });
+      assert.deepEqual(parseRepositoryInitResult(emptied.structuredContent).reasonCodes, [
+        "UNSUPPORTED_REPOSITORY_SYMLINK",
+      ]);
     } finally {
       await client.close();
     }

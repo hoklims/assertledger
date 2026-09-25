@@ -37,11 +37,13 @@ execution remains unavailable unless an operator separately starts it with
 `--allow-unsafe-execution`; that mode is explicitly UNSANDBOXED trusted-local.
 
 On a connected read-only server, agents may call `assertledger_doctor` (or the legacy
-`testforge_doctor` alias) with `{ "root": "..." }`. It returns the same static repository
-initialization result as `assertledger doctor . --json`, after enforcing the server's allowed-root
-boundary. The tool writes no configuration and does not execute repository code. It reports
-configuration readiness only; dynamic dependency, reporter, permission and liveness diagnostics
-remain outside this static check.
+`testforge_doctor` alias) with `{ "root": "..." }`, plus optional `"exclude"` entry names that follow
+the `--exclude` rules; an empty array replaces the configured list (see
+[repository initialization](repository-init.md)). It returns the
+same static repository initialization result as `assertledger doctor . --json`, after enforcing the
+server's allowed-root boundary. The tool writes no configuration and does not execute repository
+code. It reports configuration readiness only; dynamic dependency, reporter, permission and liveness
+diagnostics remain outside this static check.
 
 Use the separate [runtime doctor](runtime-doctor.md) after initialization to run controlled probes
 with explicit authorization. [Reason-code explanations](diagnostics.md) remain available without

@@ -14,10 +14,11 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, describe, it, type TestContext } from "node:test";
 import { promisify } from "node:util";
 import { type CliIo, runCli } from "../src/cli.js";
 import {
+  parseRepositoryAnalysis,
   parseRepositoryInitConfig,
   parseRepositoryInitLock,
   parseRepositoryInitResult,
@@ -27,7 +28,7 @@ import {
   repositoryInitResultJsonSchema,
 } from "../src/contracts/index.js";
 import { canonicalize } from "../src/core/index.js";
-import { initializeRepository } from "../src/engine/index.js";
+import { analyzeRepository, initializeRepository } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const temporaryDirectories: string[] = [];
@@ -70,6 +71,18 @@ function capture(root: string) {
     },
   };
   return { io, stdout: () => stdout, stderr: () => stderr };
+}
+
+async function linkOrSkip(context: TestContext, target: string, link: string): Promise<boolean> {
+  try {
+    await symlink(target, link, "file");
+    return true;
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String(error.code) : "";
+    if (!["EACCES", "EPERM", "UNKNOWN"].includes(code)) throw error;
+    context.skip(`symlink creation is unavailable: ${code}`);
+    return false;
+  }
 }
 
 const nodePackage = {
@@ -214,6 +227,187 @@ describe("repository init v1", () => {
     assert.deepEqual(directory.reasonCodes, ["INIT_MANAGED_PATH_UNSAFE"]);
     assert.deepEqual(directory.actions, []);
     assert.deepEqual(directory.files, []);
+  });
+
+  it("keeps undeclared links fail-closed and excludes only operator-declared entry names", async (context) => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+      ".local-tools/readme.txt": "local only\n",
+      "nested/.local-tools/readme.txt": "local only\n",
+    });
+    const baseTest = path.join(root, "test", "base.test.js");
+    if (!(await linkOrSkip(context, baseTest, path.join(root, ".local-tools", "linked.test.js"))))
+      return;
+    await symlink(baseTest, path.join(root, "nested", ".local-tools", "linked.test.js"), "file");
+    const ledger = new AssertLedger();
+
+    const undeclared = await ledger.doctor(root);
+    assert.equal(undeclared.status, "CONFLICT");
+    assert.deepEqual(undeclared.reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+    assert.deepEqual(undeclared.actions, []);
+    assert.deepEqual(undeclared.files, []);
+    await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+
+    const declared = await ledger.doctor(root, { exclude: [".local-tools"] });
+    assert.equal(declared.status, "WOULD_CREATE");
+    const plannedConfig = parseRepositoryInitConfig(
+      JSON.parse(
+        declared.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null",
+      ),
+    );
+    assert.deepEqual(plannedConfig.repository.exclude, [
+      ".git",
+      ".local-tools",
+      ".testforge",
+      "node_modules",
+    ]);
+
+    assert.equal((await ledger.init(root, { exclude: [".local-tools"] })).status, "CREATED");
+    assert.equal((await ledger.doctor(root)).status, "UNCHANGED");
+    const analysis = await ledger.analyze(root);
+    assert.equal(
+      analysis.files.some((file) => file.startsWith(".local-tools/")),
+      false,
+    );
+    const changed = await ledger.doctor(root, { exclude: [".local-tools", "vendor"] });
+    assert.deepEqual(changed.reasonCodes, ["CONFIG_CONFLICT"]);
+    const narrowed = await ledger.doctor(root, { exclude: [] });
+    assert.deepEqual(narrowed.reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+
+    await symlink(baseTest, path.join(root, "test", "linked.test.js"), "file");
+    const inside = await ledger.doctor(root);
+    assert.equal(inside.status, "CONFLICT");
+    assert.deepEqual(inside.reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+    await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+  });
+
+  it("keeps campaign and audit inventories independent of the configured exclusions", async () => {
+    const roots = await Promise.all(
+      ["export const value = 1;\n", "export const value = 2;\n"].map((source) =>
+        fixture(nodePackage, {
+          "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+          "test/base.test.js": "import test from 'node:test';\n",
+          "src/value.js": source,
+        }),
+      ),
+    );
+    const ledger = new AssertLedger();
+    const digests: string[] = [];
+    for (const root of roots) {
+      assert.equal((await ledger.init(root, { exclude: ["src"] })).status, "CREATED");
+      assert.equal((await ledger.analyze(root)).files.includes("src/value.js"), false);
+      const campaignInventory = parseRepositoryAnalysis(await analyzeRepository(root));
+      assert.equal(campaignInventory.files.includes("src/value.js"), true);
+      const audit = await ledger.audit(root, { noGit: true });
+      assert.equal(audit.repositoryDigest, campaignInventory.repositoryDigest);
+      digests.push(campaignInventory.repositoryDigest);
+    }
+    assert.notEqual(digests[0], digests[1]);
+  });
+
+  it("falls back to the default exclusions when the configuration is not valid", async (context) => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+      ".local-tools/readme.txt": "local only\n",
+    });
+    const linked = await linkOrSkip(
+      context,
+      path.join(root, "test", "base.test.js"),
+      path.join(root, ".local-tools", "linked.test.js"),
+    );
+    if (!linked) return;
+    const ledger = new AssertLedger();
+    const planned = await ledger.doctor(root, { exclude: [".local-tools"] });
+    const validContent =
+      planned.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null";
+    const unsorted = JSON.parse(validContent);
+    unsorted.repository.exclude.reverse();
+    const configPath = path.join(root, "assertledger.config.json");
+    for (const content of ["{ not json", JSON.stringify(unsorted)]) {
+      await writeFile(configPath, content);
+      assert.deepEqual((await ledger.doctor(root)).reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+      await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+    }
+
+    const externalRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-external-"));
+    temporaryDirectories.push(externalRoot);
+    const externalConfig = path.join(externalRoot, "assertledger.config.json");
+    await writeFile(externalConfig, validContent);
+    await rm(configPath);
+    await symlink(externalConfig, configPath, "file");
+    assert.deepEqual((await ledger.doctor(root)).reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+  });
+
+  it("refuses declared exclusions that are not one portable entry name", async () => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+    });
+    for (const exclude of [["nested/name"], [".."], ["."], ["C:name"], ["name\\child"], [""]]) {
+      const result = await new AssertLedger().doctor(root, { exclude });
+      assert.equal(result.status, "CONFLICT", JSON.stringify(exclude));
+      assert.deepEqual(result.reasonCodes, ["INVALID_REPOSITORY_EXCLUDE"]);
+      assert.deepEqual(result.actions, []);
+      assert.deepEqual(result.files, []);
+    }
+  });
+
+  it("declares exclusions through the CLI and explains an undeclared link", async (context) => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+      ".local-tools/readme.txt": "local only\n",
+    });
+    const linked = await linkOrSkip(
+      context,
+      path.join(root, "test", "base.test.js"),
+      path.join(root, ".local-tools", "linked.test.js"),
+    );
+    if (!linked) return;
+
+    const refused = capture(root);
+    assert.equal(await runCli(["doctor", "."], refused.io), 4);
+    assert.match(refused.stdout(), /UNSUPPORTED_REPOSITORY_SYMLINK: /u);
+    assert.doesNotMatch(refused.stdout(), /no explanation in the installed catalogue/u);
+
+    const planned = capture(root);
+    assert.equal(
+      await runCli(
+        ["doctor", ".", "--exclude", "vendor", "--exclude", ".local-tools", "--json"],
+        planned.io,
+      ),
+      0,
+    );
+    const plannedResult = parseRepositoryInitResult(JSON.parse(planned.stdout()));
+    assert.equal(plannedResult.status, "WOULD_CREATE");
+    assert.deepEqual(
+      parseRepositoryInitConfig(
+        JSON.parse(
+          plannedResult.files.find((file) => file.path === "assertledger.config.json")?.content ??
+            "null",
+        ),
+      ).repository.exclude,
+      [".git", ".local-tools", ".testforge", "node_modules", "vendor"],
+    );
+
+    const written = capture(root);
+    assert.equal(await runCli(["init", ".", "--exclude", ".local-tools", "--json"], written.io), 0);
+    assert.equal(parseRepositoryInitResult(JSON.parse(written.stdout())).status, "CREATED");
+
+    const inherited = capture(root);
+    assert.equal(await runCli(["doctor", ".", "--json"], inherited.io), 0);
+    assert.equal(parseRepositoryInitResult(JSON.parse(inherited.stdout())).status, "UNCHANGED");
+    assert.equal(await runCli(["analyze", "."], capture(root).io), 0);
+
+    for (const argv of [
+      ["doctor", ".", "--exclude"],
+      ["doctor", ".", "--runtime", "--exclude", ".local-tools"],
+    ]) {
+      const usage = capture(root);
+      assert.equal(await runCli(argv, usage.io), 64, argv.join(" "));
+    }
   });
 
   it("excludes candidate roots from controls, evidence, inference, and change detection", async () => {

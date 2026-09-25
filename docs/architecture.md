@@ -129,7 +129,10 @@ environment and limits; `node:test` probes then run inside the image.
 
 The repository digest covers regular files visited by the analyzer. The analyzer omits `.git`,
 `.testforge`, `node_modules`, and operator-excluded path segments. It rejects any encountered
-symbolic link instead of silently excluding it. Candidate contents and world overlays have separate
+symbolic link instead of silently excluding it. Campaign manifests and benchmark snapshots apply the
+verification request's exclusions when the snapshot is copied; `audit` applies only the defaults.
+Only the public `analyze` entry point also omits the names configured in `assertledger.config.json`,
+so its digest can differ from an audit or manifest digest of the same tree. Candidate contents and world overlays have separate
 digests. Preserve the snapshot and resolved dependency identities for stronger provenance.
 
 `detectedTestFrameworks` remains a sorted string array in repository-analysis v1 so this correction

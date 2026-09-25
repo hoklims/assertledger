@@ -38,7 +38,8 @@ Commands:
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
         (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
          | --allow-unsafe-execution)            Qualify one committed node:test regression
-  doctor [repository] [--json]                Inspect static repository readiness without writing
+  doctor [repository] [--exclude NAME ...] [--json]
+                                               Inspect static repository readiness without writing
   doctor [repository] --runtime --allow-unsafe-execution [--json]
                                                Run controlled trusted-local runtime probes
   connect [repository] --client <codex|claude-code> [--write]
@@ -48,7 +49,7 @@ Commands:
                                                Preview or remove exact AssertLedger-owned artifacts
   analyze [repository]                         Analyze a repository
   init [repository] [--dry-run] [--adapter-config PATH] [--package-manager ID]
-       [--framework ID] [--test-command-json PATH]
+       [--framework ID] [--test-command-json PATH] [--exclude NAME ...]
                                                Detect and write portable initialization files
   audit [repository] [--verification-request PATH] [--emit-verification-request] [--no-git]
                                                Produce a static audit and campaign cost projection
@@ -173,6 +174,13 @@ function optionalFlag(argv: readonly string[], name: string): string | undefined
   if (value === undefined || value.startsWith("--"))
     throw new TypeError(`MISSING_${name.slice(2).toUpperCase().replaceAll("-", "_")}`);
   return value;
+}
+
+/** Every value of a repeatable flag; callers must already have rejected a missing value. */
+function repeatedFlagValues(argv: readonly string[], name: string): string[] {
+  return argv.flatMap((argument, index) =>
+    argument === name && argv[index + 1] !== undefined ? [argv[index + 1] as string] : [],
+  );
 }
 
 interface CheckArguments {
@@ -563,22 +571,33 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.writeStdout(`assertledger ${ASSERTLEDGER_VERSION}\n`);
         return 0;
       case "doctor": {
-        const allowedFlags = new Set(["--json", "--runtime", "--allow-unsafe-execution"]);
-        const rootArguments = argv.slice(1).filter((argument) => !argument.startsWith("-"));
-        const runtime = argv.includes("--runtime");
-        const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
-        if (
-          rootArguments.length > 1 ||
-          [...allowedFlags].some(
-            (flag) => argv.filter((argument) => argument === flag).length > 1,
-          ) ||
-          (allowUnsafeExecution && !runtime) ||
-          argv.slice(1).some((argument) => argument.startsWith("-") && !allowedFlags.has(argument))
-        ) {
+        const booleanFlags = new Set(["--json", "--runtime", "--allow-unsafe-execution"]);
+        const seenFlags = new Set<string>();
+        let rootArgument: string | undefined;
+        let usageError = false;
+        for (let index = 1; index < argv.length && !usageError; index += 1) {
+          const argument = argv[index] ?? "";
+          if (argument === "--exclude") {
+            const value = argv[index + 1];
+            usageError = value === undefined || value.startsWith("--");
+            index += 1;
+          } else if (booleanFlags.has(argument)) {
+            usageError = seenFlags.has(argument);
+            seenFlags.add(argument);
+          } else if (argument.startsWith("-") || rootArgument !== undefined) {
+            usageError = true;
+          } else {
+            rootArgument = argument;
+          }
+        }
+        const runtime = seenFlags.has("--runtime");
+        const allowUnsafeExecution = seenFlags.has("--allow-unsafe-execution");
+        const exclude = repeatedFlagValues(argv, "--exclude");
+        if (usageError || (allowUnsafeExecution && !runtime) || (runtime && exclude.length > 0)) {
           io.writeStderr(USAGE);
           return 64;
         }
-        const root = path.resolve(io.cwd, rootArguments[0] ?? ".");
+        const root = path.resolve(io.cwd, rootArgument ?? ".");
         if (runtime) {
           const runtimeResult = await ledger.doctorRuntime(root, { allowUnsafeExecution });
           if (argv.includes("--json")) {
@@ -606,7 +625,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           }
           return runtimeResult.status === "READY" ? 0 : 3;
         }
-        const result = await ledger.doctor(root);
+        const result = await ledger.doctor(root, exclude.length === 0 ? {} : { exclude });
         if (argv.includes("--json")) {
           writeJson(io, result);
         } else {
@@ -715,6 +734,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           "--package-manager",
           "--framework",
           "--test-command-json",
+          "--exclude",
         ]);
         const booleanFlags = new Set(["--dry-run", "--json"]);
         let rootArgument = ".";
@@ -743,8 +763,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const adapterConfigPath = optionalFlag(argv, "--adapter-config");
         const packageManager = optionalFlag(argv, "--package-manager");
         const framework = optionalFlag(argv, "--framework");
+        const exclude = repeatedFlagValues(argv, "--exclude");
         const result = await ledger.init(root, {
           dryRun: argv.includes("--dry-run"),
+          ...(exclude.length === 0 ? {} : { exclude }),
           ...(adapterConfigPath === undefined ? {} : { adapterConfigPath }),
           ...(packageManager === undefined ? {} : { packageManager }),
           ...(framework === undefined ? {} : { framework }),

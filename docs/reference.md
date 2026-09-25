@@ -310,12 +310,13 @@ caller decide whether the capability exists. The server resolves repository root
 confines them to the server process's current working directory by default. Programmatic operators
 may supply a different `allowedRepositoryRoots` allowlist.
 
-The doctor pair accepts a strict `{ "root": "..." }` input and returns the existing
-`repository-init-result` contract. It is read-only in both the default and operator-enabled server;
+The doctor pair accepts a strict `{ "root": "...", "exclude": ["..."] }` input, where the optional
+`exclude` entry names follow the [repository initialization](repository-init.md) exclusion rules,
+and returns the existing `repository-init-result` contract. It is read-only in both the default and operator-enabled server;
 enabling unsafe execution does not change doctor behavior. Dynamic runtime and client diagnostics
 remain outside this static readiness result.
 
-`doctor_runtime` accepts the same strict root input and returns the separate
+`doctor_runtime` accepts only the strict root input and returns the separate
 [runtime diagnostic contract](runtime-doctor.md). `check` accepts the
 [high-level Git options](git-regression.md), without a permission field, and returns the existing
 evidence manifest. The operator's capability is required for both tools.

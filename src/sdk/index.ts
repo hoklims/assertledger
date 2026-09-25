@@ -192,7 +192,7 @@ export class AssertLedger {
   }
 
   async analyze(root: string): Promise<RepositoryAnalysis> {
-    return parseRepositoryAnalysis(await analyzeRepository(root));
+    return parseRepositoryAnalysis(await analyzeRepository(root, { configuredExcludes: true }));
   }
 
   async audit(root: string, options: RepositoryAuditOptions = {}): Promise<RepositoryAudit> {
@@ -203,8 +203,11 @@ export class AssertLedger {
     return parseRepositoryInitResult(await initializeRepository(root, options));
   }
 
-  async doctor(root: string): Promise<RepositoryInitResult> {
-    return this.init(root, { dryRun: true });
+  async doctor(
+    root: string,
+    options: Pick<RepositoryInitOptions, "exclude"> = {},
+  ): Promise<RepositoryInitResult> {
+    return this.init(root, { ...options, dryRun: true });
   }
 
   async doctorRuntime(root: string, options: RuntimeDoctorOptions): Promise<RuntimeDoctorResult> {

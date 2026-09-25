@@ -27,6 +27,18 @@ describe("versioned diagnostic guidance", () => {
     );
   });
 
+  it("explains the static inventory refusals it can emit", () => {
+    const report = explainReasonCodes([
+      "INVALID_REPOSITORY_EXCLUDE",
+      "UNSUPPORTED_REPOSITORY_SYMLINK",
+    ]);
+    for (const diagnostic of report.diagnostics) {
+      assert.equal(diagnostic.known, true, diagnostic.code);
+      assert.equal(diagnostic.severity, "blocking", diagnostic.code);
+    }
+    assert.match(report.diagnostics[1]?.nextAction ?? "", /--exclude/u);
+  });
+
   it("bounds untrusted input and never interpolates raw logs or credentials into advice", () => {
     const report = explainReasonCodes(["FUTURE_CODE", "FUTURE_CODE"]);
     assert.equal(report.diagnostics.length, 1);
