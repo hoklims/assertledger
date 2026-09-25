@@ -65,35 +65,35 @@ function initArtifactState(
 async function rollbackCreatedInitFiles(
   root: string,
   plan: RepositoryInitResult,
+  ownedPaths: readonly string[],
+  changedUnownedPaths: readonly string[] = [],
 ): Promise<RepositorySetupRollback> {
   const removed: string[] = [];
-  const unresolved: string[] = [];
-  for (const action of plan.actions) {
-    if (action.kind !== "CREATE") {
-      unresolved.push(action.path);
-      continue;
-    }
-    const plannedFile = plan.files.find((file) => file.path === action.path);
+  const unresolved = changedUnownedPaths.map((changedPath) =>
+    path.relative(root, changedPath).split(path.sep).join("/"),
+  );
+  for (const ownedPath of ownedPaths) {
+    const relative = path.relative(root, ownedPath).split(path.sep).join("/");
+    const plannedFile = plan.files.find((file) => file.path === relative);
     if (plannedFile === undefined) {
-      unresolved.push(action.path);
+      unresolved.push(relative);
       continue;
     }
-    const target = path.join(root, action.path);
     try {
-      const metadata = await lstat(target);
+      const metadata = await lstat(ownedPath);
       if (
         !metadata.isFile() ||
         metadata.isSymbolicLink() ||
-        !(await readFile(target)).equals(Buffer.from(plannedFile.content, "utf8"))
+        !(await readFile(ownedPath)).equals(Buffer.from(plannedFile.content, "utf8"))
       ) {
-        unresolved.push(action.path);
+        unresolved.push(relative);
         continue;
       }
-      await unlink(target);
-      removed.push(action.path);
+      await unlink(ownedPath);
+      removed.push(relative);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") removed.push(action.path);
-      else unresolved.push(action.path);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") removed.push(relative);
+      else unresolved.push(relative);
     }
   }
   removed.sort((left, right) => left.localeCompare(right));
@@ -185,7 +185,8 @@ export async function setupRepository(
   try {
     appliedInit = await (dependencies.applyInit?.(root) ?? initializeRepository(root));
   } catch (error) {
-    const initRollback = await rollbackCreatedInitFiles(root, initPlan);
+    const ownedPaths = error instanceof RepositoryInitWriteError ? error.installedPaths : [];
+    const initRollback = await rollbackCreatedInitFiles(root, initPlan, ownedPaths);
     const temporaryArtifact =
       error instanceof RepositoryInitWriteError
         ? {
@@ -250,7 +251,16 @@ export async function setupRepository(
     appliedConnection = await (dependencies.applyConnection?.() ??
       connectClient(root, cliEntry, client, true));
   } catch (error) {
-    const initRollback = await rollbackCreatedInitFiles(root, appliedInit);
+    const initRollback = await rollbackCreatedInitFiles(
+      root,
+      appliedInit,
+      appliedInit.actions
+        .filter((action) => action.kind === "CREATE")
+        .map((action) => path.join(root, action.path)),
+      appliedInit.actions
+        .filter((action) => action.kind !== "CREATE")
+        .map((action) => path.join(root, action.path)),
+    );
     if (!(error instanceof ClientConnectionApplyError)) {
       if (initRollback.status === "COMPLETE") throw error;
       return {
@@ -277,7 +287,16 @@ export async function setupRepository(
     };
   }
   if (appliedConnection.status === "CONFLICT") {
-    const rollback = await rollbackCreatedInitFiles(root, appliedInit);
+    const rollback = await rollbackCreatedInitFiles(
+      root,
+      appliedInit,
+      appliedInit.actions
+        .filter((action) => action.kind === "CREATE")
+        .map((action) => path.join(root, action.path)),
+      appliedInit.actions
+        .filter((action) => action.kind !== "CREATE")
+        .map((action) => path.join(root, action.path)),
+    );
     return {
       status: rollback.status === "COMPLETE" ? "CONFLICT" : "PARTIAL_FAILURE",
       ...base,

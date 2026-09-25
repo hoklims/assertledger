@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   cp,
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -113,6 +114,7 @@ export interface RepositoryInitOptions {
 
 export interface RepositoryInitWriteDependencies {
   writeTemporary?(temporaryPath: string, content: string): Promise<void>;
+  linkTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
   renameTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
   removeTemporary?(temporaryPath: string): Promise<void>;
 }
@@ -121,18 +123,21 @@ export class RepositoryInitWriteError extends Error {
   readonly targetPath: string;
   readonly temporaryPath: string;
   readonly temporaryCleanup: "REMOVED" | "UNRESOLVED";
+  readonly installedPaths: string[];
 
   constructor(
     cause: unknown,
     targetPath: string,
     temporaryPath: string,
     temporaryCleanup: "REMOVED" | "UNRESOLVED",
+    installedPaths: string[],
   ) {
     super("INIT_WRITE_FAILED", { cause });
     this.name = "RepositoryInitWriteError";
     this.targetPath = targetPath;
     this.temporaryPath = temporaryPath;
     this.temporaryCleanup = temporaryCleanup;
+    this.installedPaths = installedPaths;
   }
 }
 
@@ -836,6 +841,8 @@ async function atomicInitWrite(
   root: string,
   relative: string,
   content: string,
+  action: "CREATE" | "REGENERATE",
+  installedPaths: readonly string[],
   dependencies: RepositoryInitWriteDependencies = {},
 ): Promise<void> {
   const target = path.join(root, relative);
@@ -845,11 +852,20 @@ async function atomicInitWrite(
     ((temporaryPath: string, temporaryContent: string) =>
       writeFile(temporaryPath, temporaryContent, { flag: "wx" }));
   const renameTemporary = dependencies.renameTemporary ?? rename;
+  const linkTemporary = dependencies.linkTemporary ?? link;
   const removeTemporary =
     dependencies.removeTemporary ?? ((temporaryPath: string) => rm(temporaryPath, { force: true }));
+  let targetInstalled = false;
   try {
     await writeTemporary(temporary, content);
-    await renameTemporary(temporary, target);
+    if (action === "CREATE") {
+      await linkTemporary(temporary, target);
+      targetInstalled = true;
+      await removeTemporary(temporary);
+    } else {
+      await renameTemporary(temporary, target);
+      targetInstalled = true;
+    }
   } catch (error) {
     let temporaryCleanup: "REMOVED" | "UNRESOLVED" = "REMOVED";
     try {
@@ -857,7 +873,10 @@ async function atomicInitWrite(
     } catch {
       temporaryCleanup = "UNRESOLVED";
     }
-    throw new RepositoryInitWriteError(error, target, temporary, temporaryCleanup);
+    throw new RepositoryInitWriteError(error, target, temporary, temporaryCleanup, [
+      ...installedPaths,
+      ...(targetInstalled ? [target] : []),
+    ]);
   }
 }
 
@@ -1332,10 +1351,19 @@ export async function initializeRepository(
     nextCommands: [{ executable: "assertledger", arguments: ["audit", ".", "--json"] }],
   });
   if (!options.dryRun) {
+    const installedPaths: string[] = [];
     for (const action of actions) {
       const file = plannedFiles.find((candidate) => candidate.path === action.path);
       if (file === undefined) throw new Error("INIT_PLAN_INCONSISTENT");
-      await atomicInitWrite(root, file.path, file.content, writeDependencies);
+      await atomicInitWrite(
+        root,
+        file.path,
+        file.content,
+        action.kind,
+        installedPaths,
+        writeDependencies,
+      );
+      if (action.kind === "CREATE") installedPaths.push(path.join(root, file.path));
     }
   }
   return result;

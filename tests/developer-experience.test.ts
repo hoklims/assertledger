@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -176,9 +176,9 @@ describe("developer entry points", () => {
           setupRoot,
           {},
           {
-            async renameTemporary(temporary) {
+            async linkTemporary(temporary) {
               temporaryPath = temporary;
-              throw new Error("FAULT_INIT_RENAME");
+              throw new Error("FAULT_INIT_PUBLICATION");
             },
             async removeTemporary(temporary) {
               assert.equal(temporary, temporaryPath);
@@ -193,17 +193,62 @@ describe("developer entry points", () => {
     assert.equal(result.status, "PARTIAL_FAILURE");
     assert.deepEqual(result.rollback, {
       status: "PARTIAL",
-      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      removed: [],
       unresolved: [temporaryRelative],
     });
     assert.deepEqual(
       result.artifacts.map((artifact) => artifact.state),
-      ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE", "PARTIAL"],
+      ["WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE", "PARTIAL"],
     );
     assert.equal(await readFile(temporaryPath, "utf8"), config.content);
     for (const managed of ["assertledger.config.json", "assertledger.lock.json"]) {
       await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
     }
+  });
+
+  it("never overwrites a matching init file created during no-overwrite publication", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-init-race-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const plan = await initializeRepository(root, { dryRun: true });
+    const config = plan.files.find((file) => file.path === "assertledger.config.json");
+    assert(config);
+    let temporaryPath = "";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyInit: (setupRoot) =>
+        initializeRepository(
+          setupRoot,
+          {},
+          {
+            async linkTemporary(temporary, target) {
+              temporaryPath = temporary;
+              await writeFile(target, config.content, { flag: "wx" });
+              await link(temporary, target);
+            },
+          },
+        ),
+    });
+
+    const temporaryRelative = path.relative(root, temporaryPath).replaceAll("\\", "/");
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "COMPLETE",
+      removed: [temporaryRelative],
+      unresolved: [],
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.state),
+      ["WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE", "ROLLED_BACK"],
+    );
+    assert.equal(await readFile(path.join(root, config.path), "utf8"), config.content);
+    await assert.rejects(readFile(path.join(root, "assertledger.lock.json"), "utf8"), /ENOENT/u);
+    await assert.rejects(readFile(temporaryPath, "utf8"), /ENOENT/u);
   });
 
   it("reports partial connection bytes and cleanup failures without deleting either file", async () => {
