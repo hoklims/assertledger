@@ -8,6 +8,7 @@ const RESULT_VERSION = "1.0.0";
 const BUN_REVISION = "1.4.2+744846f84";
 const MAX_REPORT_BYTES = 8 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 64 * 1024;
+const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
 const PRELOAD_SOURCE_PATH = fileURLToPath(new URL("./preload.mjs", import.meta.url));
 
 function report(outcome, testsDiscovered = 0, candidateTestsDiscovered = 0, attributed = false) {
@@ -266,7 +267,7 @@ async function runBun(executable, files, eventFile, junitFile, root) {
     child.once("error", () => resolve(null));
     child.once("close", (code) => resolve(code));
   });
-  const plainStderr = stderr.replace(/\x1b\[[0-9;]*m/gu, "");
+  const plainStderr = stderr.replace(ANSI_SGR, "");
   const operationalError =
     plainStderr.includes("Unhandled error between tests") ||
     /(?:^|\r?\n)\s*[1-9][0-9]*\s+errors?\s*(?:\r?\n|$)/u.test(plainStderr);
