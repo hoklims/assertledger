@@ -70,4 +70,30 @@ describe("Bun Inspector event classification", () => {
     assert.equal(generic.outcome, "PROCESS_CRASH");
     assert.equal(generic.attributed, false);
   });
+
+  it("refuses attribution when an expected base file never starts", () => {
+    const candidateOnly = [
+      found[1],
+      { method: "TestReporter.start", params: { id: 2 } },
+      {
+        method: "LifecycleReporter.error",
+        params: {
+          name: "AssertLedgerBunAssertionError",
+          message: "AssertLedger assertSame failed",
+          urls: [helper],
+        },
+      },
+      { method: "TestReporter.end", params: { id: 2, status: "fail" } },
+    ];
+    const result = classifyBunInspectorEvents(
+      candidateOnly,
+      candidates,
+      root,
+      1,
+      false,
+      new Set(["control.test.ts"]),
+    );
+    assert.equal(result.outcome, "INFRA_ERROR");
+    assert.equal(result.attributed, false);
+  });
 });

@@ -18,4 +18,5 @@ export function classifyBunInspectorEvents(
   root: string,
   processExitCode: number | null,
   invalidMessage: boolean,
+  requiredBaseFiles?: ReadonlySet<string>,
 ): BunInspectorResult;

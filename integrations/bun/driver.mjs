@@ -180,6 +180,7 @@ export function classifyBunInspectorEvents(
   root,
   processExitCode,
   invalidMessage,
+  requiredBaseFiles,
 ) {
   if (invalidMessage) return infrastructureFailure("INVALID_INSPECTOR_MESSAGE");
   const found = [];
@@ -241,6 +242,15 @@ export function classifyBunInspectorEvents(
   }
   if ([...started].some((id) => !foundById.has(id))) {
     return infrastructureFailure("START_WITHOUT_DISCOVERY");
+  }
+  if (requiredBaseFiles !== undefined) {
+    const startedFiles = new Set([...started].map((id) => foundById.get(id)));
+    if ([...requiredBaseFiles].some((file) => !startedFiles.has(file))) {
+      return infrastructureFailure("BASE_TEST_FILE_NOT_STARTED");
+    }
+    if (found.some((item) => !requiredBaseFiles.has(item.file) && !candidateFiles.has(item.file))) {
+      return infrastructureFailure("UNEXPECTED_TEST_FILE");
+    }
   }
   const candidateStarted = [...started].filter((id) =>
     candidateFiles.has(foundById.get(id)),
@@ -334,6 +344,7 @@ async function main() {
     throw new Error("INVALID_PATH");
   }
   const candidateFiles = new Set(normalizedCandidates);
+  const baseFiles = new Set(normalizedBaseTests);
   const normalizedTests = [...normalizedBaseTests, ...normalizedCandidates];
   if (
     new Set(normalizedTests).size !== normalizedTests.length ||
@@ -345,16 +356,16 @@ async function main() {
   await installHelper(
     await import("node:fs/promises").then(({ readFile }) => readFile(helperSourcePath, "utf8")),
   );
-
   const events = { messages: [], invalidMessage: false };
+  const exactTestPath = (file) => `./${file.replaceAll(path.sep, "/")}`;
   const child = spawn(
     bunExecutable,
     [
       "--inspect-wait=ws://127.0.0.1:0",
       "test",
       "--max-concurrency=1",
-      ...testFiles,
-      ...parsedCandidates,
+      ...testFiles.map(exactTestPath),
+      ...parsedCandidates.map(exactTestPath),
     ],
     { cwd: process.cwd(), env: process.env, shell: false, stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -402,6 +413,7 @@ async function main() {
     process.cwd(),
     exitCode,
     events.invalidMessage,
+    baseFiles,
   );
   await writeFile(resultFile, `${JSON.stringify(result)}\n`, { flag: "wx" });
   process.exitCode = result.outcome === "PASS" ? 0 : 1;

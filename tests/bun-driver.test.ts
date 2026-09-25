@@ -23,11 +23,15 @@ async function execute(
   candidateSource: string,
   controlSource = 'import { test } from "bun:test";\ntest("control", () => {});\n',
   candidateFiles = ["candidate.test.mjs"],
+  extraControlSource?: string,
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-driver-test-"));
   try {
     await writeFile(path.join(root, "control.test.mjs"), controlSource);
     await writeFile(path.join(root, "candidate.test.mjs"), candidateSource);
+    if (extraControlSource !== undefined) {
+      await writeFile(path.join(root, "prefix-control.test.mjs"), extraControlSource);
+    }
     const resultPath = path.join(root, "result.json");
     const child = spawn(process.execPath, [driver, bun, helper, "control.test.mjs"], {
       cwd: root,
@@ -54,10 +58,21 @@ async function execute(
 }
 
 describe("Bun Inspector structured-command driver", () => {
+  it("runs exact base paths instead of similarly named tests", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; test("candidate", () => {});\n',
+      'import { test } from "bun:test"; test("control", () => {});\n',
+      ["candidate.test.mjs"],
+      'import { test } from "bun:test"; test("decoy", () => { throw new Error("wrong file"); });\n',
+    );
+    assert.equal(observation.result.outcome, "PASS", observation.stderr);
+    assert.equal(observation.result.testsDiscovered, 2);
+  });
+
   it("reports a candidate file with no registered test as NO_TEST_DISCOVERED", async () => {
     const observation = await execute("export const value = 1;\n");
     assert.equal(observation.exitCode, 1, observation.stderr);
-    assert.equal(observation.result.outcome, "NO_TEST_DISCOVERED");
+    assert.equal(observation.result.outcome, "NO_TEST_DISCOVERED", observation.stderr);
     assert.equal(observation.result.candidateTestsDiscovered, 0);
     assert.equal(observation.result.attributed, false);
   });
@@ -105,7 +120,7 @@ describe("Bun Inspector structured-command driver", () => {
       'import { test } from "bun:test";\ntest("candidate", () => { throw new Error("boom"); });\n',
     );
     assert.equal(observation.exitCode, 1, observation.stderr);
-    assert.equal(observation.result.outcome, "PROCESS_CRASH");
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
     assert.equal(observation.result.attributed, false);
   });
 
@@ -114,7 +129,7 @@ describe("Bun Inspector structured-command driver", () => {
       'import { test } from "bun:test";\nimport { assertSame } from "assertledger/bun";\nfunction explode() { throw new Error("operand"); }\ntest("candidate", () => assertSame(explode(), 2));\n',
     );
     assert.equal(observation.exitCode, 1, observation.stderr);
-    assert.equal(observation.result.outcome, "PROCESS_CRASH");
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
     assert.equal(observation.result.attributed, false);
   });
 
@@ -124,7 +139,7 @@ describe("Bun Inspector structured-command driver", () => {
       'import { test } from "bun:test";\ntest("control", () => { throw new Error("control"); });\n',
     );
     assert.equal(observation.exitCode, 1, observation.stderr);
-    assert.equal(observation.result.outcome, "PROCESS_CRASH");
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
     assert.equal(observation.result.attributed, false);
   });
 
