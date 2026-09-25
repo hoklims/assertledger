@@ -773,6 +773,11 @@ describe("developer entry points", () => {
 
     const conflict = await setupRepository(root, builtEntry, "codex", true);
     assert.equal(conflict.status, "CONFLICT");
+    assert.deepEqual(conflict.reasonCodes, ["CONNECTION_CONTENT_CONFLICT"]);
+    assert.deepEqual(conflict.diagnosticPaths, [conflictPath]);
+    assert.deepEqual(conflict.nextActions, [
+      "Inspect and resolve conflicting client artifact contents, then rerun setup.",
+    ]);
     assert.equal(await readFile(conflictPath, "utf8"), "operator-owned\n");
     for (const managed of [
       "assertledger.config.json",
@@ -781,6 +786,21 @@ describe("developer entry points", () => {
     ]) {
       await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
     }
+
+    const plainConflict = captureIo(root);
+    assert.equal(
+      await runCli(["setup", root, "--client", "codex", "--dry-run"], plainConflict.io, {
+        setupEntry: builtEntry,
+      }),
+      4,
+    );
+    assert.equal(plainConflict.stderr(), "");
+    assert.match(plainConflict.stdout(), /^Reason code: CONNECTION_CONTENT_CONFLICT$/mu);
+    assert.ok(plainConflict.stdout().includes(`Diagnostic path: ${conflictPath}\n`));
+    assert.match(
+      plainConflict.stdout(),
+      /^Next action: Inspect and resolve conflicting client artifact contents, then rerun setup\.$/mu,
+    );
 
     await rm(conflictPath);
     const preview = await setupRepository(root, builtEntry, "codex", false);
@@ -824,6 +844,56 @@ describe("developer entry points", () => {
       capture.stdout(),
       /^Next action: Resolve the repository initialization reason codes, then rerun setup\.$/mu,
     );
+  });
+
+  it("keeps source build refusal and unexpected setup errors typed in JSON", async () => {
+    const root = await fixtureRepository();
+    const sourceCapture = captureIo(root);
+    const sourceExit = await runCli(
+      ["setup", root, "--client", "codex", "--dry-run", "--json"],
+      sourceCapture.io,
+    );
+    const sourceReport = JSON.parse(sourceCapture.stdout()) as {
+      status: string;
+      code: string;
+      reasonCodes: string[];
+      rollback: { status: string };
+      nextActions: string[];
+    };
+    assert.equal(sourceExit, 3);
+    assert.equal(sourceCapture.stderr(), "");
+    assert.equal(sourceReport.status, "BLOCKED");
+    assert.equal(sourceReport.code, "SETUP_BUILD_REQUIRED");
+    assert.deepEqual(sourceReport.reasonCodes, ["SETUP_BUILD_REQUIRED"]);
+    assert.equal(sourceReport.rollback.status, "NOT_REQUIRED");
+    assert.deepEqual(sourceReport.nextActions, [
+      "Run `pnpm build`, invoke the generated dist/cli.js, then rerun setup.",
+    ]);
+
+    const failureCapture = captureIo(root);
+    const failureExit = await runCli(
+      ["setup", root, "--client", "codex", "--write", "--json"],
+      failureCapture.io,
+      {
+        setupEntry: path.resolve("dist", "cli.js"),
+        async setupRepository() {
+          throw new Error("SENSITIVE_UNEXPECTED_SETUP_DETAIL");
+        },
+      },
+    );
+    const failureReport = JSON.parse(failureCapture.stdout()) as {
+      status: string;
+      code: string;
+      reasonCodes: string[];
+      rollback: { status: string };
+    };
+    assert.equal(failureExit, 5);
+    assert.equal(failureCapture.stderr(), "");
+    assert.equal(failureReport.status, "PARTIAL_FAILURE");
+    assert.equal(failureReport.code, "SETUP_UNEXPECTED_FAILURE");
+    assert.deepEqual(failureReport.reasonCodes, ["SETUP_UNEXPECTED_FAILURE"]);
+    assert.equal(failureReport.rollback.status, "UNKNOWN");
+    assert.doesNotMatch(failureCapture.stdout(), /SENSITIVE_UNEXPECTED_SETUP_DETAIL/u);
   });
 
   it("returns a structured JSON conflict for an invalid setup repository root", async () => {

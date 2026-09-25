@@ -314,9 +314,12 @@ export async function setupRepository(
     ...(initPlanReasonCodes.length === 0
       ? []
       : ["Resolve the repository initialization reason codes, then rerun setup."]),
-    ...(connectionPlanReasonCodes === undefined
-      ? []
-      : ["Replace unsafe client target paths with regular local paths, then rerun setup."]),
+    ...(connectionPlanReasonCodes?.includes("CONNECTION_TARGET_PATH_UNSAFE")
+      ? ["Replace unsafe client target paths with regular local paths, then rerun setup."]
+      : []),
+    ...(connectionPlanReasonCodes?.includes("CONNECTION_CONTENT_CONFLICT")
+      ? ["Inspect and resolve conflicting client artifact contents, then rerun setup."]
+      : []),
   ];
   const diagnosticPaths = [
     ...(initPlanReasonCodes.length === 0 ? [] : [root]),

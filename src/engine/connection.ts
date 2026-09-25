@@ -475,11 +475,14 @@ export async function planClientConnection(
   const artifacts = clientArtifacts(client, root, cliEntry, await packagedSkill(cliEntry));
   const states: ClientConnectionArtifactState[] = [];
   const unsafePaths: string[] = [];
+  const contentConflictPaths: string[] = [];
   for (const artifact of artifacts) {
     if (artifact.path === null) continue;
     try {
       await validateParentPath(root, artifact.path, "CONNECT_CONFIG_PATH_UNSAFE");
-      states.push(await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE"));
+      const state = await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE");
+      states.push(state);
+      if (state === "CONFLICT") contentConflictPaths.push(artifact.path);
     } catch (error) {
       if (!(error instanceof Error) || error.message !== "CONNECT_CONFIG_PATH_UNSAFE") throw error;
       states.push("CONFLICT");
@@ -493,11 +496,16 @@ export async function planClientConnection(
       artifacts,
     },
     states,
-    ...(unsafePaths.length === 0
+    ...(unsafePaths.length === 0 && contentConflictPaths.length === 0
       ? {}
       : {
-          reasonCodes: ["CONNECTION_TARGET_PATH_UNSAFE"],
-          diagnosticPaths: unsafePaths.sort((left, right) => left.localeCompare(right)),
+          reasonCodes: [
+            ...(unsafePaths.length === 0 ? [] : ["CONNECTION_TARGET_PATH_UNSAFE"]),
+            ...(contentConflictPaths.length === 0 ? [] : ["CONNECTION_CONTENT_CONFLICT"]),
+          ],
+          diagnosticPaths: [...unsafePaths, ...contentConflictPaths].sort((left, right) =>
+            left.localeCompare(right),
+          ),
         }),
   };
 }

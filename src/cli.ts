@@ -13,7 +13,7 @@ import {
   type GitRegressionV2Options,
   renderGitRegressionSummary,
 } from "./engine/git-regression.js";
-import { type SetupClient, setupRepository } from "./engine/setup.js";
+import { type RepositorySetupResult, type SetupClient, setupRepository } from "./engine/setup.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -217,6 +217,86 @@ interface SetupArguments {
   client: SetupClient;
   write: boolean;
   json: boolean;
+}
+
+interface SetupCommandFailure {
+  status: "BLOCKED" | "PARTIAL_FAILURE";
+  code: string;
+  client?: SetupClient;
+  mode?: "dry-run" | "write";
+  artifacts: [];
+  rollback: { status: "NOT_REQUIRED" | "UNKNOWN"; removed: []; unresolved: [] };
+  reasonCodes: string[];
+  diagnosticPaths: string[];
+  nextActions: string[];
+  limitations: string[];
+}
+
+function setupCommandFailure(
+  status: SetupCommandFailure["status"],
+  code: string,
+  nextAction: string,
+  rollbackStatus: SetupCommandFailure["rollback"]["status"],
+  options: {
+    client?: SetupClient;
+    mode?: "dry-run" | "write";
+    diagnosticPaths?: string[];
+  } = {},
+): SetupCommandFailure {
+  return {
+    status,
+    code,
+    ...(options.client === undefined ? {} : { client: options.client }),
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
+    artifacts: [],
+    rollback: { status: rollbackStatus, removed: [], unresolved: [] },
+    reasonCodes: [code],
+    diagnosticPaths: options.diagnosticPaths ?? [],
+    nextActions: [nextAction],
+    limitations: [],
+  };
+}
+
+function writeSetupCommandReport(
+  io: CliIo,
+  report: RepositorySetupResult | SetupCommandFailure,
+  json: boolean,
+): void {
+  if (json) {
+    writeJson(io, report);
+    return;
+  }
+  io.writeStdout(`Setup status: ${report.status}\n`);
+  for (const artifact of report.artifacts) io.writeStdout(`${artifact.state}: ${artifact.path}\n`);
+  if (report.rollback.status !== "NOT_REQUIRED") {
+    io.writeStdout(`Rollback: ${report.rollback.status}\n`);
+    for (const unresolved of report.rollback.unresolved) {
+      io.writeStdout(`Unresolved managed file: ${unresolved}\n`);
+    }
+  }
+  const nestedReasonCodes = "init" in report ? report.init.reasonCodes : [];
+  for (const reasonCode of report.reasonCodes ?? nestedReasonCodes) {
+    io.writeStdout(`Reason code: ${reasonCode}\n`);
+  }
+  for (const diagnosticPath of report.diagnosticPaths ?? []) {
+    io.writeStdout(`Diagnostic path: ${diagnosticPath}\n`);
+  }
+  for (const nextAction of report.nextActions ?? []) {
+    io.writeStdout(`Next action: ${nextAction}\n`);
+  }
+  for (const limitation of report.limitations) io.writeStdout(`Limit: ${limitation}\n`);
+  if ("init" in report && report.mode === "dry-run" && report.status === "WOULD_CREATE") {
+    io.writeStdout("No files changed. Re-run with --write to apply this plan.\n");
+  }
+}
+
+function setupCommandExitCode(
+  status: RepositorySetupResult["status"] | SetupCommandFailure["status"],
+): number {
+  if (status === "BLOCKED") return 3;
+  if (status === "CONFLICT") return 4;
+  if (status === "PARTIAL_FAILURE") return 5;
+  return 0;
 }
 
 function parseSetupArguments(argv: readonly string[], cwd: string): SetupArguments | undefined {
@@ -717,7 +797,18 @@ export async function runCli(
       case "setup": {
         const parsed = parseSetupArguments(argv, io.cwd);
         if (parsed === undefined) {
-          io.writeStderr(USAGE);
+          if (argv.includes("--json")) {
+            writeSetupCommandReport(
+              io,
+              setupCommandFailure(
+                "BLOCKED",
+                "SETUP_ARGUMENT_INVALID",
+                "Correct the setup arguments and rerun setup.",
+                "NOT_REQUIRED",
+              ),
+              true,
+            );
+          } else io.writeStderr(USAGE);
           return 64;
         }
         const currentEntry = dependencies.setupEntry ?? fileURLToPath(import.meta.url);
@@ -725,45 +816,51 @@ export async function runCli(
           path.basename(currentEntry) !== "cli.js" ||
           path.basename(path.dirname(currentEntry)) !== "dist"
         ) {
-          io.writeStderr("SETUP_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
+          const expectedEntry = path.join(
+            path.dirname(path.dirname(currentEntry)),
+            "dist",
+            "cli.js",
+          );
+          const failure = setupCommandFailure(
+            "BLOCKED",
+            "SETUP_BUILD_REQUIRED",
+            "Run `pnpm build`, invoke the generated dist/cli.js, then rerun setup.",
+            "NOT_REQUIRED",
+            {
+              client: parsed.client,
+              mode: parsed.write ? "write" : "dry-run",
+              diagnosticPaths: [expectedEntry],
+            },
+          );
+          if (parsed.json) writeSetupCommandReport(io, failure, true);
+          else io.writeStderr("SETUP_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
           return 3;
         }
-        const result = await (dependencies.setupRepository ?? setupRepository)(
-          parsed.root,
-          currentEntry,
-          parsed.client,
-          parsed.write,
-        );
-        if (parsed.json) writeJson(io, result);
-        else {
-          io.writeStdout(`Setup status: ${result.status}\n`);
-          for (const artifact of result.artifacts) {
-            io.writeStdout(`${artifact.state}: ${artifact.path}\n`);
-          }
-          if (result.rollback.status !== "NOT_REQUIRED") {
-            io.writeStdout(`Rollback: ${result.rollback.status}\n`);
-            for (const unresolved of result.rollback.unresolved) {
-              io.writeStdout(`Unresolved managed file: ${unresolved}\n`);
-            }
-          }
-          for (const reasonCode of result.reasonCodes ?? result.init.reasonCodes) {
-            io.writeStdout(`Reason code: ${reasonCode}\n`);
-          }
-          for (const diagnosticPath of result.diagnosticPaths ?? []) {
-            io.writeStdout(`Diagnostic path: ${diagnosticPath}\n`);
-          }
-          for (const nextAction of result.nextActions ?? []) {
-            io.writeStdout(`Next action: ${nextAction}\n`);
-          }
-          for (const limitation of result.limitations) io.writeStdout(`Limit: ${limitation}\n`);
-          if (!parsed.write && result.status === "WOULD_CREATE") {
-            io.writeStdout("No files changed. Re-run with --write to apply this plan.\n");
-          }
+        let result: RepositorySetupResult;
+        try {
+          result = await (dependencies.setupRepository ?? setupRepository)(
+            parsed.root,
+            currentEntry,
+            parsed.client,
+            parsed.write,
+          );
+        } catch {
+          const failure = setupCommandFailure(
+            "PARTIAL_FAILURE",
+            "SETUP_UNEXPECTED_FAILURE",
+            "Inspect repository state and managed paths, then rerun setup.",
+            "UNKNOWN",
+            {
+              client: parsed.client,
+              mode: parsed.write ? "write" : "dry-run",
+              diagnosticPaths: [parsed.root],
+            },
+          );
+          writeSetupCommandReport(io, failure, parsed.json);
+          return 5;
         }
-        if (result.status === "BLOCKED") return 3;
-        if (result.status === "CONFLICT") return 4;
-        if (result.status === "PARTIAL_FAILURE") return 5;
-        return 0;
+        writeSetupCommandReport(io, result, parsed.json);
+        return setupCommandExitCode(result.status);
       }
       case "demo": {
         const allowedFlags = new Set(["--allow-unsafe-execution", "--json"]);
