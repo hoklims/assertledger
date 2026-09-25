@@ -489,6 +489,12 @@ function main(): void {
     const installedCli = realpathSync(path.join(installed, "dist", "cli.js"));
     const setupFixture = path.join(consumer, "setup fixture");
     cpSync(fixture, setupFixture, { recursive: true });
+    const installedAlias = path.join(consumer, "installed package alias");
+    const setupFixtureAlias = path.join(consumer, "setup fixture alias");
+    if (process.platform === "win32") {
+      symlinkSync(installedRoot, installedAlias, "junction");
+      symlinkSync(setupFixture, setupFixtureAlias, "junction");
+    }
     const setupResults: Record<string, { created: string; repeated: string; conflict: string }> =
       {};
     for (const client of ["codex", "claude-code"] as const) {
@@ -573,6 +579,24 @@ function main(): void {
           ],
         },
       );
+      if (process.platform === "win32") {
+        const aliasConfiguration = {
+          ...setupCommand,
+          args: [
+            path.join(installedAlias, "dist", "cli.js"),
+            ...setupCommand.args.slice(1, 3),
+            setupFixtureAlias,
+          ],
+        };
+        assertInstalledSetupCommand(aliasConfiguration, installedRoot, installedCli, setupFixture);
+        jsonFile(path.join(artifacts, `setup-${client}-windows-alias-witness.json`), {
+          platform: process.platform,
+          client,
+          accepted: true,
+          configuredCliAlias: aliasConfiguration.args[0],
+          configuredRootAlias: aliasConfiguration.args[3],
+        });
+      }
 
       const operatorContent = `${client} operator-owned conflict\n`;
       writeFileSync(configurationPath, operatorContent);

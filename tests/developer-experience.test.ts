@@ -392,6 +392,42 @@ describe("developer entry points", () => {
     assert.equal(await readFile(skillPath, "utf8"), partialSkill);
   });
 
+  it("does not report an absent connection artifact as rolled back when its write fails", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-absent-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyConnection: () =>
+        connectClient(root, builtEntry, "codex", true, {
+          async writeArtifact() {
+            throw new Error("FAULT_CONNECTION_WRITE_BEFORE_CREATE");
+          },
+        }),
+    });
+
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "COMPLETE",
+      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      unresolved: [],
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.state),
+      ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE"],
+    );
+    await assert.rejects(readFile(path.join(root, ".codex", "config.toml"), "utf8"), /ENOENT/u);
+    await assert.rejects(
+      readFile(path.join(root, ".agents", "skills", "assertledger", "SKILL.md"), "utf8"),
+      /ENOENT/u,
+    );
+  });
+
   it("preflights initialization and client conflicts before setup writes any managed file", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-entry-"));

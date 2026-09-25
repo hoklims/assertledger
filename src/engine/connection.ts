@@ -344,12 +344,10 @@ async function rollbackCreated(
     if (artifact.path === null) continue;
     try {
       const state = await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE");
-      if (state === "ABSENT") {
-        removed.push(artifact.path);
-      } else if (state === "UNCHANGED") {
+      if (state === "UNCHANGED") {
         await removeArtifact(artifact);
         removed.push(artifact.path);
-      } else {
+      } else if (state === "CONFLICT") {
         unresolved.push(artifact.path);
       }
     } catch {
