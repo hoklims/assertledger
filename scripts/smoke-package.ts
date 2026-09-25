@@ -401,6 +401,57 @@ function main(): void {
     writeFileSync(sdkScript, sdkSource);
     const sdk = parse(run([sdkScript], consumer, env));
     assert.equal(sdk.status, "PASS");
+
+    const installedCli = realpathSync(path.join(installed, "dist", "cli.js"));
+    const setupFixture = path.join(consumer, "setup fixture");
+    cpSync(fixture, setupFixture, { recursive: true });
+    const setupResults: Record<string, { created: string; repeated: string; conflict: string }> =
+      {};
+    for (const client of ["codex", "claude-code"] as const) {
+      const created = parse(
+        runBin("assertledger", ["setup", setupFixture, "--client", client, "--write", "--json"]),
+      );
+      assert.equal(created.status, "CREATED");
+      const repeated = parse(
+        runBin("assertledger", ["setup", setupFixture, "--client", client, "--write", "--json"]),
+      );
+      assert.equal(repeated.status, "UNCHANGED");
+
+      const configurationPath =
+        client === "codex"
+          ? path.join(setupFixture, ".codex", "config.toml")
+          : path.join(setupFixture, ".mcp.json");
+      const configuration = readFileSync(configurationPath, "utf8");
+      if (client === "codex") {
+        assert.ok(configuration.includes(JSON.stringify(installedCli)));
+      } else {
+        const document = JSON.parse(configuration);
+        assert.equal(document.mcpServers.assertledger.args[0], installedCli);
+        assert.equal(document.mcpServers.assertledger.args[1], "mcp");
+        assert.equal(document.mcpServers.assertledger.args[2], "--root");
+        assert.equal(document.mcpServers.assertledger.args[3], realpathSync(setupFixture));
+      }
+
+      const operatorContent = `${client} operator-owned conflict\n`;
+      writeFileSync(configurationPath, operatorContent);
+      const conflictResult = runBin("assertledger", [
+        "setup",
+        setupFixture,
+        "--client",
+        client,
+        "--write",
+        "--json",
+      ]);
+      assert.equal(conflictResult.status, 4, conflictResult.stderr);
+      const conflict = JSON.parse(conflictResult.stdout);
+      assert.equal(conflict.status, "CONFLICT");
+      assert.equal(readFileSync(configurationPath, "utf8"), operatorContent);
+      setupResults[client] = {
+        created: created.status,
+        repeated: repeated.status,
+        conflict: conflict.status,
+      };
+    }
     const typesScript = path.join(consumer, "consumer.ts");
     writeFileSync(
       typesScript,
@@ -838,6 +889,7 @@ function main(): void {
       ).version,
       initStatus: init.status,
       setupStatus: setup.status,
+      setupApplied: setupResults,
       demoStatus: demo.status,
       profile: {
         status: profile.status,

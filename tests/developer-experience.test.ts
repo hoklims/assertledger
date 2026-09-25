@@ -156,7 +156,7 @@ describe("developer entry points", () => {
     );
   });
 
-  it("rolls back a byte-owned first init file when the second init write fails", async () => {
+  it("reports an init temporary file when atomic rename and cleanup both fail", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-init-write-"));
     temporaryDirectories.push(builtRoot);
@@ -168,24 +168,39 @@ describe("developer entry points", () => {
     const plan = await initializeRepository(root, { dryRun: true });
     const config = plan.files.find((file) => file.path === "assertledger.config.json");
     assert(config);
+    let temporaryPath = "";
 
     const result = await setupRepository(root, builtEntry, "codex", true, {
-      async applyInit() {
-        await writeFile(path.join(root, config.path), config.content, { flag: "wx" });
-        throw new Error("FAULT_SECOND_INIT_WRITE");
-      },
+      applyInit: (setupRoot) =>
+        initializeRepository(
+          setupRoot,
+          {},
+          {
+            async renameTemporary(temporary) {
+              temporaryPath = temporary;
+              throw new Error("FAULT_INIT_RENAME");
+            },
+            async removeTemporary(temporary) {
+              assert.equal(temporary, temporaryPath);
+              throw new Error("FAULT_INIT_TEMP_CLEANUP");
+            },
+          },
+        ),
     });
 
+    const temporaryRelative = path.relative(root, temporaryPath).replaceAll("\\", "/");
+    assert.match(temporaryRelative, /^\.assertledger\.config\.json\.\d+\.\d+\.tmp$/u);
     assert.equal(result.status, "PARTIAL_FAILURE");
     assert.deepEqual(result.rollback, {
-      status: "COMPLETE",
+      status: "PARTIAL",
       removed: ["assertledger.config.json", "assertledger.lock.json"],
-      unresolved: [],
+      unresolved: [temporaryRelative],
     });
     assert.deepEqual(
       result.artifacts.map((artifact) => artifact.state),
-      ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE"],
+      ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE", "PARTIAL"],
     );
+    assert.equal(await readFile(temporaryPath, "utf8"), config.content);
     for (const managed of ["assertledger.config.json", "assertledger.lock.json"]) {
       await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
     }

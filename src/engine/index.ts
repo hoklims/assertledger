@@ -63,6 +63,7 @@ import {
   type NodeTestRuntimePreflight,
   runNodeTestRuntimePreflight,
 } from "./adapters/node-test-runtime.js";
+import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
 import {
   type BoundedProcessResult,
   CONTAINER_LIMITATIONS,
@@ -74,7 +75,6 @@ import {
   prepareContainerBackend,
   runContainerExecution,
 } from "./container.js";
-import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 import { type RuntimeDoctorResult, runRuntimeDoctorChecks } from "./runtime-doctor.js";
 
@@ -109,6 +109,31 @@ export interface RepositoryInitOptions {
   framework?: string;
   testCommand?: { executable: string; arguments: string[] };
   afterEvidenceSnapshot?: () => void | Promise<void>;
+}
+
+export interface RepositoryInitWriteDependencies {
+  writeTemporary?(temporaryPath: string, content: string): Promise<void>;
+  renameTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
+  removeTemporary?(temporaryPath: string): Promise<void>;
+}
+
+export class RepositoryInitWriteError extends Error {
+  readonly targetPath: string;
+  readonly temporaryPath: string;
+  readonly temporaryCleanup: "REMOVED" | "UNRESOLVED";
+
+  constructor(
+    cause: unknown,
+    targetPath: string,
+    temporaryPath: string,
+    temporaryCleanup: "REMOVED" | "UNRESOLVED",
+  ) {
+    super("INIT_WRITE_FAILED", { cause });
+    this.name = "RepositoryInitWriteError";
+    this.targetPath = targetPath;
+    this.temporaryPath = temporaryPath;
+    this.temporaryCleanup = temporaryCleanup;
+  }
 }
 
 export interface RuntimeDoctorOptions {
@@ -807,15 +832,32 @@ function initJavaScriptModuleSpecifiers(source: string): Set<string> {
   return specifiers;
 }
 
-async function atomicInitWrite(root: string, relative: string, content: string): Promise<void> {
+async function atomicInitWrite(
+  root: string,
+  relative: string,
+  content: string,
+  dependencies: RepositoryInitWriteDependencies = {},
+): Promise<void> {
   const target = path.join(root, relative);
   const temporary = path.join(root, `.${relative}.${process.pid}.${Date.now()}.tmp`);
+  const writeTemporary =
+    dependencies.writeTemporary ??
+    ((temporaryPath: string, temporaryContent: string) =>
+      writeFile(temporaryPath, temporaryContent, { flag: "wx" }));
+  const renameTemporary = dependencies.renameTemporary ?? rename;
+  const removeTemporary =
+    dependencies.removeTemporary ?? ((temporaryPath: string) => rm(temporaryPath, { force: true }));
   try {
-    await writeFile(temporary, content, { flag: "wx" });
-    await rename(temporary, target);
+    await writeTemporary(temporary, content);
+    await renameTemporary(temporary, target);
   } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
+    let temporaryCleanup: "REMOVED" | "UNRESOLVED" = "REMOVED";
+    try {
+      await removeTemporary(temporary);
+    } catch {
+      temporaryCleanup = "UNRESOLVED";
+    }
+    throw new RepositoryInitWriteError(error, target, temporary, temporaryCleanup);
   }
 }
 
@@ -850,6 +892,7 @@ function initTerminalResult(
 export async function initializeRepository(
   requestedRoot: string,
   options: RepositoryInitOptions = {},
+  writeDependencies: RepositoryInitWriteDependencies = {},
 ): Promise<RepositoryInitResult> {
   let root: string;
   try {
@@ -1292,7 +1335,7 @@ export async function initializeRepository(
     for (const action of actions) {
       const file = plannedFiles.find((candidate) => candidate.path === action.path);
       if (file === undefined) throw new Error("INIT_PLAN_INCONSISTENT");
-      await atomicInitWrite(root, file.path, file.content);
+      await atomicInitWrite(root, file.path, file.content, writeDependencies);
     }
   }
   return result;

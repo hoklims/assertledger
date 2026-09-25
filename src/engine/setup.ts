@@ -1,4 +1,4 @@
-import { lstat, readFile, unlink } from "node:fs/promises";
+import { lstat, readFile, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { RepositoryInitResult } from "../contracts/index.js";
 import {
@@ -7,7 +7,7 @@ import {
   connectClient,
   planClientConnection,
 } from "./connection.js";
-import { initializeRepository } from "./index.js";
+import { initializeRepository, RepositoryInitWriteError } from "./index.js";
 
 export type SetupClient = "codex" | "claude-code";
 export type RepositorySetupStatus =
@@ -138,6 +138,7 @@ export async function setupRepository(
   write: boolean,
   dependencies: SetupRepositoryDependencies = {},
 ): Promise<RepositorySetupResult> {
+  root = await realpath(root);
   const initPlan = await initializeRepository(root, { dryRun: true });
   const connectionPlan = await planClientConnection(root, cliEntry, client);
   const initArtifacts: RepositorySetupArtifact[] = initPlan.files.map((file) => ({
@@ -183,14 +184,55 @@ export async function setupRepository(
   let appliedInit: RepositoryInitResult;
   try {
     appliedInit = await (dependencies.applyInit?.(root) ?? initializeRepository(root));
-  } catch {
-    const rollback = await rollbackCreatedInitFiles(root, initPlan);
+  } catch (error) {
+    const initRollback = await rollbackCreatedInitFiles(root, initPlan);
+    const temporaryArtifact =
+      error instanceof RepositoryInitWriteError
+        ? {
+            relative: path.relative(root, error.temporaryPath).split(path.sep).join("/"),
+            absolute: error.temporaryPath,
+            cleanup: error.temporaryCleanup,
+          }
+        : undefined;
+    const rollback: RepositorySetupRollback = temporaryArtifact
+      ? {
+          status:
+            initRollback.status === "PARTIAL" || temporaryArtifact.cleanup === "UNRESOLVED"
+              ? "PARTIAL"
+              : "COMPLETE",
+          removed: [
+            ...initRollback.removed,
+            ...(temporaryArtifact.cleanup === "REMOVED" ? [temporaryArtifact.relative] : []),
+          ].sort((left, right) => left.localeCompare(right)),
+          unresolved: [
+            ...initRollback.unresolved,
+            ...(temporaryArtifact.cleanup === "UNRESOLVED" ? [temporaryArtifact.relative] : []),
+          ].sort((left, right) => left.localeCompare(right)),
+        }
+      : initRollback;
+    const failedArtifacts =
+      temporaryArtifact === undefined
+        ? artifacts
+        : [
+            ...artifacts,
+            {
+              owner: "init" as const,
+              path: temporaryArtifact.absolute,
+              state:
+                temporaryArtifact.cleanup === "UNRESOLVED"
+                  ? ("PARTIAL" as const)
+                  : ("ROLLED_BACK" as const),
+            },
+          ];
     return {
       status: "PARTIAL_FAILURE",
       ...base,
-      artifacts: artifacts.map((artifact) => ({
+      artifacts: failedArtifacts.map((artifact) => ({
         ...artifact,
-        state: rollbackArtifactState(root, artifact, rollback),
+        state:
+          artifact.path === temporaryArtifact?.absolute
+            ? artifact.state
+            : rollbackArtifactState(root, artifact, rollback),
       })),
       rollback,
     };
