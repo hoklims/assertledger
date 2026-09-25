@@ -84,20 +84,20 @@ function captureIo(cwd: string): { io: CliIo; stdout(): string; stderr(): string
 }
 
 describe("developer entry points", () => {
-  it("keeps 1.2.0 release metadata aligned without rewriting historical campaign provenance", async () => {
-    assert.equal(packageMetadata.version, "1.2.0");
+  it("keeps 1.3.0 release metadata aligned without rewriting historical campaign provenance", async () => {
+    assert.equal(packageMetadata.version, "1.3.0");
     const [readme, readmeFr, changelog, site] = await Promise.all([
       readFile(new URL("../README.md", import.meta.url), "utf8"),
       readFile(new URL("../README.fr.md", import.meta.url), "utf8"),
       readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
       readFile(new URL("../site/index.html", import.meta.url), "utf8"),
     ]);
-    assert.match(readme, /assertledger@1\.2\.0/u);
-    assert.match(readme, /--branch v1\.2\.0/u);
-    assert.match(readmeFr, /assertledger@1\.2\.0/u);
-    assert.match(readmeFr, /--branch v1\.2\.0/u);
-    assert.match(changelog, /^## 1\.2\.0 — 2026-09-25$/mu);
-    assert.equal(site.match(/data-version>1\.2\.0/gmu)?.length, 2);
+    assert.match(readme, /assertledger@1\.3\.0/u);
+    assert.match(readme, /--branch v1\.3\.0/u);
+    assert.match(readmeFr, /assertledger@1\.3\.0/u);
+    assert.match(readmeFr, /--branch v1\.3\.0/u);
+    assert.match(changelog, /^## 1\.3\.0 — 2026-09-25$/mu);
+    assert.equal(site.match(/data-version>1\.3\.0/gmu)?.length, 2);
     assert.equal(site.match(/recorded with\s+assertledger 1\.1\.1/giu)?.length, 2);
   });
 
@@ -1068,6 +1068,44 @@ describe("developer entry points", () => {
     assert.equal(result.temporaryWorkspaceRemoved, true);
   });
 
+  it("keeps invalid and unexpected demo JSON failures typed and opaque", async () => {
+    const invalidCapture = captureIo(process.cwd());
+    assert.equal(await runCli(["demo", "--json", "--unknown"], invalidCapture.io), 64);
+    assert.equal(invalidCapture.stderr(), "");
+    const invalid = JSON.parse(invalidCapture.stdout()) as {
+      status: string;
+      scope: string;
+      reasonCodes: string[];
+      execution: string;
+    };
+    assert.equal(invalid.status, "REFUSED");
+    assert.equal(invalid.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.deepEqual(invalid.reasonCodes, ["DEMO_ARGUMENT_INVALID"]);
+    assert.equal(invalid.execution, "NOT_STARTED");
+
+    const failureCapture = captureIo(process.cwd());
+    assert.equal(
+      await runCli(["demo", "--allow-unsafe-execution", "--json"], failureCapture.io, {
+        async runFixtureDemo() {
+          throw new Error("SENSITIVE_DEMO_FAILURE_DETAIL");
+        },
+      }),
+      5,
+    );
+    assert.equal(failureCapture.stderr(), "");
+    const failure = JSON.parse(failureCapture.stdout()) as {
+      status: string;
+      scope: string;
+      reasonCodes: string[];
+      execution: string;
+    };
+    assert.equal(failure.status, "ENGINE_ERROR");
+    assert.equal(failure.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.deepEqual(failure.reasonCodes, ["DEMO_UNEXPECTED_FAILURE"]);
+    assert.equal(failure.execution, "UNSANDBOXED");
+    assert.doesNotMatch(failureCapture.stdout(), /SENSITIVE_DEMO_FAILURE_DETAIL/u);
+  });
+
   it("preserves INCONCLUSIVE and ENGINE_ERROR demo decisions instead of relabeling them", async () => {
     const builtEntry = path.resolve("dist", "cli.js");
     const inconclusive = await runFixtureDemo(builtEntry, true, {
@@ -1077,7 +1115,7 @@ describe("developer entry points", () => {
           policy: { requiredAttempts: number };
           candidates: Array<{ files: Array<{ content: string }> }>;
         };
-        request.budgets.timeoutMsPerExecution = 1_000;
+        request.budgets.timeoutMsPerExecution = 5_000;
         request.policy.requiredAttempts = 1;
         request.candidates = [request.candidates[0] as (typeof request.candidates)[number]];
         const candidate = request.candidates[0];

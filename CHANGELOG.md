@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 — 2026-09-25
+## 1.3.0 — 2026-09-25
 
 AssertLedger now offers one conflict-checked onboarding command for static repository initialization
 and project-local agent connection, plus a bounded demonstration of the installed engine.
@@ -14,6 +14,8 @@ and project-local agent connection, plus a bounded demonstration of the installe
   directory, executes it there and removes it. Its result is scoped to `SHIPPED_FIXTURE_ONLY`, keeps
   the exact `VERIFIED`, `REJECTED`, `INCONCLUSIVE` or `ENGINE_ERROR` decision and uses the same exit
   codes as `verify`.
+
+## 1.2.0 — 2026-09-25
 
 An explicitly authored `bun:test` regression candidate can now produce attributed AssertLedger
 evidence on the qualified Bun 1.4.2 runtime. The built-in v3 adapter wraps `bun:test` callbacks

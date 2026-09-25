@@ -34,6 +34,7 @@ export interface CliIo {
 export interface CliDependencies {
   setupEntry?: string;
   setupRepository?: typeof setupRepository;
+  runFixtureDemo?: typeof runFixtureDemo;
 }
 
 const USAGE = `Usage: assertledger <command> [arguments] [--json]
@@ -883,7 +884,16 @@ export async function runCli(
           argv.slice(1).some((argument) => !allowedFlags.has(argument)) ||
           [...allowedFlags].some((flag) => argv.filter((argument) => argument === flag).length > 1)
         ) {
-          io.writeStderr(USAGE);
+          if (argv.includes("--json")) {
+            writeJson(io, {
+              schemaVersion: "1.0.0",
+              status: "REFUSED",
+              scope: "SHIPPED_FIXTURE_ONLY",
+              reasonCodes: ["DEMO_ARGUMENT_INVALID"],
+              nextActions: ["Remove unsupported or duplicate demo flags, then rerun demo."],
+              execution: "NOT_STARTED",
+            });
+          } else io.writeStderr(USAGE);
           return 64;
         }
         if (!argv.includes("--allow-unsafe-execution")) {
@@ -904,7 +914,26 @@ export async function runCli(
           return 4;
         }
         const currentEntry = fileURLToPath(import.meta.url);
-        const result = await runFixtureDemo(currentEntry, true);
+        let result: Awaited<ReturnType<typeof runFixtureDemo>>;
+        try {
+          result = await (dependencies.runFixtureDemo ?? runFixtureDemo)(currentEntry, true);
+        } catch {
+          const failure = {
+            schemaVersion: "1.0.0",
+            status: "ENGINE_ERROR",
+            scope: "SHIPPED_FIXTURE_ONLY",
+            reasonCodes: ["DEMO_UNEXPECTED_FAILURE"],
+            nextActions: ["Inspect the installed package and rerun the shipped fixture demo."],
+            execution: "UNSANDBOXED",
+          };
+          if (argv.includes("--json")) writeJson(io, failure);
+          else {
+            io.writeStderr(
+              "DEMO_UNEXPECTED_FAILURE: inspect the installed package and rerun the shipped fixture demo.\n",
+            );
+          }
+          return 5;
+        }
         if (argv.includes("--json")) writeJson(io, result);
         else {
           io.writeStdout(

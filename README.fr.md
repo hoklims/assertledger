@@ -9,12 +9,12 @@ Vous obtenez un verdict, les observations qui le justifient et un fichier de pre
 
 [Essayer l’exemple](#essayer-lexemple) · [Comprendre le résultat](#comprendre-le-résultat) · [Utiliser votre dépôt](#utiliser-votre-dépôt) · [Documentation](#documentation)
 
-**1.2 · node:test et bun:test · CLI, SDK et MCP · MIT**
+**1.3 · node:test et bun:test · CLI, SDK et MCP · MIT**
 
 Installez l’outil dans votre dépôt avec Node.js 22.15 ou une version ultérieure :
 
 ```sh
-npm install --save-dev assertledger@1.2.0
+npm install --save-dev assertledger@1.3.0
 npx assertledger doctor .
 ```
 
@@ -60,7 +60,7 @@ flowchart LR
 Prérequis : **Git**, **Node.js 22.15+** et **pnpm 11.1.2**. L’exemple utilise l’adaptateur intégré `node:test`.
 
 ```sh
-git clone --branch v1.2.0 https://github.com/hoklims/assertledger.git
+git clone --branch v1.3.0 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build
