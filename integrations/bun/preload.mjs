@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { closeSync, readSync, writeSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAssertSameFailure } from "./bun.mjs";
+import * as assertionHelper from "./bun.mjs";
 import * as bunTest from "bun:test";
 
 const root = process.env.ASSERTLEDGER_BUN_ROOT;
@@ -11,7 +11,22 @@ if (!path.isAbsolute(root ?? "")) {
 }
 
 const preloadPath = fileURLToPath(import.meta.url);
-const verifyIssuedError = isAssertSameFailure;
+const safeApply = Reflect.apply.bind(Reflect);
+const safeGet = Reflect.get.bind(Reflect);
+const rawAssertSame = assertionHelper.assertSame;
+const verifyIssuedError = assertionHelper.isAssertSameFailure;
+const issuedDuringTest = new WeakMap();
+const markIssuingTest = WeakMap.prototype.set.bind(issuedDuringTest);
+const issuingTest = WeakMap.prototype.get.bind(issuedDuringTest);
+let activeTestId = null;
+function scopedAssertSame(...arguments_) {
+  try {
+    return safeApply(rawAssertSame, undefined, arguments_);
+  } catch (error) {
+    if (activeTestId !== null && verifyIssuedError(error)) markIssuingTest(error, activeTestId);
+    throw error;
+  }
+}
 const stringify = JSON.stringify.bind(JSON);
 const evidenceKey = Buffer.alloc(32);
 let received = 0;
@@ -60,7 +75,7 @@ function wrapRegistration(native, cache) {
         (value, index) => typeof value === "function" && (index > 0 || arguments_.length === 1),
       );
       if (callbackIndex < 0) {
-        const result = Reflect.apply(target, thisArg, arguments_);
+        const result = safeApply(target, thisArg, arguments_);
         return typeof result === "function" ? wrapRegistration(result, cache) : result;
       }
       const callback = arguments_[callbackIndex];
@@ -68,21 +83,25 @@ function wrapRegistration(native, cache) {
       record({ kind: "found", id, file: registrationFile() });
       const wrappedArguments = [...arguments_];
       wrappedArguments[callbackIndex] = function (...callbackArguments) {
+        const previousActiveTestId = activeTestId;
+        activeTestId = id;
         const passed = (value) => {
+          activeTestId = previousActiveTestId;
           record({ kind: "end", id, status: "pass" });
           return value;
         };
         const failed = (error) => {
+          activeTestId = previousActiveTestId;
           record({
             kind: "end",
             id,
             status: "fail",
-            owned: verifyIssuedError(error),
+            owned: verifyIssuedError(error) && issuingTest(error) === id,
           });
           throw error;
         };
         try {
-          const result = Reflect.apply(callback, this, callbackArguments);
+          const result = safeApply(callback, this, callbackArguments);
           return result && typeof result.then === "function"
             ? Promise.resolve(result).then(passed, failed)
             : passed(result);
@@ -90,10 +109,10 @@ function wrapRegistration(native, cache) {
           return failed(error);
         }
       };
-      return Reflect.apply(target, thisArg, wrappedArguments);
+      return safeApply(target, thisArg, wrappedArguments);
     },
     get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
+      const value = safeGet(target, property, receiver);
       return typeof value === "function" && property !== "constructor"
         ? wrapRegistration(value.bind(target), cache)
         : value;
@@ -106,14 +125,14 @@ function wrapRegistration(native, cache) {
 function wrapHook(nativeHook) {
   return (callback, ...options) => {
     if (typeof callback !== "function")
-      return Reflect.apply(nativeHook, bunTest, [callback, ...options]);
+      return safeApply(nativeHook, bunTest, [callback, ...options]);
     const wrappedCallback = function (...arguments_) {
       const failed = (error) => {
         record({ kind: "hook-error" });
         throw error;
       };
       try {
-        const result = Reflect.apply(callback, this, arguments_);
+        const result = safeApply(callback, this, arguments_);
         return result && typeof result.then === "function"
           ? Promise.resolve(result).catch(failed)
           : result;
@@ -121,7 +140,7 @@ function wrapHook(nativeHook) {
         return failed(error);
       }
     };
-    return Reflect.apply(nativeHook, bunTest, [wrappedCallback, ...options]);
+    return safeApply(nativeHook, bunTest, [wrappedCallback, ...options]);
   };
 }
 
@@ -136,4 +155,8 @@ bunTest.mock.module("bun:test", () => ({
   afterAll: wrapHook(bunTest.afterAll),
   beforeEach: wrapHook(bunTest.beforeEach),
   afterEach: wrapHook(bunTest.afterEach),
+}));
+bunTest.mock.module("assertledger/bun", () => ({
+  ...assertionHelper,
+  assertSame: scopedAssertSame,
 }));

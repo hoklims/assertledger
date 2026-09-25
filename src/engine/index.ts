@@ -3401,6 +3401,13 @@ async function runBunTestRuntimePreflight(
       attributed: false,
     },
     {
+      name: "replayed-assertion",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; try { assertSame(1, 2); } catch (error) { saved = error; } test("replayed", () => { throw saved; });\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
       name: "operand-throw",
       source:
         'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("operand", () => assertSame((() => { throw new Error("operand"); })(), 1));\n',

@@ -231,6 +231,30 @@ describe("Bun instrumented structured-command driver", () => {
     assert.equal(observation.result.attributed, false);
   });
 
+  it("rejects a helper error saved outside the active test and thrown later", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; try { assertSame(1, 2); } catch (error) { saved = error; } test("replayed", () => { throw saved; });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("rejects a helper error replayed by a different test callback", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; test("capture", () => { try { assertSame(1, 2); } catch (error) { saved = error; } }); test("replay", () => { throw saved; });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("rejects a saved helper error injected through a changed Reflect.apply", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; try { assertSame(1, 2); } catch (error) { saved = error; } test("reflect", () => { const original = Reflect.apply; Reflect.apply = () => { throw saved; }; try { assertSame(1, 1); } finally { Reflect.apply = original; } throw new Error("generic"); });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
   it("rejects a generic error when a candidate replaces WeakSet.prototype.has", async () => {
     const observation = await execute(
       'import { afterEach, test } from "bun:test"; const original = WeakSet.prototype.has; afterEach(() => { WeakSet.prototype.has = original; }); test("spoof", () => { WeakSet.prototype.has = function(value) { return value instanceof Error ? true : original.call(this, value); }; throw new Error("generic"); });\n',

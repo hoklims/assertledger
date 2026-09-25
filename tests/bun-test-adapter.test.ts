@@ -137,6 +137,11 @@ describe("official Bun test adapter", () => {
         (probe) => probe.name === "hook-failure" && probe.outcome === "INFRA_ERROR",
       ),
     );
+    assert.ok(
+      configuration.runtimePreflight.probes.some(
+        (probe) => probe.name === "replayed-assertion" && probe.outcome === "PROCESS_CRASH",
+      ),
+    );
     assert.equal(manifest.adapter.kind, "bun-test");
     assert.deepEqual(replayEvidenceManifest(manifest).valid, true);
   });
