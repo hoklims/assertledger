@@ -1117,6 +1117,7 @@ describe("repository init v1", () => {
     assert.equal((await stat(installedRuntime)).isFile(), true);
     const installedCliRealpath = await realpath(cli);
     const installedRuntimeRealpath = await realpath(installedRuntime);
+    const sourceCheckout = await realpath(path.resolve("."));
     assert.deepEqual(
       [installedCliRealpath, installedRuntimeRealpath].map((file) =>
         path.relative(installedPackageRoot, file).replaceAll("\\", "/"),
@@ -1128,7 +1129,13 @@ describe("repository init v1", () => {
       installedCliRealpath,
       installedRuntimeRealpath,
     ]) {
-      assert.equal(path.relative(repository, installedPath).split(path.sep)[0], "..");
+      const relativeToSource = path.relative(sourceCheckout, installedPath);
+      assert.ok(
+        path.isAbsolute(relativeToSource) ||
+          relativeToSource === ".." ||
+          relativeToSource.startsWith(`..${path.sep}`),
+        `INSTALLED_PATH_RESOLVES_TO_SOURCE_CHECKOUT: ${installedPath}`,
+      );
     }
     const { stdout } = await execFileAsync(process.execPath, [cli, "init", repository, "--json"], {
       cwd: consumer,

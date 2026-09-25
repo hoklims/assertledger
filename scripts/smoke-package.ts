@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,6 +13,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -88,6 +90,16 @@ function inside(root: string, target: string): boolean {
     !relative.startsWith(`..${path.sep}`) &&
     !path.isAbsolute(relative)
   );
+}
+function within(root: string, target: string): boolean {
+  return root === target || inside(root, target);
+}
+function assertInstalledPath(packageRoot: string, filename: string): string {
+  const installedRoot = realpathSync(packageRoot);
+  const resolved = realpathSync(path.join(packageRoot, filename));
+  assert.ok(!within(ROOT, resolved), `INSTALLED_FILE_RESOLVES_TO_CHECKOUT: ${filename}`);
+  assert.ok(within(installedRoot, resolved), `INSTALLED_FILE_ESCAPE: ${filename}`);
+  return resolved;
 }
 function jsonFile(target: string, value: unknown): void {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
@@ -247,16 +259,59 @@ function main(): void {
         "--loglevel=error",
       ]),
     );
+    const installedRoot = realpathSync(installed);
+    assert.ok(!within(ROOT, installedRoot), "INSTALLED_PACKAGE_RESOLVES_TO_CHECKOUT");
     for (const filename of required) {
-      const resolved = realpathSync(path.join(installed, filename));
-      assert.ok(inside(realpathSync(installed), resolved), `INSTALLED_FILE_ESCAPE: ${filename}`);
-      assert.ok(!inside(ROOT, resolved), "INSTALLED_FILE_RESOLVES_TO_CHECKOUT");
+      const resolved = assertInstalledPath(installed, filename);
       assert.equal(
         hash(readFileSync(resolved)),
         hash(readFileSync(path.join(ROOT, filename))),
         `INSTALLED_CONTENT_MISMATCH: ${filename}`,
       );
     }
+    for (const filename of [
+      "dist/cli.js",
+      "dist/engine/adapters/node-test-runtime.js",
+      "examples/node-test/request.json",
+      "examples/node-test/repository/package.json",
+      "examples/node-test/repository/src/is-even.js",
+      "examples/node-test/repository/tests/base.test.js",
+    ]) {
+      assertInstalledPath(installed, filename);
+    }
+
+    const escapeWitness = path.join(workspace, "fixture-resolution-escape-witness");
+    const witnessFixture = "examples/node-test/repository/package.json";
+    cpSync(path.join(installed, "examples"), path.join(escapeWitness, "examples"), {
+      recursive: true,
+    });
+    assertInstalledPath(escapeWitness, witnessFixture);
+    const witnessRepository = path.join(escapeWitness, "examples", "node-test", "repository");
+    rmSync(witnessRepository, { recursive: true, force: true });
+    symlinkSync(
+      path.join(ROOT, "examples", "node-test", "repository"),
+      witnessRepository,
+      "junction",
+    );
+    let escapeFailure = "";
+    assert.throws(
+      () => assertInstalledPath(escapeWitness, witnessFixture),
+      (error: unknown) => {
+        escapeFailure = error instanceof Error ? error.message : String(error);
+        return /INSTALLED_FILE_RESOLVES_TO_CHECKOUT/u.test(escapeFailure);
+      },
+    );
+    rmSync(witnessRepository, { recursive: true, force: true });
+    cpSync(path.join(installed, "examples", "node-test", "repository"), witnessRepository, {
+      recursive: true,
+    });
+    assertInstalledPath(escapeWitness, witnessFixture);
+    jsonFile(path.join(artifacts, "fixture-resolution-escape-witness.json"), {
+      fault: "installed fixture repository resolves into source checkout",
+      expectedFailure: "INSTALLED_FILE_RESOLVES_TO_CHECKOUT",
+      observedFailure: escapeFailure,
+      restored: true,
+    });
     const importGuard = path.join(consumer, "installed-import-guard.mjs");
     writeFileSync(
       importGuard,
@@ -297,6 +352,18 @@ function main(): void {
     );
     const init = parse(runBin("assertledger", ["init", fixture, "--dry-run", "--json"]));
     assert.equal(init.status, "WOULD_CREATE");
+    const setup = parse(
+      runBin("assertledger", ["setup", fixture, "--client", "codex", "--dry-run", "--json"]),
+    );
+    assert.equal(setup.status, "WOULD_CREATE");
+    assert.equal(setup.mode, "dry-run");
+    assert.match(setup.limitations.join("\n"), /UNSANDBOXED/u);
+    assert.ok(!existsSync(path.join(fixture, ".codex", "config.toml")));
+    const demo = parse(runBin("assertledger", ["demo", "--allow-unsafe-execution", "--json"]));
+    assert.equal(demo.status, "VERIFIED");
+    assert.equal(demo.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.equal(demo.temporaryWorkspaceRemoved, true);
+    assert.match(demo.limitation, /does not prove.*user repository/iu);
     const audit = parse(runBin("assertledger", ["audit", fixture, "--no-git", "--json"]));
     assert.equal(audit.schemaVersion, "1.0.0");
     assert.equal(audit.fileCount, 2);
@@ -770,6 +837,8 @@ function main(): void {
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),
       ).version,
       initStatus: init.status,
+      setupStatus: setup.status,
+      demoStatus: demo.status,
       profile: {
         status: profile.status,
         reportDigest: profile.reportDigest,
