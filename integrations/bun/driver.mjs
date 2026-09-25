@@ -242,6 +242,9 @@ export function classifyBunInspectorEvents(
   if ([...started].some((id) => !foundById.has(id))) {
     return infrastructureFailure("START_WITHOUT_DISCOVERY");
   }
+  const candidateStarted = [...started].filter((id) =>
+    candidateFiles.has(foundById.get(id)),
+  ).length;
   const tests = completed.filter((item) => foundById.has(item.id));
   if (
     tests.length !== completed.length ||
@@ -256,16 +259,14 @@ export function classifyBunInspectorEvents(
     ) {
       return infrastructureFailure("ZERO_EXIT_WITH_TEST_FAILURE");
     }
-    const candidateStarted = [...started].filter((id) =>
-      candidateFiles.has(foundById.get(id)),
-    ).length;
     if (candidateFiles.size > 0 && candidateStarted === 0) {
       return report("NO_TEST_DISCOVERED", started.size, 0, false);
     }
     return report("PASS", started.size, candidateStarted, candidateFiles.size > 0);
   }
   if (active.size !== 0 || tests.length !== found.length) {
-    return infrastructureFailure("NONZERO_EXIT_WITH_INCOMPLETE_EVENTS");
+    // A nonzero process exit cannot establish an assertion when Bun drops an end event.
+    return report("PROCESS_CRASH", started.size, candidateStarted, false);
   }
   const candidateTests = tests.filter((item) => candidateFiles.has(foundById.get(item.id)));
   if (
@@ -357,6 +358,10 @@ async function main() {
     ],
     { cwd: process.cwd(), env: process.env, shell: false, stdio: ["ignore", "pipe", "pipe"] },
   );
+  const childExit = new Promise((resolve) => {
+    child.once("error", () => resolve(null));
+    child.once("exit", (code) => resolve(code));
+  });
   let stdout = "";
   let stderr = "";
   let settled = false;
@@ -389,10 +394,7 @@ async function main() {
   });
   clearTimeout(startupTimer);
   const socket = await connectInspector(inspectUrl, events);
-  const exitCode = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => resolve(code));
-  });
+  const exitCode = await childExit;
   await drainInspector(socket);
   const result = classifyBunInspectorEvents(
     events.messages,

@@ -29,7 +29,7 @@ describe("Bun Inspector event classification", () => {
       attributed: true,
     });
     const nonzero = classifyBunInspectorEvents(events, candidates, root, 1, false);
-    assert.equal(nonzero.outcome, "INFRA_ERROR");
+    assert.equal(nonzero.outcome, "PROCESS_CRASH");
     assert.equal(nonzero.attributed, false);
   });
 
