@@ -644,27 +644,17 @@ describe("developer entry points", () => {
     );
   });
 
-  it("returns typed JSON when connection preflight fails before setup writes", async () => {
+  it("returns an actionable typed conflict when the built CLI is missing", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-preflight-error-"));
     temporaryDirectories.push(builtRoot);
     const builtEntry = path.join(builtRoot, "dist", "cli.js");
-    await mkdir(path.dirname(builtEntry), { recursive: true });
-    await writeFile(builtEntry, "// fixture built entry\n");
     const capture = captureIo(root);
 
     const exitCode = await runCli(
       ["setup", root, "--client", "codex", "--write", "--json"],
       capture.io,
-      {
-        setupEntry: builtEntry,
-        setupRepository: (setupRoot, cliEntry, client, write) =>
-          setupRepository(setupRoot, cliEntry, client, write, {
-            async planConnection() {
-              throw new Error("FAULT_CONNECTION_PREFLIGHT_READ");
-            },
-          }),
-      },
+      { setupEntry: builtEntry },
     );
     const result = JSON.parse(capture.stdout()) as RepositorySetupResult;
 
@@ -675,16 +665,57 @@ describe("developer entry points", () => {
     assert.equal(result.connection.status, "CONFLICT");
     assert.deepEqual(result.connection.artifacts, []);
     assert.deepEqual(result.rollback, { status: "NOT_REQUIRED", removed: [], unresolved: [] });
-    assert.deepEqual(result.reasonCodes, ["CONNECTION_PREFLIGHT_FAILED"]);
+    assert.deepEqual(result.reasonCodes, ["CONNECTION_BUILD_REQUIRED"]);
     assert.deepEqual(result.nextActions, [
-      "Inspect the installed package skill and client configuration path, then rerun setup.",
+      "Run `pnpm build`, invoke the generated dist/cli.js, then rerun setup.",
     ]);
+    assert.deepEqual(result.diagnosticPaths, [path.resolve(builtEntry)]);
     assert.deepEqual(
       result.artifacts.map((artifact) => artifact.state),
       ["WOULD_CREATE", "WOULD_CREATE"],
     );
     await assert.rejects(readFile(path.join(root, "assertledger.config.json")), /ENOENT/u);
     await assert.rejects(readFile(path.join(root, "assertledger.lock.json")), /ENOENT/u);
+  });
+
+  it("maps packaged skill preflight failures without exposing raw errors", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-skill-errors-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    const skillPath = path.join(builtRoot, "integrations", "skill", "SKILL.md");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+
+    const missing = await setupRepository(root, builtEntry, "codex", true);
+    assert.equal(missing.status, "CONFLICT");
+    assert.deepEqual(missing.reasonCodes, ["CONNECTION_SKILL_REQUIRED"]);
+    assert.deepEqual(missing.diagnosticPaths, [skillPath]);
+    assert.deepEqual(missing.nextActions, [
+      "Restore integrations/skill/SKILL.md from the installed package, then rerun setup.",
+    ]);
+
+    await mkdir(skillPath, { recursive: true });
+    const unsafe = await setupRepository(root, builtEntry, "codex", true);
+    assert.equal(unsafe.status, "CONFLICT");
+    assert.deepEqual(unsafe.reasonCodes, ["CONNECTION_SKILL_PATH_UNSAFE"]);
+    assert.deepEqual(unsafe.diagnosticPaths, [skillPath]);
+    assert.deepEqual(unsafe.nextActions, [
+      "Replace the packaged skill path with a regular file, then rerun setup.",
+    ]);
+
+    const unexpected = await setupRepository(root, builtEntry, "codex", true, {
+      async planConnection() {
+        throw new Error("SENSITIVE_ARBITRARY_PREFLIGHT_DETAIL");
+      },
+    });
+    assert.equal(unexpected.status, "CONFLICT");
+    assert.deepEqual(unexpected.reasonCodes, ["CONNECTION_PREFLIGHT_FAILED"]);
+    assert.deepEqual(unexpected.diagnosticPaths, []);
+    assert.deepEqual(unexpected.nextActions, [
+      "Inspect the installed package and client configuration paths, then rerun setup.",
+    ]);
+    assert.doesNotMatch(JSON.stringify(unexpected), /SENSITIVE_ARBITRARY_PREFLIGHT_DETAIL/u);
   });
 
   it("preflights initialization and client conflicts before setup writes any managed file", async () => {
@@ -785,6 +816,11 @@ describe("developer entry points", () => {
         assert.equal(result.connection.status, "CONFLICT");
         assert.equal(result.connection.artifacts.length, 2);
         assert.equal(result.artifacts[2]?.state, "CONFLICT");
+        assert.deepEqual(result.reasonCodes, ["CONNECTION_TARGET_PATH_UNSAFE"]);
+        assert.deepEqual(result.diagnosticPaths, [path.join(root, ".codex", "config.toml")]);
+        assert.deepEqual(result.nextActions, [
+          "Replace unsafe client target paths with regular local paths, then rerun setup.",
+        ]);
         assert.deepEqual(result.rollback, {
           status: "NOT_REQUIRED",
           removed: [],

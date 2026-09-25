@@ -48,6 +48,8 @@ export type ClientConnectionArtifactState = "ABSENT" | "UNCHANGED" | "CONFLICT";
 export interface ClientConnectionPlan {
   result: ClientConnectionResult;
   states: ClientConnectionArtifactState[];
+  reasonCodes?: string[];
+  diagnosticPaths?: string[];
 }
 
 export interface ClientConnectionRollback {
@@ -187,8 +189,17 @@ function claudeCodeConfig(nodeExecutable: string, cliEntry: string, root: string
 }
 
 async function resolveBuiltEntry(requestedCliEntry: string): Promise<string> {
-  const cliEntry = await realpath(requestedCliEntry);
-  const metadata = await stat(cliEntry);
+  let cliEntry: string;
+  let metadata: Awaited<ReturnType<typeof stat>>;
+  try {
+    cliEntry = await realpath(requestedCliEntry);
+    metadata = await stat(cliEntry);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("CONNECT_BUILD_REQUIRED");
+    }
+    throw error;
+  }
   if (
     !metadata.isFile() ||
     path.basename(cliEntry) !== "cli.js" ||
@@ -224,7 +235,14 @@ async function packagedSkill(cliEntry: string): Promise<string> {
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw new Error("CONNECT_SKILL_PATH_UNSAFE");
   }
-  return readFile(skillPath, "utf8");
+  try {
+    return await readFile(skillPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("CONNECT_SKILL_REQUIRED");
+    }
+    throw error;
+  }
 }
 
 function clientArtifacts(
@@ -456,6 +474,7 @@ export async function planClientConnection(
   }
   const artifacts = clientArtifacts(client, root, cliEntry, await packagedSkill(cliEntry));
   const states: ClientConnectionArtifactState[] = [];
+  const unsafePaths: string[] = [];
   for (const artifact of artifacts) {
     if (artifact.path === null) continue;
     try {
@@ -464,6 +483,7 @@ export async function planClientConnection(
     } catch (error) {
       if (!(error instanceof Error) || error.message !== "CONNECT_CONFIG_PATH_UNSAFE") throw error;
       states.push("CONFLICT");
+      unsafePaths.push(artifact.path);
     }
   }
   return {
@@ -473,6 +493,12 @@ export async function planClientConnection(
       artifacts,
     },
     states,
+    ...(unsafePaths.length === 0
+      ? {}
+      : {
+          reasonCodes: ["CONNECTION_TARGET_PATH_UNSAFE"],
+          diagnosticPaths: unsafePaths.sort((left, right) => left.localeCompare(right)),
+        }),
   };
 }
 

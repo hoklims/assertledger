@@ -49,6 +49,7 @@ export interface RepositorySetupResult {
   limitations: string[];
   reasonCodes?: string[];
   nextActions?: string[];
+  diagnosticPaths?: string[];
 }
 
 export interface SetupRepositoryDependencies {
@@ -67,6 +68,46 @@ const SETUP_LIMITATIONS = [
   "It does not authorize UNSANDBOXED execution, reload the client, or prove repository behavior.",
   "Setup has no cross-process filesystem lock. Concurrent edits can be overwritten during lock regeneration or removed between a rollback byte check and unlink; run only while the trusted repository tree is stable.",
 ];
+
+function connectionPreflightDiagnostic(
+  error: unknown,
+  cliEntry: string,
+): { reasonCode: string; paths: string[]; nextAction: string } {
+  const code = error instanceof Error ? error.message : "";
+  const skillPath = path.join(
+    path.dirname(path.dirname(path.resolve(cliEntry))),
+    "integrations",
+    "skill",
+    "SKILL.md",
+  );
+  if (code === "CONNECT_BUILD_REQUIRED") {
+    return {
+      reasonCode: "CONNECTION_BUILD_REQUIRED",
+      paths: [path.resolve(cliEntry)],
+      nextAction: "Run `pnpm build`, invoke the generated dist/cli.js, then rerun setup.",
+    };
+  }
+  if (code === "CONNECT_SKILL_REQUIRED") {
+    return {
+      reasonCode: "CONNECTION_SKILL_REQUIRED",
+      paths: [skillPath],
+      nextAction:
+        "Restore integrations/skill/SKILL.md from the installed package, then rerun setup.",
+    };
+  }
+  if (code === "CONNECT_SKILL_PATH_UNSAFE") {
+    return {
+      reasonCode: "CONNECTION_SKILL_PATH_UNSAFE",
+      paths: [skillPath],
+      nextAction: "Replace the packaged skill path with a regular file, then rerun setup.",
+    };
+  }
+  return {
+    reasonCode: "CONNECTION_PREFLIGHT_FAILED",
+    paths: [],
+    nextAction: "Inspect the installed package and client configuration paths, then rerun setup.",
+  };
+}
 
 function initArtifactState(
   result: RepositoryInitResult,
@@ -175,7 +216,8 @@ export async function setupRepository(
   try {
     connectionPlan = await (dependencies.planConnection?.(root, cliEntry, client) ??
       planClientConnection(root, cliEntry, client));
-  } catch {
+  } catch (error) {
+    const diagnostic = connectionPreflightDiagnostic(error, cliEntry);
     return {
       status: "CONFLICT",
       client,
@@ -185,10 +227,9 @@ export async function setupRepository(
       artifacts: initArtifacts,
       rollback: { status: "NOT_REQUIRED", removed: [], unresolved: [] },
       limitations: [...SETUP_LIMITATIONS],
-      reasonCodes: ["CONNECTION_PREFLIGHT_FAILED"],
-      nextActions: [
-        "Inspect the installed package skill and client configuration path, then rerun setup.",
-      ],
+      reasonCodes: [diagnostic.reasonCode],
+      nextActions: [diagnostic.nextAction],
+      diagnosticPaths: diagnostic.paths,
     };
   }
   const connectionArtifacts: RepositorySetupArtifact[] = connectionPlan.result.artifacts.flatMap(
@@ -206,6 +247,7 @@ export async function setupRepository(
     },
   );
   const artifacts = [...initArtifacts, ...connectionArtifacts];
+  const connectionPlanReasonCodes = connectionPlan.reasonCodes;
   const base = {
     client,
     mode: write ? ("write" as const) : ("dry-run" as const),
@@ -214,6 +256,15 @@ export async function setupRepository(
     artifacts,
     rollback: { status: "NOT_REQUIRED" as const, removed: [], unresolved: [] },
     limitations: [...SETUP_LIMITATIONS],
+    ...(connectionPlanReasonCodes === undefined
+      ? {}
+      : {
+          reasonCodes: connectionPlanReasonCodes,
+          nextActions: [
+            "Replace unsafe client target paths with regular local paths, then rerun setup.",
+          ],
+          diagnosticPaths: connectionPlan.diagnosticPaths ?? [],
+        }),
   };
   if (initPlan.status === "CONFLICT" || connectionPlan.result.status === "CONFLICT") {
     return { status: "CONFLICT", ...base };
