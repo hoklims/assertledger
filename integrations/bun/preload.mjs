@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertSame } from "./bun.mjs";
+import { isAssertSameFailure } from "./bun.mjs";
 import * as bunTest from "bun:test";
 
 const root = process.env.ASSERTLEDGER_BUN_ROOT;
@@ -12,15 +12,7 @@ if (!path.isAbsolute(root ?? "") || !path.isAbsolute(eventsFile ?? "")) {
 }
 
 const preloadPath = fileURLToPath(import.meta.url);
-let ownedConstructor;
-try {
-  assertSame(1, 2);
-  throw new Error("ASSERTLEDGER_BUN_HELPER_UNEXPECTED_PASS");
-} catch (error) {
-  if (error?.name !== "AssertLedgerBunAssertionError") throw error;
-  ownedConstructor = error.constructor;
-}
-
+const verifyIssuedError = isAssertSameFailure;
 function record(event) {
   appendFileSync(eventsFile, `${JSON.stringify(event)}\n`, { encoding: "utf8" });
 }
@@ -75,7 +67,7 @@ function wrapRegistration(native, cache) {
             kind: "end",
             id,
             status: "fail",
-            owned: error instanceof ownedConstructor,
+            owned: verifyIssuedError(error),
           });
           throw error;
         };

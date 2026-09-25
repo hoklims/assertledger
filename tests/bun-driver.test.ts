@@ -185,6 +185,14 @@ describe("Bun instrumented structured-command driver", () => {
     assert.equal(observation.result.attributed, false);
   });
 
+  it("rejects a fresh error constructed from a caught helper error", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let Captured; try { assertSame(1, 2); } catch (error) { Captured = error.constructor; } test("forged", () => { throw new Captured(); });\n',
+    );
+    assert.notEqual(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
   it("reports a clean control and candidate run as PASS", async () => {
     const observation = await execute(
       'import { test } from "bun:test";\nimport { assertSame } from "assertledger/bun";\ntest("candidate", () => assertSame(1, 1));\n',

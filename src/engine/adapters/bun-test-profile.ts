@@ -6,7 +6,7 @@ export const BUN_TEST_ADAPTER_PROFILE = {
   bunVersion: "1.4.2",
   bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
   capabilities: {
-    assertionSource: "assertledger-assertSame-instanceof",
+    assertionSource: "assertledger-assertSame-issued-error",
     attributesPerAssertionFailure: true,
     detectsCollectionFailure: false,
     detectsCompileFailure: false,

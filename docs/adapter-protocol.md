@@ -112,8 +112,8 @@ test("result", () => assertSame(compute(), expected));
 and throws a fixed, AssertLedger-owned error when they differ. The engine installs the exact
 bundled helper into each disposable workspace because repository snapshots omit `node_modules`.
 The engine installs a preload before test files execute. It wraps `test` and `it` registrations,
-records their source file and completion, and checks the thrown object's constructor against the
-bundled `assertSame` error class. The driver requires every configured base file to run and checks
+records their source file and completion, and checks that the thrown object belongs to a private
+set of errors actually issued by `assertSame`. The driver requires every configured base file to run and checks
 that callback totals and failures agree with Bun's JUnit totals and process exit. JUnit never
 classifies an assertion or supplies candidate attribution. A generic throw, failed control,
 skipped test, missing callback or inconsistent count cannot kill a target.
