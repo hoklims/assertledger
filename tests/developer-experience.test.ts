@@ -188,7 +188,9 @@ describe("developer entry points", () => {
         ),
     });
 
-    const temporaryRelative = path.relative(root, temporaryPath).replaceAll("\\", "/");
+    const temporaryRelative = path
+      .relative(await realpath(root), temporaryPath)
+      .replaceAll("\\", "/");
     assert.match(temporaryRelative, /^\.assertledger\.config\.json\.\d+\.\d+\.tmp$/u);
     assert.equal(result.status, "PARTIAL_FAILURE");
     assert.deepEqual(result.rollback, {
@@ -235,7 +237,9 @@ describe("developer entry points", () => {
         ),
     });
 
-    const temporaryRelative = path.relative(root, temporaryPath).replaceAll("\\", "/");
+    const temporaryRelative = path
+      .relative(await realpath(root), temporaryPath)
+      .replaceAll("\\", "/");
     assert.equal(result.status, "PARTIAL_FAILURE");
     assert.deepEqual(result.rollback, {
       status: "COMPLETE",
@@ -330,6 +334,10 @@ describe("developer entry points", () => {
     assert.equal(preview.status, "WOULD_CREATE");
     assert.equal(preview.init.status, "WOULD_CREATE");
     assert.equal(preview.connection.status, "EMITTED");
+    assert.match(
+      preview.limitations.join("\n"),
+      /Concurrent edits can be overwritten during lock regeneration or removed between a rollback byte check and unlink/u,
+    );
     assert.deepEqual(
       preview.artifacts.map((artifact) => artifact.state),
       ["WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE"],
@@ -339,6 +347,37 @@ describe("developer entry points", () => {
     const created = await setupRepository(root, builtEntry, "codex", true);
     assert.equal(created.status, "CREATED");
     assert.equal((await setupRepository(root, builtEntry, "codex", true)).status, "UNCHANGED");
+  });
+
+  it("returns a structured JSON conflict for an invalid setup repository root", async () => {
+    const missingParent = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-missing-"));
+    temporaryDirectories.push(missingParent);
+    const missingRoot = path.join(missingParent, "absent");
+    const cli = path.resolve("dist", "cli.js");
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cli, "setup", missingRoot, "--client", "codex", "--json"], {
+        cwd: process.cwd(),
+        timeout: 5_000,
+        maxBuffer: 64 * 1024,
+        windowsHide: true,
+      }),
+      (error: NodeJS.ErrnoException & { stdout?: string; stderr?: string }) => {
+        assert.equal(error.code, 4);
+        assert.equal(error.stderr, "");
+        const result = JSON.parse(error.stdout ?? "null");
+        assert.equal(result.status, "CONFLICT");
+        assert.deepEqual(result.init.reasonCodes, ["REPOSITORY_ROOT_INVALID"]);
+        assert.equal(result.connection.status, "CONFLICT");
+        assert.deepEqual(result.artifacts, []);
+        assert.deepEqual(result.rollback, {
+          status: "NOT_REQUIRED",
+          removed: [],
+          unresolved: [],
+        });
+        return true;
+      },
+    );
   });
 
   it("runs the shipped demonstration only with explicit unsafe authorization and limits its claim", async () => {

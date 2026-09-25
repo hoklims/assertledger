@@ -54,6 +54,12 @@ export interface SetupRepositoryDependencies {
   applyConnection?(): Promise<ClientConnectionResult>;
 }
 
+const SETUP_LIMITATIONS = [
+  "Setup configures static initialization and a read-only client connection only.",
+  "It does not authorize UNSANDBOXED execution, reload the client, or prove repository behavior.",
+  "Setup has no cross-process filesystem lock. Concurrent edits can be overwritten during lock regeneration or removed between a rollback byte check and unlink; run only while the trusted repository tree is stable.",
+];
+
 function initArtifactState(
   result: RepositoryInitResult,
   file: string,
@@ -138,8 +144,20 @@ export async function setupRepository(
   write: boolean,
   dependencies: SetupRepositoryDependencies = {},
 ): Promise<RepositorySetupResult> {
-  root = await realpath(root);
   const initPlan = await initializeRepository(root, { dryRun: true });
+  if (initPlan.status === "CONFLICT" && initPlan.reasonCodes.includes("REPOSITORY_ROOT_INVALID")) {
+    return {
+      status: "CONFLICT",
+      client,
+      mode: write ? "write" : "dry-run",
+      init: initPlan,
+      connection: { client, status: "CONFLICT", artifacts: [] },
+      artifacts: [],
+      rollback: { status: "NOT_REQUIRED", removed: [], unresolved: [] },
+      limitations: [...SETUP_LIMITATIONS],
+    };
+  }
+  root = await realpath(root);
   const connectionPlan = await planClientConnection(root, cliEntry, client);
   const initArtifacts: RepositorySetupArtifact[] = initPlan.files.map((file) => ({
     owner: "init",
@@ -168,11 +186,7 @@ export async function setupRepository(
     connection: connectionPlan.result,
     artifacts,
     rollback: { status: "NOT_REQUIRED" as const, removed: [], unresolved: [] },
-    limitations: [
-      "Setup configures static initialization and a read-only client connection only.",
-      "It does not authorize UNSANDBOXED execution, reload the client, or prove repository behavior.",
-      "Rollback byte checks assume the trusted repository tree stays stable during the operation.",
-    ],
+    limitations: [...SETUP_LIMITATIONS],
   };
   if (initPlan.status === "CONFLICT" || connectionPlan.result.status === "CONFLICT") {
     return { status: "CONFLICT", ...base };

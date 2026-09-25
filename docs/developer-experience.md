@@ -27,6 +27,11 @@ or regenerated file is preserved and yields `PARTIAL_FAILURE`, with the unresolv
 Exit codes are 3 for blocked readiness, 4 for a fully rolled-back conflict, 5 for partial failure or
 unexpected I/O, and 64 for invalid CLI usage.
 
+`setup --write` has no cross-process filesystem lock and requires a stable trusted repository tree.
+A concurrent edit can be overwritten while an existing lock file is regenerated, or removed if it
+replaces a managed file after the rollback byte check but before unlink. Stop concurrent writers
+before setup; this stability requirement is a reported limitation, not a concurrency guarantee.
+
 To confirm the installed engine can run its packaged example, execute:
 
 ```text
