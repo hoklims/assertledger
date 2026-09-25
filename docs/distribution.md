@@ -26,7 +26,7 @@ the tarball and its SHA-256 are retained under `.testforge/package-smoke/<run-id
 Temporary consumers are removed after the run. The retained manifest is replayable;
 its original execution paths refer to the removed consumer.
 
-CI runs this smoke on Windows and Linux with Node 22.15.0 and 24 plus pinned Bun 1.4.2,
+CI runs this smoke on Windows, Linux and macOS with Node 22.15.0 and 24 plus pinned Bun 1.4.2,
 alongside `pnpm check`.
 The verification matrix installs Bun 1.4.2 on Windows, Linux, and macOS and executes the
 real Bun campaign and its negative witnesses. The package smoke also runs a Bun v3 campaign
