@@ -57,6 +57,12 @@ export const NodeTestAdapterSchema = z.strictObject({
   extraArguments: z.array(z.string()).max(0).optional(),
 });
 
+export const BunTestAdapterSchema = z.strictObject({
+  kind: z.literal("bun-test"),
+  executable: z.string().min(1),
+  baseTestFiles: z.array(z.string().min(1)).min(1).max(1_000),
+});
+
 export const StructuredCommandAdapterSchema = z.strictObject({
   kind: z.literal("testforge-command"),
   executable: z.string().min(1),
@@ -67,6 +73,12 @@ export const StructuredCommandAdapterSchema = z.strictObject({
 export const AdapterSchema = z.discriminatedUnion("kind", [
   NodeTestAdapterSchema,
   StructuredCommandAdapterSchema,
+]);
+
+export const AdapterV3Schema = z.discriminatedUnion("kind", [
+  NodeTestAdapterSchema,
+  StructuredCommandAdapterSchema,
+  BunTestAdapterSchema,
 ]);
 
 export const StructuredCommandSchema = z.strictObject({
@@ -89,6 +101,7 @@ export const TrustedLocalIsolationSchema = z.strictObject({
 });
 
 export const VERIFICATION_SCHEMA_VERSION_V2 = "2.0.0" as const;
+export const VERIFICATION_SCHEMA_VERSION_V3 = "3.0.0" as const;
 
 // Only digest-pinned references are accepted; the leading alphanumeric also keeps a reference
 // from being parsed as a container runtime option.
@@ -177,6 +190,19 @@ export const VerificationRequestV2Schema = z
     title: "AssertLedger verification request v2",
     description:
       "A versioned campaign executed either in a digest-pinned container backend or in explicitly acknowledged unsandboxed trusted-local mode.",
+  });
+
+export const VerificationRequestV3Schema = z
+  .strictObject({
+    ...VerificationRequestV2Schema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V3),
+    adapter: AdapterV3Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/verification-request.v3.json",
+    title: "AssertLedger verification request v3",
+    description:
+      "A versioned campaign with an official Bun test adapter and explicit execution backend.",
   });
 
 export const RepositoryAnalysisSchema = z
@@ -370,6 +396,53 @@ export const RepositoryInitResultSchema = z
     description: "Deterministic initialization plan and outcome without campaign execution.",
   });
 
+export const REPOSITORY_INIT_SCHEMA_VERSION_V2 = "2.0.0" as const;
+
+export const RepositoryInitDetectionsV2Schema = z.strictObject({
+  ...RepositoryInitDetectionsSchema.shape,
+  adapterRecommendation: z.enum(["node-test", "bun-test", "operator-supplied", "unavailable"]),
+});
+
+export const RepositoryInitConfigV2Schema = z
+  .strictObject({
+    ...RepositoryInitConfigSchema.shape,
+    schemaVersion: z.literal(REPOSITORY_INIT_SCHEMA_VERSION_V2),
+    adapter: AdapterV3Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/repository-init-config.v2.json",
+    title: "AssertLedger repository init config v2",
+    description: "Portable repository configuration with the official Bun test adapter.",
+  });
+
+export const RepositoryInitLockV2Schema = z
+  .strictObject({
+    ...RepositoryInitLockSchema.shape,
+    schemaVersion: z.literal(REPOSITORY_INIT_SCHEMA_VERSION_V2),
+    detector: z.strictObject({
+      name: z.literal("assertledger-init"),
+      version: z.literal("2.0.0"),
+    }),
+    detections: RepositoryInitDetectionsV2Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/repository-init-lock.v2.json",
+    title: "AssertLedger repository init lock v2",
+    description: "Deterministic initialization evidence for the Bun test adapter.",
+  });
+
+export const RepositoryInitResultV2Schema = z
+  .strictObject({
+    ...RepositoryInitResultSchema.shape,
+    schemaVersion: z.literal(REPOSITORY_INIT_SCHEMA_VERSION_V2),
+    detections: RepositoryInitDetectionsV2Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/repository-init-result.v2.json",
+    title: "AssertLedger repository init result v2",
+    description: "Deterministic initialization plan for the Bun test adapter.",
+  });
+
 const EvidenceWorldSchema = z.strictObject({
   id: IdentifierSchema,
   kind: z.enum(["REFERENCE", "TARGET", "NEUTRAL"]),
@@ -444,6 +517,15 @@ export const CandidateAssessmentSchema = z.strictObject({
 
 const FinalAdapterSummarySchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("node-test") }),
+  z.strictObject({
+    kind: z.literal("testforge-command"),
+    protocolVersion: z.literal("1.0.0"),
+  }),
+]);
+
+const FinalAdapterSummaryV3Schema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("node-test") }),
+  z.strictObject({ kind: z.literal("bun-test") }),
   z.strictObject({
     kind: z.literal("testforge-command"),
     protocolVersion: z.literal("1.0.0"),
@@ -557,6 +639,19 @@ export const EvidenceManifestV2Schema = z
     title: "AssertLedger evidence manifest v2",
     description:
       "The final auditable campaign artifact with a decision-bound record of the execution backend and its enforced controls.",
+  });
+
+export const EvidenceManifestV3Schema = z
+  .strictObject({
+    ...EvidenceManifestV2Schema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V3),
+    adapter: FinalAdapterSummaryV3Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-manifest.v3.json",
+    title: "AssertLedger evidence manifest v3",
+    description:
+      "A replayable campaign artifact recording the official Bun test adapter and execution backend.",
   });
 
 export const ReplayResultSchema = z
@@ -1905,18 +2000,25 @@ export type World = z.infer<typeof WorldSchema>;
 export type Candidate = z.infer<typeof CandidateSchema>;
 export type VerificationRequest = z.infer<typeof VerificationRequestSchema>;
 export type VerificationRequestV2 = z.infer<typeof VerificationRequestV2Schema>;
+export type VerificationRequestV3 = z.infer<typeof VerificationRequestV3Schema>;
 export type ContainerIsolation = z.infer<typeof ContainerIsolationSchema>;
 export type ContainerLimits = z.infer<typeof ContainerLimitsSchema>;
 export type NodeTestAdapter = z.infer<typeof NodeTestAdapterSchema>;
+export type BunTestAdapter = z.infer<typeof BunTestAdapterSchema>;
 export type StructuredCommandAdapter = z.infer<typeof StructuredCommandAdapterSchema>;
 export type RepositoryAnalysis = z.infer<typeof RepositoryAnalysisSchema>;
 export type RepositoryAudit = z.infer<typeof RepositoryAuditSchema>;
 export type RepositoryInitConfig = z.infer<typeof RepositoryInitConfigSchema>;
+export type RepositoryInitConfigV2 = z.infer<typeof RepositoryInitConfigV2Schema>;
 export type RepositoryInitLock = z.infer<typeof RepositoryInitLockSchema>;
+export type RepositoryInitLockV2 = z.infer<typeof RepositoryInitLockV2Schema>;
 export type RepositoryInitResult = z.infer<typeof RepositoryInitResultSchema>;
+export type RepositoryInitResultV2 = z.infer<typeof RepositoryInitResultV2Schema>;
 export type RepositoryInitDetections = z.infer<typeof RepositoryInitDetectionsSchema>;
+export type RepositoryInitDetectionsV2 = z.infer<typeof RepositoryInitDetectionsV2Schema>;
 export type EvidenceManifestContract = z.infer<typeof EvidenceManifestSchema>;
 export type EvidenceManifestV2Contract = z.infer<typeof EvidenceManifestV2Schema>;
+export type EvidenceManifestV3Contract = z.infer<typeof EvidenceManifestV3Schema>;
 export type ExecutionBackendRecord = z.infer<typeof ExecutionBackendRecordSchema>;
 export type ReplayResult = z.infer<typeof ReplayResultSchema>;
 export type AgenticProfilePolicy = z.infer<typeof AgenticProfilePolicySchema>;
@@ -1998,7 +2100,9 @@ function assertUniqueIdentifiers(items: ReadonlyArray<{ id: string }>, code: str
   }
 }
 
-function assertWorldKinds(request: Omit<VerificationRequest, "schemaVersion" | "isolation">): void {
+function assertWorldKinds(
+  request: Omit<VerificationRequestV3, "schemaVersion" | "isolation">,
+): void {
   if (!request.worlds.some((world) => world.kind === "REFERENCE" && world.required)) {
     throw new ContractError("REFERENCE_WORLD_REQUIRED");
   }
@@ -2019,7 +2123,7 @@ function assertWorldKinds(request: Omit<VerificationRequest, "schemaVersion" | "
   }
 }
 
-function assertBudgets(request: Omit<VerificationRequest, "schemaVersion" | "isolation">): void {
+function assertBudgets(request: Omit<VerificationRequestV3, "schemaVersion" | "isolation">): void {
   if (request.candidates.length > request.budgets.maximumCandidates) {
     throw new ContractError("CANDIDATE_BUDGET_EXCEEDED");
   }
@@ -2144,10 +2248,18 @@ export function parseVerificationRequest(value: unknown): VerificationRequest {
   return request;
 }
 
-/** Parses either the frozen v1 request or the v2 request that adds container isolation. */
+/** Parses a frozen v1/v2 request or a v3 request that adds the Bun adapter. */
 export function parseVersionedVerificationRequest(
   value: unknown,
-): VerificationRequest | VerificationRequestV2 {
+): VerificationRequest | VerificationRequestV2 | VerificationRequestV3 {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "schemaVersion" in value &&
+    value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V3
+  ) {
+    return parseVerificationRequestV3(value);
+  }
   if (
     typeof value === "object" &&
     value !== null &&
@@ -2157,6 +2269,37 @@ export function parseVersionedVerificationRequest(
     return parseVerificationRequestV2(value);
   }
   return parseVerificationRequest(value);
+}
+
+export function parseVerificationRequestV3(value: unknown): VerificationRequestV3 {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== VERIFICATION_SCHEMA_VERSION_V3
+  ) {
+    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
+  }
+  assertVerificationRequestPreconditions(value);
+  const parsed = VerificationRequestV3Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
+  }
+  const request = parsed.data;
+  assertUniqueIdentifiers(request.worlds, "DUPLICATE_WORLD_ID");
+  assertUniqueIdentifiers(request.candidates, "DUPLICATE_CANDIDATE_ID");
+  assertWorldKinds(request);
+  assertBudgets(request);
+  if (request.isolation.kind === "container") {
+    if (request.adapter.kind === "bun-test") {
+      throw new ContractError("BUN_TEST_CONTAINER_UNSUPPORTED");
+    }
+    const names = request.isolation.environment.map((variable) => variable.name);
+    if (new Set(names).size !== names.length) {
+      throw new ContractError("DUPLICATE_CONTAINER_ENVIRONMENT_VARIABLE");
+    }
+  }
+  return request;
 }
 
 /** Parses only the v2 request, which adds container isolation to the frozen v1 request. */
@@ -2527,7 +2670,10 @@ function initPortableKey(value: string): string {
   return value.toLowerCase().normalize("NFC");
 }
 
-function validateInitDetections(detections: RepositoryInitDetections, code: string): void {
+function validateInitDetections(
+  detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
+  code: string,
+): void {
   if (
     !sortedUnique(detections.ciProviders) ||
     !sortedUnique(detections.reasonCodes) ||
@@ -2603,9 +2749,35 @@ export function parseRepositoryInitConfig(value: unknown): RepositoryInitConfig 
   if (!parsed.success) {
     throw new ContractError("REPOSITORY_INIT_CONFIG_INVALID", z.prettifyError(parsed.error));
   }
-  const config = parsed.data;
+  assertRepositoryInitConfigConsistent(parsed.data);
+  return parsed.data;
+}
+
+export function parseRepositoryInitConfigV2(value: unknown): RepositoryInitConfigV2 {
+  const parsed = RepositoryInitConfigV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REPOSITORY_INIT_CONFIG_INVALID", z.prettifyError(parsed.error));
+  }
+  assertRepositoryInitConfigConsistent(parsed.data);
+  return parsed.data;
+}
+
+export function parseVersionedRepositoryInitConfig(
+  value: unknown,
+): RepositoryInitConfig | RepositoryInitConfigV2 {
+  return isJsonObject(value) && value.schemaVersion === REPOSITORY_INIT_SCHEMA_VERSION_V2
+    ? parseRepositoryInitConfigV2(value)
+    : parseRepositoryInitConfig(value);
+}
+
+function assertRepositoryInitConfigConsistent(
+  config: RepositoryInitConfig | RepositoryInitConfigV2,
+): void {
   const candidateRootKeys = config.candidateRoots.map(initPortableKey);
-  const baseTestFiles = config.adapter.kind === "node-test" ? config.adapter.baseTestFiles : [];
+  const baseTestFiles =
+    config.adapter.kind === "node-test" || config.adapter.kind === "bun-test"
+      ? config.adapter.baseTestFiles
+      : [];
   const baseTestKeys = baseTestFiles.map(initPortableKey);
   if (
     !sortedUnique(config.repository.exclude) ||
@@ -2619,6 +2791,7 @@ export function parseRepositoryInitConfig(value: unknown): RepositoryInitConfig 
       arguments: config.adapter.kind === "testforge-command" ? config.adapter.arguments : [],
     }) ||
     (config.adapter.kind === "node-test" && config.framework !== "node:test") ||
+    (config.adapter.kind === "bun-test" && config.framework !== "bun:test") ||
     !sortedUnique(baseTestKeys) ||
     baseTestFiles.some((entry) => expectedInitEvidenceKind(entry) !== "TEST_SOURCE") ||
     baseTestKeys.some((baseTestKey) =>
@@ -2627,21 +2800,28 @@ export function parseRepositoryInitConfig(value: unknown): RepositoryInitConfig 
           baseTestKey === candidateRootKey || baseTestKey.startsWith(`${candidateRootKey}/`),
       ),
     ) ||
-    (config.adapter.kind === "node-test" &&
+    ((config.adapter.kind === "node-test" || config.adapter.kind === "bun-test") &&
       config.adapter.baseTestFiles.some((entry) => !initPortablePath(entry))) ||
     (config.adapter.kind === "testforge-command" &&
       config.adapter.arguments.some((argument) => path.isAbsolute(argument)))
   ) {
     throw new ContractError("REPOSITORY_INIT_CONFIG_INCONSISTENT");
   }
-  return config;
 }
 
 export function repositoryInitConfigDigest(config: RepositoryInitConfig): string {
   return initDigest(parseRepositoryInitConfig(config));
 }
 
+export function repositoryInitConfigV2Digest(config: RepositoryInitConfigV2): string {
+  return initDigest(parseRepositoryInitConfigV2(config));
+}
+
 export function repositoryInitLockDigest(lock: Omit<RepositoryInitLock, "lockDigest">): string {
+  return initDigest(lock);
+}
+
+export function repositoryInitLockV2Digest(lock: Omit<RepositoryInitLockV2, "lockDigest">): string {
   return initDigest(lock);
 }
 
@@ -2650,7 +2830,28 @@ export function parseRepositoryInitLock(value: unknown): RepositoryInitLock {
   if (!parsed.success) {
     throw new ContractError("REPOSITORY_INIT_LOCK_INVALID", z.prettifyError(parsed.error));
   }
-  const lock = parsed.data;
+  assertRepositoryInitLockConsistent(parsed.data);
+  return parsed.data;
+}
+
+export function parseRepositoryInitLockV2(value: unknown): RepositoryInitLockV2 {
+  const parsed = RepositoryInitLockV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REPOSITORY_INIT_LOCK_INVALID", z.prettifyError(parsed.error));
+  }
+  assertRepositoryInitLockConsistent(parsed.data);
+  return parsed.data;
+}
+
+export function parseVersionedRepositoryInitLock(
+  value: unknown,
+): RepositoryInitLock | RepositoryInitLockV2 {
+  return isJsonObject(value) && value.schemaVersion === REPOSITORY_INIT_SCHEMA_VERSION_V2
+    ? parseRepositoryInitLockV2(value)
+    : parseRepositoryInitLock(value);
+}
+
+function assertRepositoryInitLockConsistent(lock: RepositoryInitLock | RepositoryInitLockV2): void {
   const adapterEvidenceCount = lock.evidence.filter(
     (entry) => entry.kind === "ADAPTER_CONFIG",
   ).length;
@@ -2661,6 +2862,7 @@ export function parseRepositoryInitLock(value: unknown): RepositoryInitLock {
     lock.detections.testCommand === null ||
     lock.detections.adapterRecommendation === "unavailable" ||
     (lock.detections.adapterRecommendation === "node-test" && adapterEvidenceCount !== 0) ||
+    (lock.detections.adapterRecommendation === "bun-test" && adapterEvidenceCount !== 0) ||
     (lock.detections.adapterRecommendation === "operator-supplied" && adapterEvidenceCount !== 1) ||
     !sortedUnique(lock.evidence.map((entry) => entry.path)) ||
     lock.evidence.some((entry) => {
@@ -2671,7 +2873,7 @@ export function parseRepositoryInitLock(value: unknown): RepositoryInitLock {
         : expectedKind !== entry.kind;
     }) ||
     lock.lockDigest !==
-      repositoryInitLockDigest({
+      initDigest({
         schemaVersion: lock.schemaVersion,
         configDigest: lock.configDigest,
         detector: lock.detector,
@@ -2681,7 +2883,6 @@ export function parseRepositoryInitLock(value: unknown): RepositoryInitLock {
   ) {
     throw new ContractError("REPOSITORY_INIT_LOCK_INCONSISTENT");
   }
-  return lock;
 }
 
 export function parseRepositoryInitResult(value: unknown): RepositoryInitResult {
@@ -2689,27 +2890,53 @@ export function parseRepositoryInitResult(value: unknown): RepositoryInitResult 
   if (!parsed.success) {
     throw new ContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
   }
-  const result = parsed.data;
+  assertRepositoryInitResultConsistent(parsed.data);
+  return parsed.data;
+}
+
+export function parseRepositoryInitResultV2(value: unknown): RepositoryInitResultV2 {
+  const parsed = RepositoryInitResultV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
+  }
+  assertRepositoryInitResultConsistent(parsed.data);
+  return parsed.data;
+}
+
+export function parseVersionedRepositoryInitResult(
+  value: unknown,
+): RepositoryInitResult | RepositoryInitResultV2 {
+  return isJsonObject(value) && value.schemaVersion === REPOSITORY_INIT_SCHEMA_VERSION_V2
+    ? parseRepositoryInitResultV2(value)
+    : parseRepositoryInitResult(value);
+}
+
+function assertRepositoryInitResultConsistent(
+  result: RepositoryInitResult | RepositoryInitResultV2,
+): void {
   validateInitDetections(result.detections, "REPOSITORY_INIT_RESULT_INCONSISTENT");
   const paths = result.files.map((file) => file.path);
   const actionPaths = result.actions.map((action) => action.path);
   const successWithPlan = ["CREATED", "WOULD_CREATE"].includes(result.status);
-  let config: RepositoryInitConfig | undefined;
-  let lock: RepositoryInitLock | undefined;
+  let config: RepositoryInitConfig | RepositoryInitConfigV2 | undefined;
+  let lock: RepositoryInitLock | RepositoryInitLockV2 | undefined;
   try {
     const configFile = result.files.find((file) => file.path === "assertledger.config.json");
     const lockFile = result.files.find((file) => file.path === "assertledger.lock.json");
     if (configFile !== undefined)
-      config = parseRepositoryInitConfig(JSON.parse(configFile.content));
-    if (lockFile !== undefined) lock = parseRepositoryInitLock(JSON.parse(lockFile.content));
+      config = parseVersionedRepositoryInitConfig(JSON.parse(configFile.content));
+    if (lockFile !== undefined)
+      lock = parseVersionedRepositoryInitLock(JSON.parse(lockFile.content));
   } catch (error) {
     throw new ContractError(
       "REPOSITORY_INIT_RESULT_INCONSISTENT",
       error instanceof Error ? error.message : String(error),
     );
   }
-  const nodeBaseTestFiles =
-    config?.adapter.kind === "node-test" ? config.adapter.baseTestFiles : [];
+  const baseTestFiles =
+    config?.adapter.kind === "node-test" || config?.adapter.kind === "bun-test"
+      ? config.adapter.baseTestFiles
+      : [];
   const lockTestEvidence = new Set(
     lock?.evidence
       .filter((entry) => entry.kind === "TEST_SOURCE")
@@ -2738,19 +2965,23 @@ export function parseRepositoryInitResult(value: unknown): RepositoryInitResult 
     (result.status === "UNCHANGED" && result.files.length !== 2) ||
     (config !== undefined &&
       (lock === undefined ||
-        lock.configDigest !== repositoryInitConfigDigest(config) ||
+        lock.schemaVersion !== result.schemaVersion ||
+        config.schemaVersion !== result.schemaVersion ||
+        lock.configDigest !==
+          (config.schemaVersion === REPOSITORY_INIT_SCHEMA_VERSION_V2
+            ? repositoryInitConfigV2Digest(config)
+            : repositoryInitConfigDigest(config)) ||
         lock.detections.packageManager !== config.packageManager ||
         lock.detections.framework !== config.framework ||
         JSON.stringify(lock.detections.testCommand) !== JSON.stringify(config.testCommand) ||
         JSON.stringify(lock.detections) !== JSON.stringify(result.detections) ||
-        nodeBaseTestFiles.some((file) => !lockTestEvidence.has(initPortableKey(file))))) ||
+        baseTestFiles.some((file) => !lockTestEvidence.has(initPortableKey(file))))) ||
     result.nextCommands.length !== 1 ||
     result.nextCommands[0]?.executable !== "assertledger" ||
     JSON.stringify(result.nextCommands[0]?.arguments) !== JSON.stringify(["audit", ".", "--json"])
   ) {
     throw new ContractError("REPOSITORY_INIT_RESULT_INCONSISTENT");
   }
-  return result;
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -2758,7 +2989,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 function manifestSummariesAreConsistent(
-  manifest: EvidenceManifestContract | EvidenceManifestV2Contract,
+  manifest: EvidenceManifestContract | EvidenceManifestV2Contract | EvidenceManifestV3Contract,
 ): boolean {
   const engineError = manifest.decision.status === "ENGINE_ERROR";
   const invalidEvidence =
@@ -2813,16 +3044,37 @@ export function parseEvidenceManifestV2(value: unknown): EvidenceManifestV2Contr
   return manifest;
 }
 
-/** Parses either a frozen v1 manifest or a v2 manifest with an execution backend record. */
+export function parseEvidenceManifestV3(value: unknown): EvidenceManifestV3Contract {
+  const parsed = EvidenceManifestV3Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_MANIFEST_INVALID", z.prettifyError(parsed.error));
+  }
+  const manifest = parsed.data;
+  if (
+    !manifestSummariesAreConsistent(manifest) ||
+    !manifestReferencesAreConsistent(manifest) ||
+    !executionBackendIsConsistent(manifest)
+  ) {
+    throw new ContractError("EVIDENCE_MANIFEST_INCONSISTENT");
+  }
+  return manifest;
+}
+
+/** Parses a frozen v1/v2 manifest or a v3 manifest with the Bun adapter. */
 export function parseVersionedEvidenceManifest(
   value: unknown,
-): EvidenceManifestContract | EvidenceManifestV2Contract {
+): EvidenceManifestContract | EvidenceManifestV2Contract | EvidenceManifestV3Contract {
+  if (isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V3) {
+    return parseEvidenceManifestV3(value);
+  }
   return isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V2
     ? parseEvidenceManifestV2(value)
     : parseEvidenceManifest(value);
 }
 
-function executionBackendIsConsistent(manifest: EvidenceManifestV2Contract): boolean {
+function executionBackendIsConsistent(
+  manifest: EvidenceManifestV2Contract | EvidenceManifestV3Contract,
+): boolean {
   const execution = manifest.evidenceContext.execution;
   const backend = execution.backend;
   if (backend.kind !== manifest.isolation.kind || backend.level !== manifest.isolation.level) {
@@ -2837,7 +3089,7 @@ function executionBackendIsConsistent(manifest: EvidenceManifestV2Contract): boo
 }
 
 function manifestReferencesAreConsistent(
-  manifest: EvidenceManifestContract | EvidenceManifestV2Contract,
+  manifest: EvidenceManifestContract | EvidenceManifestV2Contract | EvidenceManifestV3Contract,
 ): boolean {
   const worldIds = new Set(manifest.worlds.map((world) => world.id));
   const candidateIds = new Set(manifest.candidates.map((candidate) => candidate.id));
@@ -3776,6 +4028,27 @@ export function repositoryInitResultJsonSchema(): Record<string, unknown> {
   );
 }
 
+export function repositoryInitConfigV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    RepositoryInitConfigV2Schema,
+    "https://testforge.dev/schemas/repository-init-config.v2.json",
+  );
+}
+
+export function repositoryInitLockV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    RepositoryInitLockV2Schema,
+    "https://testforge.dev/schemas/repository-init-lock.v2.json",
+  );
+}
+
+export function repositoryInitResultV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    RepositoryInitResultV2Schema,
+    "https://testforge.dev/schemas/repository-init-result.v2.json",
+  );
+}
+
 export function evidenceManifestJsonSchema(): Record<string, unknown> {
   return jsonSchemaFor(
     EvidenceManifestSchema,
@@ -3794,6 +4067,20 @@ export function evidenceManifestV2JsonSchema(): Record<string, unknown> {
   return jsonSchemaFor(
     EvidenceManifestV2Schema,
     "https://testforge.dev/schemas/evidence-manifest.v2.json",
+  );
+}
+
+export function verificationRequestV3JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    VerificationRequestV3Schema,
+    "https://testforge.dev/schemas/verification-request.v3.json",
+  );
+}
+
+export function evidenceManifestV3JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceManifestV3Schema,
+    "https://testforge.dev/schemas/evidence-manifest.v3.json",
   );
 }
 

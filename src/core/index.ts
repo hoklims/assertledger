@@ -59,6 +59,7 @@ export type DecisionStatus = "VERIFIED" | "REJECTED" | "INCONCLUSIVE" | "ENGINE_
 const EVIDENCE_SCHEMA_VERSION = "1.0.0";
 // Version 2.0.0 adds a decision-bound execution backend record; its absence stays a v1 manifest.
 const EVIDENCE_SCHEMA_VERSION_V2 = "2.0.0";
+const EVIDENCE_SCHEMA_VERSION_V3 = "3.0.0";
 const EVIDENCE_POLICY_VERSION = "1.0.0";
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const OBSERVATION_OUTCOMES = new Set([
@@ -395,7 +396,8 @@ function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceCo
   if (!isRecord(value.execution)) {
     throw new TypeError("evidenceContext.execution must be an object");
   }
-  const backendRequired = schemaVersion === EVIDENCE_SCHEMA_VERSION_V2;
+  const backendRequired =
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V2 || schemaVersion === EVIDENCE_SCHEMA_VERSION_V3;
   if (backendRequired && !isRecord(value.execution.backend)) {
     throw new TypeError("evidenceContext.execution.backend must be an object");
   }
@@ -441,7 +443,11 @@ function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceCo
 function parseInputUnchecked(input: unknown): EvidenceInput {
   if (!isRecord(input)) throw new TypeError("Evidence must be an object");
   const schemaVersion = stringField(input, "schemaVersion");
-  if (schemaVersion !== EVIDENCE_SCHEMA_VERSION && schemaVersion !== EVIDENCE_SCHEMA_VERSION_V2) {
+  if (
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION &&
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V2 &&
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V3
+  ) {
     throw new TypeError(`Unsupported schemaVersion: ${schemaVersion}`);
   }
   const policyValue = input.policy;

@@ -247,6 +247,26 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Controlled reporter discovery or attribution did not match the supported protocol.",
     "Check the package and Node versions, then reinstall and rerun the diagnostic; keep the evidence unqualified.",
   ],
+  BUN_TEST_VERSION_UNSUPPORTED: [
+    "The selected Bun runtime is outside the qualified version and revision.",
+    "Install Bun 1.4.2 and rerun the controlled runtime preflight.",
+  ],
+  BUN_TEST_EXECUTABLE_PROBE_FAILED: [
+    "The selected executable could not establish a stable Bun identity.",
+    "Check the Bun executable and its permissions, then rerun the runtime diagnostic.",
+  ],
+  BUN_TEST_PROFILE_PREFLIGHT_FAILED: [
+    "Controlled Bun callback probes did not separate assertions from ordinary errors.",
+    "Keep the campaign unqualified and inspect the Bun installation and AssertLedger package.",
+  ],
+  BUN_TEST_CONTAINER_UNSUPPORTED: [
+    "The Bun callback profile has not been qualified in the container backend.",
+    "Use explicitly authorized trusted-local execution for the qualified Bun version.",
+  ],
+  BUN_TEST_ASSET_CHANGED_DURING_CAMPAIGN: [
+    "The bundled Bun driver, preload or assertion helper changed during the campaign.",
+    "Restore a stable installation and run the complete campaign again.",
+  ],
   INIT_MANAGED_PATH_UNSAFE: [
     "A managed configuration path is a link or a nonregular file.",
     "Inspect the path manually and use regular project-local files; existing content is preserved.",

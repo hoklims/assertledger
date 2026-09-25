@@ -1,0 +1,165 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHmac, randomUUID } from "node:crypto";
+import { closeSync, readSync, writeSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as assertionHelper from "./bun.mjs";
+import * as bunTest from "bun:test";
+
+const root = process.env.ASSERTLEDGER_BUN_ROOT;
+if (!path.isAbsolute(root ?? "")) {
+  throw new Error("ASSERTLEDGER_BUN_PRELOAD_CONFIGURATION_INVALID");
+}
+
+const preloadPath = fileURLToPath(import.meta.url);
+const safeApply = Reflect.apply.bind(Reflect);
+const safeGet = Reflect.get.bind(Reflect);
+const rawAssertSame = assertionHelper.assertSame;
+const verifyIssuedError = assertionHelper.isAssertSameFailure;
+const issuedDuringTest = new WeakMap();
+const markIssuingTest = WeakMap.prototype.set.bind(issuedDuringTest);
+const issuingTest = WeakMap.prototype.get.bind(issuedDuringTest);
+const activeTestExecution = new AsyncLocalStorage();
+const currentTestId = AsyncLocalStorage.prototype.getStore.bind(activeTestExecution);
+const runInTest = AsyncLocalStorage.prototype.run.bind(activeTestExecution);
+function scopedAssertSame(...arguments_) {
+  try {
+    return safeApply(rawAssertSame, undefined, arguments_);
+  } catch (error) {
+    const id = currentTestId();
+    if (id !== undefined && verifyIssuedError(error)) markIssuingTest(error, id);
+    throw error;
+  }
+}
+const stringify = JSON.stringify.bind(JSON);
+const evidenceKey = Buffer.alloc(32);
+let received = 0;
+while (received < evidenceKey.length) {
+  const length = readSync(4, evidenceKey, received, evidenceKey.length - received, null);
+  if (length === 0) throw new Error("ASSERTLEDGER_BUN_EVIDENCE_KEY_MISSING");
+  received += length;
+}
+closeSync(4);
+function record(event) {
+  const body = stringify(event);
+  const mac = createHmac("sha256", evidenceKey).update(body).digest("hex");
+  writeSync(3, `${stringify({ event, mac })}\n`);
+}
+
+function registrationFile() {
+  const lines = new Error().stack?.split(/\r?\n/u).slice(1) ?? [];
+  for (const line of lines) {
+    let location = line.trim().replace(/^at\s+/u, "");
+    if (location.endsWith(")") && location.includes("(")) {
+      location = location.slice(location.lastIndexOf("(") + 1, -1);
+    }
+    const match = location.match(/^(.+?):\d+(?::\d+)?$/u);
+    if (match === null) continue;
+    let file = match[1];
+    if (file.startsWith("file:")) {
+      try {
+        file = fileURLToPath(file);
+      } catch {
+        continue;
+      }
+    }
+    if (!path.isAbsolute(file)) continue;
+    const absolute = path.resolve(file);
+    if (absolute === preloadPath) continue;
+    return absolute;
+  }
+  throw new Error("ASSERTLEDGER_BUN_REGISTRATION_FILE_UNAVAILABLE");
+}
+
+function wrapRegistration(native, cache) {
+  if (cache.has(native)) return cache.get(native);
+  const wrapper = new Proxy(native, {
+    apply(target, thisArg, arguments_) {
+      const callbackIndex = arguments_.findIndex(
+        (value, index) => typeof value === "function" && (index > 0 || arguments_.length === 1),
+      );
+      if (callbackIndex < 0) {
+        const result = safeApply(target, thisArg, arguments_);
+        return typeof result === "function" ? wrapRegistration(result, cache) : result;
+      }
+      const callback = arguments_[callbackIndex];
+      const file = registrationFile();
+      const wrappedArguments = [...arguments_];
+      wrappedArguments[callbackIndex] = function (...callbackArguments) {
+        const id = randomUUID();
+        record({ kind: "found", id, file });
+        return runInTest(id, () => {
+          const passed = (value) => {
+            record({ kind: "end", id, status: "pass" });
+            return value;
+          };
+          const failed = (error) => {
+            record({
+              kind: "end",
+              id,
+              status: "fail",
+              owned: verifyIssuedError(error) && issuingTest(error) === id,
+            });
+            throw error;
+          };
+          try {
+            const result = safeApply(callback, this, callbackArguments);
+            return result && typeof result.then === "function"
+              ? Promise.resolve(result).then(passed, failed)
+              : passed(result);
+          } catch (error) {
+            return failed(error);
+          }
+        });
+      };
+      return safeApply(target, thisArg, wrappedArguments);
+    },
+    get(target, property, receiver) {
+      const value = safeGet(target, property, receiver);
+      return typeof value === "function" && property !== "constructor"
+        ? wrapRegistration(value.bind(target), cache)
+        : value;
+    },
+  });
+  cache.set(native, wrapper);
+  return wrapper;
+}
+
+function wrapHook(nativeHook) {
+  return (callback, ...options) => {
+    if (typeof callback !== "function")
+      return safeApply(nativeHook, bunTest, [callback, ...options]);
+    const wrappedCallback = function (...arguments_) {
+      const failed = (error) => {
+        record({ kind: "hook-error" });
+        throw error;
+      };
+      try {
+        const result = safeApply(callback, this, arguments_);
+        return result && typeof result.then === "function"
+          ? Promise.resolve(result).catch(failed)
+          : result;
+      } catch (error) {
+        return failed(error);
+      }
+    };
+    return safeApply(nativeHook, bunTest, [wrappedCallback, ...options]);
+  };
+}
+
+const cache = new WeakMap();
+const wrappedTest = wrapRegistration(bunTest.test, cache);
+const wrappedIt = wrapRegistration(bunTest.it, cache);
+bunTest.mock.module("bun:test", () => ({
+  ...bunTest,
+  test: wrappedTest,
+  it: wrappedIt,
+  beforeAll: wrapHook(bunTest.beforeAll),
+  afterAll: wrapHook(bunTest.afterAll),
+  beforeEach: wrapHook(bunTest.beforeEach),
+  afterEach: wrapHook(bunTest.afterEach),
+}));
+bunTest.mock.module("assertledger/bun", () => ({
+  ...assertionHelper,
+  assertSame: scopedAssertSame,
+}));

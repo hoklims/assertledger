@@ -40,12 +40,14 @@ import {
   type EvidenceExportReplayResult,
   type EvidenceManifestContract,
   type EvidenceManifestV2Contract,
+  type EvidenceManifestV3Contract,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
   evidenceExportRequestJsonSchema,
   evidenceManifestJsonSchema,
   evidenceManifestV2JsonSchema,
+  evidenceManifestV3JsonSchema,
   evidenceProviderManifestJsonSchema,
   parseAgenticBenchmarkAcquisitionReplayResult,
   parseAgenticBenchmarkAcquisitionRequest,
@@ -74,26 +76,37 @@ import {
   parseReplayResult,
   parseRepositoryAnalysis,
   parseRepositoryAudit,
-  parseRepositoryInitResult,
+  parseVersionedRepositoryInitResult,
   parseEvidenceManifest,
   parseEvidenceManifestV2,
+  parseEvidenceManifestV3,
   parseVerificationRequest,
   parseVerificationRequestV2,
+  parseVerificationRequestV3,
   parseVersionedEvidenceManifest,
   type ReplayResult,
   type RepositoryAnalysis,
   type RepositoryAudit,
   type RepositoryInitResult,
+  type RepositoryInitResultV2,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
   repositoryInitConfigJsonSchema,
+  repositoryInitConfigV2JsonSchema,
   repositoryInitLockJsonSchema,
+  repositoryInitLockV2JsonSchema,
   repositoryInitResultJsonSchema,
+  repositoryInitResultV2JsonSchema,
   verificationRequestJsonSchema,
   verificationRequestV2JsonSchema,
+  verificationRequestV3JsonSchema,
 } from "../contracts/index.js";
-import { parseRuntimeDoctorResult, type RuntimeDoctorResult } from "../contracts/runtime-doctor.js";
+import {
+  parseVersionedRuntimeDoctorResult,
+  type RuntimeDoctorResult,
+  type RuntimeDoctorResultV2,
+} from "../contracts/runtime-doctor.js";
 import { ASSERTLEDGER_SOURCE_REVISION } from "../build-info.js";
 import {
   type AgenticCorpusExperimentReplayDependencies,
@@ -167,13 +180,18 @@ export type SchemaName =
   | "agentic-profile-replay-result-v2"
   | "verification-request"
   | "verification-request-v2"
+  | "verification-request-v3"
   | "repository-analysis"
   | "repository-audit"
   | "repository-init-config"
+  | "repository-init-config-v2"
   | "repository-init-lock"
+  | "repository-init-lock-v2"
   | "repository-init-result"
+  | "repository-init-result-v2"
   | "evidence-manifest"
   | "evidence-manifest-v2"
+  | "evidence-manifest-v3"
   | "replay-result"
   | "evidence-provider-manifest"
   | "evidence-export-request"
@@ -199,19 +217,25 @@ export class AssertLedger {
     return parseRepositoryAudit(await auditRepository(root, options));
   }
 
-  async init(root: string, options: RepositoryInitOptions = {}): Promise<RepositoryInitResult> {
-    return parseRepositoryInitResult(await initializeRepository(root, options));
+  async init(
+    root: string,
+    options: RepositoryInitOptions = {},
+  ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
+    return parseVersionedRepositoryInitResult(await initializeRepository(root, options));
   }
 
   async doctor(
     root: string,
-    options: Pick<RepositoryInitOptions, "exclude"> = {},
-  ): Promise<RepositoryInitResult> {
+    options: Pick<RepositoryInitOptions, "exclude" | "framework"> = {},
+  ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
     return this.init(root, { ...options, dryRun: true });
   }
 
-  async doctorRuntime(root: string, options: RuntimeDoctorOptions): Promise<RuntimeDoctorResult> {
-    return parseRuntimeDoctorResult(await doctorRepositoryRuntime(root, options));
+  async doctorRuntime(
+    root: string,
+    options: RuntimeDoctorOptions,
+  ): Promise<RuntimeDoctorResult | RuntimeDoctorResultV2> {
+    return parseVersionedRuntimeDoctorResult(await doctorRepositoryRuntime(root, options));
   }
 
   async verify(request: unknown): Promise<EvidenceManifestContract> {
@@ -231,6 +255,15 @@ export class AssertLedger {
     );
   }
 
+  async verifyV3(
+    request: unknown,
+    options: VerifyCampaignOptions = {},
+  ): Promise<EvidenceManifestV3Contract> {
+    return parseEvidenceManifestV3(
+      await verifyCampaign(parseVerificationRequestV3(request), options),
+    );
+  }
+
   async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
     return qualifyGitRegression(options);
   }
@@ -241,7 +274,10 @@ export class AssertLedger {
   }
 
   replay(manifest: unknown): ReplayResult {
-    let parsedManifest: EvidenceManifestContract | EvidenceManifestV2Contract;
+    let parsedManifest:
+      | EvidenceManifestContract
+      | EvidenceManifestV2Contract
+      | EvidenceManifestV3Contract;
     try {
       parsedManifest = parseVersionedEvidenceManifest(manifest);
     } catch {
@@ -486,20 +522,30 @@ export class AssertLedger {
         return verificationRequestJsonSchema();
       case "verification-request-v2":
         return verificationRequestV2JsonSchema();
+      case "verification-request-v3":
+        return verificationRequestV3JsonSchema();
       case "repository-analysis":
         return repositoryAnalysisJsonSchema();
       case "repository-audit":
         return repositoryAuditJsonSchema();
       case "repository-init-config":
         return repositoryInitConfigJsonSchema();
+      case "repository-init-config-v2":
+        return repositoryInitConfigV2JsonSchema();
       case "repository-init-lock":
         return repositoryInitLockJsonSchema();
+      case "repository-init-lock-v2":
+        return repositoryInitLockV2JsonSchema();
       case "repository-init-result":
         return repositoryInitResultJsonSchema();
+      case "repository-init-result-v2":
+        return repositoryInitResultV2JsonSchema();
       case "evidence-manifest":
         return evidenceManifestJsonSchema();
       case "evidence-manifest-v2":
         return evidenceManifestV2JsonSchema();
+      case "evidence-manifest-v3":
+        return evidenceManifestV3JsonSchema();
       case "replay-result":
         return replayResultJsonSchema();
       case "evidence-provider-manifest":
