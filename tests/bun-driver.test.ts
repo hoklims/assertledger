@@ -57,7 +57,16 @@ async function execute(
   }
 }
 
-describe("Bun Inspector structured-command driver", () => {
+describe("Bun instrumented structured-command driver", () => {
+  it("observes it aliases and parameterized Bun tests", async () => {
+    const observation = await execute(
+      'import { it, test } from "bun:test"; it("alias", () => {}); test.each([1, 2])("row %i", (value) => { if (value < 1) throw new Error("invalid"); });\n',
+    );
+    assert.equal(observation.result.outcome, "PASS", observation.stderr);
+    assert.equal(observation.result.testsDiscovered, 4);
+    assert.equal(observation.result.candidateTestsDiscovered, 3);
+  });
+
   it("runs exact base paths instead of similarly named tests", async () => {
     const observation = await execute(
       'import { test } from "bun:test"; test("candidate", () => {});\n',
@@ -140,6 +149,14 @@ describe("Bun Inspector structured-command driver", () => {
     );
     assert.equal(observation.exitCode, 1, observation.stderr);
     assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("does not credit an assertion alongside a collection error", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("candidate", () => assertSame(1, 2)); throw new Error("collection");\n',
+    );
+    assert.equal(observation.result.outcome, "INFRA_ERROR", observation.stderr);
     assert.equal(observation.result.attributed, false);
   });
 

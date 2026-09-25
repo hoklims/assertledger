@@ -1,99 +1,96 @@
 import assert from "node:assert/strict";
-import os from "node:os";
-import path from "node:path";
 import { describe, it } from "node:test";
-import { classifyBunInspectorEvents } from "../integrations/bun/driver.mjs";
+import { classifyBunInstrumentedEvidence, type BunTestEvent } from "../integrations/bun/driver.mjs";
 
-const root = path.join(os.tmpdir(), "assertledger-bun-classifier-fixture");
-const control = path.join(root, "control.test.ts");
-const candidate = path.join(root, "candidate.test.ts");
-const helper = path.join(root, "node_modules", "assertledger", "bun.mjs");
+const base = new Set(["base.test.ts"]);
 const candidates = new Set(["candidate.test.ts"]);
-const found = [
-  { method: "TestReporter.found", params: { id: 1, type: "test", url: control } },
-  { method: "TestReporter.found", params: { id: 2, type: "test", url: candidate } },
-];
-const controlPass = [
-  { method: "TestReporter.start", params: { id: 1 } },
-  { method: "TestReporter.end", params: { id: 1, status: "pass" } },
-];
+const foundBase = { kind: "found", id: "base", file: "base.test.ts" } as const;
+const basePass = { kind: "end", id: "base", status: "pass", owned: false } as const;
+const foundCandidate = { kind: "found", id: "candidate", file: "candidate.test.ts" } as const;
+const candidateFail = { kind: "end", id: "candidate", status: "fail", owned: true } as const;
+const complete = [foundBase, basePass, foundCandidate, candidateFail] satisfies BunTestEvent[];
 
-describe("Bun Inspector event classification", () => {
-  it("uses a zero runner exit for a started candidate whose final pass event was lost", () => {
-    const events = [...found, ...controlPass, { method: "TestReporter.start", params: { id: 2 } }];
-    assert.deepEqual(classifyBunInspectorEvents(events, candidates, root, 0, false), {
-      protocolVersion: "1.0.0",
-      outcome: "PASS",
-      testsDiscovered: 2,
-      candidateTestsDiscovered: 1,
-      attributed: true,
-    });
-    const nonzero = classifyBunInspectorEvents(events, candidates, root, 1, false);
-    assert.equal(nonzero.outcome, "PROCESS_CRASH");
-    assert.equal(nonzero.attributed, false);
+describe("instrumented Bun test evidence classification", () => {
+  it("credits one owned candidate assertion only with complete Bun counts and passing controls", () => {
+    assert.deepEqual(
+      classifyBunInstrumentedEvidence(
+        complete,
+        { tests: 2, failures: 1, skipped: 0 },
+        base,
+        candidates,
+        1,
+      ),
+      {
+        protocolVersion: "1.0.0",
+        outcome: "ASSERTION_FAILURE",
+        testsDiscovered: 2,
+        candidateTestsDiscovered: 1,
+        attributed: true,
+      },
+    );
   });
 
-  it("requires the owned assertion error and a complete nonzero Inspector trace for a kill", () => {
-    const candidateStart = { method: "TestReporter.start", params: { id: 2 } };
-    const candidateEnd = { method: "TestReporter.end", params: { id: 2, status: "fail" } };
-    const marker = {
-      method: "LifecycleReporter.error",
-      params: {
-        name: "AssertLedgerBunAssertionError",
-        message: "AssertLedger assertSame failed",
-        urls: [helper],
-      },
-    };
-    const assertion = classifyBunInspectorEvents(
-      [...found, ...controlPass, candidateStart, marker, candidateEnd],
+  it("rejects a missing base callback or an extra Bun failure", () => {
+    const missingBase = [foundCandidate, candidateFail] satisfies BunTestEvent[];
+    const missing = classifyBunInstrumentedEvidence(
+      missingBase,
+      { tests: 1, failures: 1, skipped: 0 },
+      base,
       candidates,
-      root,
       1,
-      false,
     );
-    assert.equal(assertion.outcome, "ASSERTION_FAILURE");
-    assert.equal(assertion.attributed, true);
+    assert.equal(missing.outcome, "INFRA_ERROR");
+    assert.equal(missing.attributed, false);
 
-    const generic = classifyBunInspectorEvents(
-      [
-        ...found,
-        ...controlPass,
-        candidateStart,
-        { ...marker, params: { ...marker.params, urls: [candidate] } },
-        candidateEnd,
-      ],
+    const extraFailure = classifyBunInstrumentedEvidence(
+      complete,
+      { tests: 2, failures: 2, skipped: 0 },
+      base,
       candidates,
-      root,
       1,
-      false,
+    );
+    assert.equal(extraFailure.outcome, "INFRA_ERROR");
+    assert.equal(extraFailure.attributed, false);
+  });
+
+  it("keeps generic throws, caught assertions and skipped tests non-attributed", () => {
+    const generic = classifyBunInstrumentedEvidence(
+      [foundBase, basePass, foundCandidate, { ...candidateFail, owned: false }],
+      { tests: 2, failures: 1, skipped: 0 },
+      base,
+      candidates,
+      1,
     );
     assert.equal(generic.outcome, "PROCESS_CRASH");
     assert.equal(generic.attributed, false);
+
+    const skipped = classifyBunInstrumentedEvidence(
+      complete,
+      { tests: 2, failures: 1, skipped: 1 },
+      base,
+      candidates,
+      1,
+    );
+    assert.equal(skipped.outcome, "INFRA_ERROR");
   });
 
-  it("refuses attribution when an expected base file never starts", () => {
-    const candidateOnly = [
-      found[1]!,
-      { method: "TestReporter.start", params: { id: 2 } },
-      {
-        method: "LifecycleReporter.error",
-        params: {
-          name: "AssertLedgerBunAssertionError",
-          message: "AssertLedger assertSame failed",
-          urls: [helper],
-        },
-      },
-      { method: "TestReporter.end", params: { id: 2, status: "fail" } },
-    ];
-    const result = classifyBunInspectorEvents(
-      candidateOnly,
+  it("counts each parameterized callback execution without duplicate attribution", () => {
+    const rows = [
+      foundBase,
+      basePass,
+      foundCandidate,
+      { kind: "end", id: "candidate", status: "pass", owned: false },
+      candidateFail,
+    ] satisfies BunTestEvent[];
+    const result = classifyBunInstrumentedEvidence(
+      rows,
+      { tests: 3, failures: 1, skipped: 0 },
+      base,
       candidates,
-      root,
       1,
-      false,
-      new Set(["control.test.ts"]),
     );
-    assert.equal(result.outcome, "INFRA_ERROR");
-    assert.equal(result.attributed, false);
+    assert.equal(result.outcome, "ASSERTION_FAILURE");
+    assert.equal(result.testsDiscovered, 3);
+    assert.equal(result.candidateTestsDiscovered, 2);
   });
 });

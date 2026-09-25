@@ -105,6 +105,9 @@ const BUN_TEST_DRIVER_PATH = fileURLToPath(
 const BUN_TEST_HELPER_PATH = fileURLToPath(
   new URL("../../integrations/bun/assertions.mjs", import.meta.url),
 );
+const BUN_TEST_PRELOAD_PATH = fileURLToPath(
+  new URL("../../integrations/bun/preload.mjs", import.meta.url),
+);
 const TEMPORARY_CLEANUP_OPTIONS = {
   recursive: true,
   force: true,
@@ -3505,6 +3508,8 @@ export async function verifyCampaign(
     request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_DRIVER_PATH) : undefined;
   const bunHelperDigest =
     request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_HELPER_PATH) : undefined;
+  const bunPreloadDigest =
+    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_PRELOAD_PATH) : undefined;
   const nodeRuntimePreflight: NodeTestRuntimePreflight | undefined =
     request.adapter.kind === "node-test" && nodeIdentity !== undefined
       ? await runNodeTestRuntimePreflight({
@@ -3650,14 +3655,18 @@ export async function verifyCampaign(
                     executableDigest: bunIdentity.executableDigest,
                     bunVersion: bunIdentity.bunVersion,
                     bunRevision: bunIdentity.bunRevision,
-                    inspectorProtocolBlob: BUN_TEST_ADAPTER_PROFILE.inspectorProtocolBlob,
                     driverDigest: bunDriverDigest,
                     helperDigest: bunHelperDigest,
+                    preloadDigest: bunPreloadDigest,
                     runtimePreflight: bunRuntimePreflight,
                     arguments: [
-                      "--inspect-wait=ws://127.0.0.1:0",
                       "test",
                       "--max-concurrency=1",
+                      "--retry=0",
+                      "--preload",
+                      "./node_modules/assertledger/preload.mjs",
+                      "--reporter=junit",
+                      "--reporter-outfile=<generated-junit-file>",
                       ...request.adapter.baseTestFiles,
                     ],
                   }
@@ -3724,7 +3733,7 @@ export async function verifyCampaign(
               ...(request.adapter.kind === "bun-test"
                 ? [
                     "Only failures from the AssertLedger-owned assertSame helper are admitted as Bun assertions; native bun:test expect failures are not assertion evidence.",
-                    "Bun Inspector test/error correlation requires one active test; ambiguous events cannot kill a target.",
+                    "Bun callback instrumentation determines assertion ownership; JUnit counts only check completeness and never classify assertions.",
                   ]
                 : []),
             ]
@@ -3733,7 +3742,8 @@ export async function verifyCampaign(
     if (
       request.adapter.kind === "bun-test" &&
       ((await sha256File(BUN_TEST_DRIVER_PATH)) !== bunDriverDigest ||
-        (await sha256File(BUN_TEST_HELPER_PATH)) !== bunHelperDigest)
+        (await sha256File(BUN_TEST_HELPER_PATH)) !== bunHelperDigest ||
+        (await sha256File(BUN_TEST_PRELOAD_PATH)) !== bunPreloadDigest)
     ) {
       throw new Error("BUN_TEST_ASSET_CHANGED_DURING_CAMPAIGN");
     }

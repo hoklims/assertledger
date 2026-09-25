@@ -74,7 +74,7 @@ export const RuntimeDoctorResultV2Schema = z.strictObject({
   reasonCodes: z.array(RuntimeDoctorReasonCodeV2Schema),
   limitations: z.tuple([
     z.literal(
-      "Runtime doctor uses controlled synthetic Bun Inspector probes and does not run repository tests or prove campaign evidence.",
+      "Runtime doctor uses controlled synthetic Bun callback probes and does not run repository tests or prove campaign evidence.",
     ),
   ]),
 });

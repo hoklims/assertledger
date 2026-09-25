@@ -5,7 +5,7 @@ import path from "node:path";
 import { it } from "node:test";
 import { doctorRepositoryRuntime, initializeRepository } from "../src/engine/index.js";
 
-it("qualifies the generated Bun adapter with controlled Inspector probes", async () => {
+it("qualifies the generated Bun adapter with controlled callback probes", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-doctor-"));
   try {
     await writeFile(

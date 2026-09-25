@@ -1,4 +1,4 @@
-export interface BunInspectorResult {
+export interface BunInstrumentedResult {
   protocolVersion: "1.0.0";
   outcome:
     | "PASS"
@@ -12,11 +12,14 @@ export interface BunInspectorResult {
   attributed: boolean;
 }
 
-export function classifyBunInspectorEvents(
-  messages: ReadonlyArray<{ method: string; params: Record<string, unknown> }>,
+export type BunTestEvent =
+  | { kind: "found"; id: string; file: string }
+  | { kind: "end"; id: string; status: "pass" | "fail"; owned: boolean };
+
+export function classifyBunInstrumentedEvidence(
+  events: readonly BunTestEvent[] | undefined,
+  junit: { tests: number; failures: number; skipped: number } | undefined,
+  baseFiles: ReadonlySet<string>,
   candidateFiles: ReadonlySet<string>,
-  root: string,
-  processExitCode: number | null,
-  invalidMessage: boolean,
-  requiredBaseFiles?: ReadonlySet<string>,
-): BunInspectorResult;
+  exitCode: number | null,
+): BunInstrumentedResult;

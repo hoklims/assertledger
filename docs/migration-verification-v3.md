@@ -22,7 +22,7 @@ disposable workspace; no adapter implementation is required in the consumer repo
 
 The Bun runtime profile pins version `1.4.2` and revision
 `744846f844374847c902b5e7fd59b4342a51ef99`. New manifests bind the resolved executable
-digest, Bun revision, Inspector protocol reference, driver digest, helper digest, command shape,
+digest, Bun revision, driver digest, preload digest, helper digest, command shape,
 and fresh runtime preflight. They may have new decision and artifact digests because v3 evidence
 has a new schema identity. No old manifest is resealed. The v3 schemas are added to the
 post-conformance schema lock; the frozen v1 bundle and its root digest are unchanged.

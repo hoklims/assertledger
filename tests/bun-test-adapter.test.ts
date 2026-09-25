@@ -125,6 +125,15 @@ describe("official Bun test adapter", () => {
     assert.ok(targetRuns.every((run) => run.outcome === "ASSERTION_FAILURE" && run.attributed));
     assert.equal(manifest.evidenceContext.adapter.version, "1.4.2");
     assert.equal(manifest.evidenceContext.adapter.name, "bun-test");
+    const configuration = manifest.evidenceContext.adapter.configuration as {
+      profile: { capabilities: { reporterTransport: string } };
+      preloadDigest: string;
+    };
+    assert.equal(
+      configuration.profile.capabilities.reporterTransport,
+      "instrumented-bun-test+junit",
+    );
+    assert.match(configuration.preloadDigest, /^sha256:[0-9a-f]{64}$/u);
     assert.equal(manifest.adapter.kind, "bun-test");
     assert.deepEqual(replayEvidenceManifest(manifest).valid, true);
   });

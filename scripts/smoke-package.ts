@@ -57,6 +57,7 @@ const required = [
   "integrations/bun/assertions.mjs",
   "integrations/bun/assertions.d.mts",
   "integrations/bun/driver.mjs",
+  "integrations/bun/preload.mjs",
   "benchmarks/agentic-profile/public/README.md",
   ...readdirSync(path.join(ROOT, "schemas"))
     .filter((name) => name.endsWith(".json"))
@@ -408,6 +409,104 @@ function main(): void {
       decisionSemanticsValid: true,
     });
     jsonFile(path.join(artifacts, "replay.json"), replay);
+
+    const bunFixture = path.join(consumer, "bun fixture");
+    mkdirSync(path.join(bunFixture, "src"), { recursive: true });
+    mkdirSync(path.join(bunFixture, "tests"), { recursive: true });
+    jsonFile(path.join(bunFixture, "package.json"), { type: "module" });
+    writeFileSync(
+      path.join(bunFixture, "src", "subject.ts"),
+      "export const subject = () => true;\n",
+    );
+    writeFileSync(
+      path.join(bunFixture, "tests", "base.test.ts"),
+      'import { test } from "bun:test"; test("base", () => {});\n',
+    );
+    const bunRequest = {
+      schemaVersion: "3.0.0",
+      repository: { root: bunFixture, exclude: ["node_modules", ".git", ".testforge"] },
+      adapter: { kind: "bun-test", executable: "bun", baseTestFiles: ["tests/base.test.ts"] },
+      isolation: {
+        kind: "trusted-local",
+        acknowledgedUnsafeExecution: true,
+        environmentAllowlist: ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"],
+      },
+      candidateRoots: ["tests/candidates"],
+      budgets: {
+        maximumCandidates: 1,
+        maximumWorlds: 3,
+        maximumExecutions: 12,
+        maximumRepositoryFiles: 100,
+        maximumRepositoryBytes: 1_000_000,
+        maximumWorldOverlayBytes: 10_000,
+        maximumCandidateBytes: 10_000,
+        maximumTotalCandidateBytes: 10_000,
+        timeoutMsPerExecution: 10_000,
+        maximumOutputBytes: 65_536,
+      },
+      policy: {
+        policyVersion: "1.0.0",
+        requiredAttempts: 2,
+        minimumTargetWeightPermille: 1_000,
+        maximumSelectedCandidates: 1,
+        acceptedTargetOutcomes: ["ASSERTION_FAILURE"],
+      },
+      worlds: [
+        {
+          id: "reference",
+          kind: "REFERENCE",
+          required: true,
+          weight: 0,
+          provenance: "fixture:correct",
+          files: [],
+        },
+        {
+          id: "target",
+          kind: "TARGET",
+          required: true,
+          weight: 1,
+          provenance: "fixture:fault",
+          files: [{ path: "src/subject.ts", content: "export const subject = () => false;\n" }],
+        },
+        {
+          id: "neutral",
+          kind: "NEUTRAL",
+          required: true,
+          weight: 0,
+          provenance: "fixture:equivalent",
+          files: [],
+        },
+      ],
+      candidates: [
+        {
+          id: "candidate",
+          files: [
+            {
+              path: "tests/candidates/candidate.test.ts",
+              content: [
+                'import { test } from "bun:test";',
+                'import { assertSame } from "assertledger/bun";',
+                'import { subject } from "../../src/subject.ts";',
+                'test("subject stays true", () => assertSame(subject(), true));',
+                "",
+              ].join("\n"),
+            },
+          ],
+        },
+      ],
+    };
+    const bunRequestPath = path.join(consumer, "bun-request.json");
+    jsonFile(bunRequestPath, bunRequest);
+    const bunManifest = parse(
+      runBin("assertledger", ["verify", bunRequestPath, "--allow-unsafe-execution", "--json"]),
+    );
+    assert.equal(bunManifest.decision.status, "VERIFIED");
+    assert.deepEqual(bunManifest.decision.selectedCandidateIds, ["candidate"]);
+    const bunManifestPath = path.join(artifacts, "bun-manifest.json");
+    jsonFile(bunManifestPath, bunManifest);
+    const bunReplay = parse(runBin("assertledger", ["replay", bunManifestPath]));
+    assert.equal(bunReplay.valid, true);
+    jsonFile(path.join(artifacts, "bun-replay.json"), bunReplay);
 
     // Agentic Test Profile v1 derived by the installed CLI and SDK from the manifest verified above.
     const profileRequest = {
@@ -773,6 +872,7 @@ function main(): void {
       artifacts,
       decision: manifest.decision,
       replay,
+      bun: { decision: bunManifest.decision, replayValid: bunReplay.valid },
       sdk,
       typescript: JSON.parse(
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),

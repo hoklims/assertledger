@@ -29,7 +29,7 @@ export interface BunRuntimeDoctorDependencies {
 }
 
 const BUN_LIMITATION =
-  "Runtime doctor uses controlled synthetic Bun Inspector probes and does not run repository tests or prove campaign evidence." as const;
+  "Runtime doctor uses controlled synthetic Bun callback probes and does not run repository tests or prove campaign evidence." as const;
 
 function bunCheck(
   id: RuntimeDoctorCheckV2["id"],
@@ -168,14 +168,14 @@ export async function runBunRuntimeDoctorChecks(
       bunCheck(
         "synthetic-preflight",
         "BLOCKED",
-        "Bun Inspector discovery or assertion probes failed.",
+        "Bun callback or assertion probes failed.",
         "RUNTIME_BUN_PREFLIGHT_FAILED",
         "Reinstall AssertLedger and rerun runtime doctor.",
       ),
     );
     return finishBunDoctor(repositoryRoot, checks, "bun:test", bunVersion);
   }
-  checks.push(bunCheck("synthetic-preflight", "PASS", "Bun Inspector probes passed."));
+  checks.push(bunCheck("synthetic-preflight", "PASS", "Bun callback probes passed."));
   return finishBunDoctor(repositoryRoot, checks, "bun:test", bunVersion);
 }
 
