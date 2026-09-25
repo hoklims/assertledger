@@ -22,12 +22,16 @@ import {
   EvidenceExportRequestSchema,
   EvidenceExportSchema,
   EvidenceManifestSchema,
+  EvidenceManifestV3Schema,
   EvidenceProviderManifestSchema,
   ReplayResultSchema,
   RepositoryAnalysisSchema,
   RepositoryInitResultSchema,
+  RepositoryInitResultV2Schema,
   RuntimeDoctorResultSchema,
+  RuntimeDoctorResultV2Schema,
   VerificationRequestSchema,
+  VerificationRequestV3Schema,
 } from "../contracts/index.js";
 import { DiagnosticCodesSchema, DiagnosticReportSchema } from "../diagnostics.js";
 import { AssertLedger } from "../sdk/index.js";
@@ -113,13 +117,17 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
   const staticDoctorInputSchema = z.strictObject({
     root: z.string().min(1),
     exclude: z.array(z.string()).max(1_000).optional(),
+    framework: z.string().min(1).optional(),
   });
   const doctorConfig = {
     title: "Inspect repository readiness",
     description:
-      "Return a static AssertLedger initialization plan without writing files or executing repository code. Optional exclude names entries to leave out of the inventory at any depth; without it, a valid configuration's list applies.",
+      "Return a static AssertLedger initialization plan without writing files or executing repository code. Optional framework selects the test framework; exclude names entries to leave out of the inventory at any depth.",
     inputSchema: staticDoctorInputSchema,
-    outputSchema: RepositoryInitResultSchema,
+    outputSchema: z.union([
+      z.strictObject({ ...RepositoryInitResultSchema.shape }),
+      z.strictObject({ ...RepositoryInitResultV2Schema.shape }),
+    ]),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -127,12 +135,16 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       readOnlyHint: true,
     },
   };
-  const doctorHandler = async ({ root, exclude }: z.infer<typeof staticDoctorInputSchema>) =>
+  const doctorHandler = async ({
+    root,
+    exclude,
+    framework,
+  }: z.infer<typeof staticDoctorInputSchema>) =>
     jsonResult(
-      await assertLedger.doctor(
-        await confinedRepositoryRoot(root),
-        exclude === undefined ? {} : { exclude },
-      ),
+      await assertLedger.doctor(await confinedRepositoryRoot(root), {
+        ...(exclude === undefined ? {} : { exclude }),
+        ...(framework === undefined ? {} : { framework }),
+      }),
     );
   server.registerTool("assertledger_doctor", doctorConfig, doctorHandler);
   server.registerTool("testforge_doctor", doctorConfig, doctorHandler);
@@ -143,7 +155,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       description:
         "UNSANDBOXED trusted-local: check the generated node:test runtime with controlled synthetic probes. Does not run repository tests or prove campaign evidence. Available only with server-operator authorization.",
       inputSchema: doctorInputSchema,
-      outputSchema: RuntimeDoctorResultSchema,
+      outputSchema: z.union([RuntimeDoctorResultSchema, RuntimeDoctorResultV2Schema]),
       annotations: {
         destructiveHint: true,
         idempotentHint: false,
@@ -226,6 +238,29 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     };
     server.registerTool("assertledger_verify", verifyConfig, verifyHandler);
     server.registerTool("testforge_verify", verifyConfig, verifyHandler);
+
+    const verifyV3InputSchema = z.strictObject({ request: VerificationRequestV3Schema });
+    const verifyV3Config = {
+      ...verifyConfig,
+      title: "Verify v3 candidate tests",
+      inputSchema: verifyV3InputSchema,
+      outputSchema: EvidenceManifestV3Schema,
+    };
+    const verifyV3Handler = async ({ request }: z.infer<typeof verifyV3InputSchema>) => {
+      const root = await confinedRepositoryRoot(request.repository.root);
+      return jsonResult(
+        await assertLedger.verifyV3({
+          ...request,
+          repository: { ...request.repository, root },
+          isolation:
+            request.isolation.kind === "trusted-local"
+              ? { ...request.isolation, acknowledgedUnsafeExecution: true }
+              : request.isolation,
+        }),
+      );
+    };
+    server.registerTool("assertledger_verify_v3", verifyV3Config, verifyV3Handler);
+    server.registerTool("testforge_verify_v3", verifyV3Config, verifyV3Handler);
 
     const benchmarkAcquireInputSchema = z.strictObject({
       request: AgenticBenchmarkAcquisitionRequestSchema,

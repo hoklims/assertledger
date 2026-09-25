@@ -15,6 +15,34 @@ and project-local agent connection, plus a bounded demonstration of the installe
   the exact `VERIFIED`, `REJECTED`, `INCONCLUSIVE` or `ENGINE_ERROR` decision and uses the same exit
   codes as `verify`.
 
+An explicitly authored `bun:test` regression candidate can now produce attributed AssertLedger
+evidence on the qualified Bun 1.4.2 runtime. The built-in v3 adapter wraps `bun:test` callbacks
+before test files load and identifies only errors thrown by the packaged `assertSame` helper.
+Native Bun `expect` failures stay non-attributed. Bun's JUnit totals check completeness; they
+never decide whether a failure is an assertion.
+
+- Add verification request/evidence manifest v3, Bun initialization v2, and Bun runtime doctor v2.
+  Historical v1/v2 schema bytes and replay remain unchanged; the new schemas extend the additive
+  schema lock. The manifest binds Bun executable, driver, preload, helper, and preflight identity.
+- Pin Bun 1.4.2 on the Windows, Linux, and macOS verification matrix. The adapter uses serialized
+  `bun:test` callback instrumentation in explicitly unsandboxed trusted-local execution; container
+  Bun requests are refused. Missing or inconsistent callback and JUnit counts, ordinary errors,
+  and timeouts cannot kill a target.
+- Carry assertion ownership from the preload through a signed process pipe and emit the final
+  report from the driver. Candidate-written files cannot forge either evidence channel. Ownership
+  is scoped to each test callback execution, including each parameterized row, so a saved error
+  cannot be replayed. AsyncLocalStorage preserves that scope across asynchronous continuations.
+  Multiple failing candidate rows are credited only when every failure is an owned assertion.
+- Package the `assertledger/bun` helper and validate its JavaScript and TypeScript exports in a
+  fresh package consumer. See [verification v3 migration](docs/migration-verification-v3.md).
+- Let static `doctor` select `--framework bun:test` in mixed repositories, including through SDK
+  and MCP, without executing repository code.
+
+Compatibility: existing Node and structured-command requests keep their v1/v2 contracts and
+decisions. Bun campaigns require v3 requests and new candidate tests that import `assertSame`;
+old Bun `expect` tests can remain base controls but their failures do not count as target evidence.
+The v1 evidence provider/export surface does not project Bun v3 evidence.
+
 A repository that keeps a local-only symbolic link, such as an agent's skill directory, can now be
 diagnosed and initialized without weakening the link refusal.
 

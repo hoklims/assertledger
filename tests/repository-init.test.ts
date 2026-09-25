@@ -555,7 +555,7 @@ describe("repository init v1", () => {
         lockfile: "bun.lock",
         source: "import 'bun:test';\n",
         framework: "bun:test",
-        status: "BLOCKED",
+        status: "WOULD_CREATE",
       },
       {
         packageDocument: {
@@ -648,20 +648,13 @@ describe("repository init v1", () => {
     assert.equal(result.status, "CREATED");
   });
 
-  it("detects Bun and pytest but blocks unavailable official adapters without writes", async () => {
-    const bun = await fixture(
-      { name: "bun", packageManager: "bun@1.2.0", scripts: { test: "bun test" } },
-      { "bun.lock": "", "src/a.test.ts": "import { test } from 'bun:test';\n" },
-    );
+  it("detects pytest but blocks its unavailable official adapter without writes", async () => {
     const python = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-python-"));
     temporaryDirectories.push(python);
     await writeFile(path.join(python, "pyproject.toml"), "[tool.pytest.ini_options]\n[tool.uv]\n");
     await writeFile(path.join(python, "uv.lock"), "version = 1\n");
     await writeFile(path.join(python, "test_app.py"), "def test_app(): assert True\n");
-    for (const [root, expected] of [
-      [bun, ["bun", "bun:test"]],
-      [python, ["uv", "pytest"]],
-    ] as const) {
+    for (const [root, expected] of [[python, ["uv", "pytest"]]] as const) {
       const result = await initializeRepository(root);
       assert.equal(result.status, "BLOCKED");
       assert.equal(result.detections.packageManager, expected[0]);
@@ -931,12 +924,13 @@ describe("repository init v1", () => {
     });
     assert.deepEqual(result.requiredOperatorInputs, ["worlds", "candidates"]);
 
-    const blocked = await fixture(
+    const bun = await fixture(
       { name: "bun", packageManager: "bun@1", scripts: { test: "bun test" } },
       { "bun.lock": "", "a.test.ts": "import { test } from 'bun:test';\n" },
     );
-    const blockedOutput = capture(blocked);
-    assert.equal(await runCli(["init", ".", "--json"], blockedOutput.io), 3);
+    const bunOutput = capture(bun);
+    assert.equal(await runCli(["init", ".", "--json"], bunOutput.io), 0);
+    assert.equal(JSON.parse(bunOutput.stdout()).schemaVersion, "2.0.0");
   });
 
   it("resolves CLI adapter paths against the repository root when cwd differs", async () => {

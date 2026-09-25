@@ -9,7 +9,7 @@ You get a verdict, the observations behind it and an evidence file you can repla
 
 [Try the example](#try-the-example) · [Understand the result](#understand-the-result) · [Use your repository](#use-your-repository) · [Documentation](#documentation)
 
-**1.2 · node:test · CLI, SDK and MCP · MIT**
+**1.2 · node:test and bun:test · CLI, SDK and MCP · MIT**
 
 Install in your repository with Node.js 22.15 or later:
 
@@ -56,7 +56,7 @@ flowchart LR
 
 ## Try the example
 
-You need **Git**, **Node.js 22.15+** and **pnpm 11.1.2**. The first built-in adapter is `node:test`.
+You need **Git**, **Node.js 22.15+** and **pnpm 11.1.2**. The example uses the built-in `node:test` adapter.
 
 ```sh
 git clone --branch v1.2.0 https://github.com/hoklims/assertledger.git
@@ -165,6 +165,15 @@ After initialization, [runtime doctor](docs/runtime-doctor.md) can check Node, t
 discovery and assertion attribution with `doctor --runtime --allow-unsafe-execution`.
 For a refusal, use `explain CODE` to get a safe next action.
 
+### Bun 1.4.2
+
+For a `bun:test` repository, run `assertledger doctor . --framework bun:test`. After `init` and
+the runtime doctor, author v3 regression candidates using `assertSame` from `assertledger/bun`.
+The Bun adapter pins version 1.4.2 and attributes failures from this helper. Native Bun `expect`
+failures remain operational failures and cannot count as target detection. See the
+[Bun migration guide](docs/migration-verification-v3.md) for the request, execution and replay
+contract. The execution mode is explicitly unsandboxed and intended for trusted local code.
+
 ### Qualify a committed regression test
 
 Choose the buggy commit (`BEFORE`), its correction (`AFTER`) and a neutral control (`NEUTRAL`).
@@ -213,6 +222,7 @@ The [client guide](docs/client-connections.md) covers installation and removal.
 | You want to… | Start here |
 | --- | --- |
 | Set up a repository | [Initialization](docs/repository-init.md) · [Static audit](docs/repository-audit.md) |
+| Verify a Bun regression | [Bun migration](docs/migration-verification-v3.md) |
 | Diagnose a blockage | [Runtime doctor](docs/runtime-doctor.md) · [Reason-code guidance](docs/diagnostics.md) |
 | Try a historical correction | [Unicode-regexp example](examples/git-history/README.md) |
 | Qualify a correction or connect Codex | [Git workflow](docs/git-regression.md) · [Developer entry points](docs/developer-experience.md) |

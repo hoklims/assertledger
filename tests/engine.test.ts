@@ -1083,8 +1083,8 @@ describe("campaign orchestration", () => {
     await assert.rejects(engine.verifyCampaign(request), /UNSAFE_TARGET_OUTCOME/);
 
     request.policy.acceptedTargetOutcomes = ["ASSERTION_FAILURE"];
-    // 2.0.0 is the container-capable request version; an unknown major stays refused.
-    request.schemaVersion = "3.0.0";
+    // V3 adds the Bun adapter; an unknown major stays refused.
+    request.schemaVersion = "4.0.0";
     await assert.rejects(engine.verifyCampaign(request), /SCHEMA_VERSION_UNSUPPORTED/);
   });
 

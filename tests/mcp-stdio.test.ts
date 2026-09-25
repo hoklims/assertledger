@@ -305,6 +305,7 @@ describe("MCP 2026 stdio transport", () => {
         "assertledger_replay",
         "assertledger_schema",
         "assertledger_verify",
+        "assertledger_verify_v3",
         "testforge_analyze",
         "testforge_benchmark",
         "testforge_benchmark_acquire",
@@ -326,6 +327,7 @@ describe("MCP 2026 stdio transport", () => {
         "testforge_replay",
         "testforge_schema",
         "testforge_verify",
+        "testforge_verify_v3",
       ]);
       const preferredVerify = listed.tools.find((tool) => tool.name === "assertledger_verify");
       const legacyVerify = listed.tools.find((tool) => tool.name === "testforge_verify");

@@ -13,7 +13,11 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { EvidenceManifestContract, EvidenceManifestV2Contract } from "../contracts/index.js";
+import type {
+  EvidenceManifestContract,
+  EvidenceManifestV2Contract,
+  EvidenceManifestV3Contract,
+} from "../contracts/index.js";
 import {
   ContainerImageReferenceSchema,
   parseVersionedEvidenceManifest,
@@ -28,7 +32,10 @@ import { renderDiagnostics } from "../diagnostics.js";
 import { DEFAULT_CONTAINER_LIMITS, parseContainerRuntimeCommand } from "./container.js";
 import { verifyCampaign } from "./index.js";
 
-type QualificationManifest = EvidenceManifestContract | EvidenceManifestV2Contract;
+type QualificationManifest =
+  | EvidenceManifestContract
+  | EvidenceManifestV2Contract
+  | EvidenceManifestV3Contract;
 
 const GIT_PROCESS_LIMIT = 32;
 const GIT_PROCESS_TIMEOUT_MS = 5_000;

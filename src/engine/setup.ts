@@ -1,6 +1,10 @@
 import { lstat, readFile, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
-import { parseRepositoryInitResult, type RepositoryInitResult } from "../contracts/index.js";
+import {
+  parseRepositoryInitResult,
+  type RepositoryInitResult,
+  type RepositoryInitResultV2,
+} from "../contracts/index.js";
 import {
   ClientConnectionApplyError,
   type ClientConnectionPlan,
@@ -11,6 +15,7 @@ import {
 import { initializeRepository, RepositoryInitWriteError } from "./index.js";
 
 export type SetupClient = "codex" | "claude-code";
+type AnyRepositoryInitResult = RepositoryInitResult | RepositoryInitResultV2;
 export type RepositorySetupStatus =
   | "WOULD_CREATE"
   | "CREATED"
@@ -42,7 +47,7 @@ export interface RepositorySetupResult {
   status: RepositorySetupStatus;
   client: SetupClient;
   mode: "dry-run" | "write";
-  init: RepositoryInitResult;
+  init: AnyRepositoryInitResult;
   connection: ClientConnectionResult;
   artifacts: RepositorySetupArtifact[];
   rollback: RepositorySetupRollback;
@@ -53,9 +58,9 @@ export interface RepositorySetupResult {
 }
 
 export interface SetupRepositoryDependencies {
-  planInit?(root: string): Promise<RepositoryInitResult>;
+  planInit?(root: string): Promise<AnyRepositoryInitResult>;
   afterInitApplied?(): Promise<void>;
-  applyInit?(root: string): Promise<RepositoryInitResult>;
+  applyInit?(root: string): Promise<AnyRepositoryInitResult>;
   applyConnection?(): Promise<ClientConnectionResult>;
   planConnection?(
     root: string,
@@ -131,7 +136,7 @@ function connectionPreflightDiagnostic(
 }
 
 function initArtifactState(
-  result: RepositoryInitResult,
+  result: AnyRepositoryInitResult,
   file: string,
 ): RepositorySetupArtifactState {
   if (result.status === "CONFLICT") return "CONFLICT";
@@ -140,7 +145,7 @@ function initArtifactState(
 
 async function rollbackCreatedInitFiles(
   root: string,
-  plan: RepositoryInitResult,
+  plan: AnyRepositoryInitResult,
   ownedPaths: readonly string[],
   changedUnownedPaths: readonly string[] = [],
 ): Promise<RepositorySetupRollback> {
@@ -215,7 +220,7 @@ export async function setupRepository(
   dependencies: SetupRepositoryDependencies = {},
 ): Promise<RepositorySetupResult> {
   const requestedRoot = path.resolve(root);
-  let initPlan: RepositoryInitResult;
+  let initPlan: AnyRepositoryInitResult;
   try {
     initPlan = await (dependencies.planInit?.(root) ??
       initializeRepository(root, { dryRun: true }));
@@ -348,7 +353,7 @@ export async function setupRepository(
   const unchanged = artifacts.every((artifact) => artifact.state === "UNCHANGED");
   if (!write) return { status: unchanged ? "UNCHANGED" : "WOULD_CREATE", ...base };
 
-  let appliedInit: RepositoryInitResult;
+  let appliedInit: AnyRepositoryInitResult;
   try {
     appliedInit = await (dependencies.applyInit?.(root) ?? initializeRepository(root));
   } catch (error) {

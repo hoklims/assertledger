@@ -23,14 +23,39 @@
       "$id": "https://testforge.dev/schemas/evidence-manifest.v2.json"
     },
     {
+      "path": "schemas/evidence-manifest.v3.json",
+      "rawSha256": "sha256:460925ce29c51e47a38e439264f56dac9d444f52a07ec103f38b44e59679adbd",
+      "$id": "https://testforge.dev/schemas/evidence-manifest.v3.json"
+    },
+    {
       "path": "schemas/evidence-provider-manifest.v1.json",
       "rawSha256": "sha256:6100995f772cd24b7369e4428fb1aba570f1ba6e1f61295bc42a1f7ce6b5bde3",
       "$id": "https://testforge.dev/schemas/evidence-provider-manifest.v1.json"
     },
     {
+      "path": "schemas/repository-init-config.v2.json",
+      "rawSha256": "sha256:03176fe2fabd53f1b688815f2d163907ed5771b1b4e45be124a15ccf4e9e2328",
+      "$id": "https://testforge.dev/schemas/repository-init-config.v2.json"
+    },
+    {
+      "path": "schemas/repository-init-lock.v2.json",
+      "rawSha256": "sha256:d3d81aa21491cd545163a63b579ad87e2b21f7de19a89ca70c6f4de98eb22966",
+      "$id": "https://testforge.dev/schemas/repository-init-lock.v2.json"
+    },
+    {
+      "path": "schemas/repository-init-result.v2.json",
+      "rawSha256": "sha256:41c984107b3bec203bd049fa8fa0df87e1c3b6b0a421c88a4fdeef18f6b1dea5",
+      "$id": "https://testforge.dev/schemas/repository-init-result.v2.json"
+    },
+    {
       "path": "schemas/verification-request.v2.json",
       "rawSha256": "sha256:cefa0fba0a75435165bf6fdc6ee90b638488cecaab3ad8f40f3e98820a6b8d34",
       "$id": "https://testforge.dev/schemas/verification-request.v2.json"
+    },
+    {
+      "path": "schemas/verification-request.v3.json",
+      "rawSha256": "sha256:3b88e4c58425aa9a45da330b27f4a48d778c1f9a2494ac2a9a4c01b29728fd77",
+      "$id": "https://testforge.dev/schemas/verification-request.v3.json"
     }
   ]
 }

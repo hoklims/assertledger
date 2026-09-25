@@ -69,9 +69,12 @@ Files at or below the managed `candidateRoots` are deliberately excluded from fr
 evidence, built-in control tests, and repository-change comparison. Candidate generation therefore
 cannot silently redefine initialization facts or invalidate an otherwise unchanged lock.
 
-The built-in ready adapter is currently `node-test`. Bun, pytest, Vitest, and Jest can be detected,
-but initialization returns `BLOCKED` with `OFFICIAL_ADAPTER_UNAVAILABLE` unless the operator supplies
-an existing structured adapter configuration:
+The built-in ready adapters are `node-test` and `bun-test`. Bun initialization writes v2 config,
+lock, and result contracts; Node initialization stays v1. Bun's static plan does not qualify the
+installed runtime. Run runtime doctor and use a v3 verification request before claiming campaign
+evidence. Pytest, Vitest, and Jest can be detected, but initialization returns `BLOCKED` with
+`OFFICIAL_ADAPTER_UNAVAILABLE` unless the operator supplies an existing structured adapter
+configuration:
 
 ```sh
 assertledger init . --adapter-config integrations/my-adapter.json --json
@@ -80,8 +83,8 @@ assertledger init . --adapter-config integrations/my-adapter.json --json
 The adapter document is parsed through the public adapter contract and is operator-owned. Its
 executable is recorded as argv but is not resolved or executed by `init`. This is not an official
 adapter endorsement and does not reduce the later `trusted-local` execution boundary.
-`node-test` adapters are accepted only for the `node:test` framework; every other framework requires
-an operator-owned `testforge-command` adapter.
+`node-test` adapters are accepted only for `node:test`; `bun-test` adapters are accepted only for
+`bun:test`. Pytest, Vitest, and Jest require an operator-owned `testforge-command` adapter.
 
 All detections and evidence digests come from one byte snapshot. Immediately before returning or
 writing managed files, initialization rechecks the in-scope inventory and every evidence byte. A
@@ -97,7 +100,6 @@ Exit codes are `0` for `CREATED`, `UNCHANGED`, or `WOULD_CREATE`; `3` for `BLOCK
 ambiguity, invalid overrides, conflicts, or contract validation; `5` for unexpected I/O; and `64`
 for CLI usage errors.
 
-The public `repository-init-config.v1`, `repository-init-lock.v1`, and
-`repository-init-result.v1` contracts contain no timestamps, absolute repository roots, environment
+The public v1 and v2 initialization contracts contain no timestamps, absolute repository roots, environment
 values, worlds, or candidates. The lock binds normalized detections and sorted evidence digests; it
 does not authenticate the detector, repository, adapter, or later execution evidence.

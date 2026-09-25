@@ -9,7 +9,7 @@ Vous obtenez un verdict, les observations qui le justifient et un fichier de pre
 
 [Essayer l’exemple](#essayer-lexemple) · [Comprendre le résultat](#comprendre-le-résultat) · [Utiliser votre dépôt](#utiliser-votre-dépôt) · [Documentation](#documentation)
 
-**1.2 · node:test · CLI, SDK et MCP · MIT**
+**1.2 · node:test et bun:test · CLI, SDK et MCP · MIT**
 
 Installez l’outil dans votre dépôt avec Node.js 22.15 ou une version ultérieure :
 
@@ -57,7 +57,7 @@ flowchart LR
 
 ## Essayer l’exemple
 
-Prérequis : **Git**, **Node.js 22.15+** et **pnpm 11.1.2**. Le premier adaptateur intégré utilise `node:test`.
+Prérequis : **Git**, **Node.js 22.15+** et **pnpm 11.1.2**. L’exemple utilise l’adaptateur intégré `node:test`.
 
 ```sh
 git clone --branch v1.2.0 https://github.com/hoklims/assertledger.git
@@ -173,6 +173,15 @@ Après l’initialisation, le [diagnostic dynamique](docs/runtime-doctor.md) vé
 la découverte des tests et l’attribution des assertions avec `doctor --runtime --allow-unsafe-execution`.
 Pour comprendre un refus, lancez `explain CODE` : la commande indique la prochaine action sûre.
 
+### Bun 1.4.2
+
+Pour un dépôt `bun:test`, lancez `assertledger doctor . --framework bun:test`. Après `init` et le
+diagnostic dynamique, écrivez des tests candidats v3 avec `assertSame` depuis `assertledger/bun`.
+L’adaptateur cible précisément Bun 1.4.2 et attribue les échecs de cet outil. Les échecs `expect`
+natifs restent des erreurs d’exécution et ne comptent pas comme détection du défaut. Le
+[guide de migration Bun](docs/migration-verification-v3.md) décrit la requête, l’exécution et le
+rejeu. Ce mode exécute du code local de confiance sans bac à sable.
+
 ### Qualifier un test de régression commité
 
 Choisissez le commit qui contient le bug (`BEFORE`), sa correction (`AFTER`) et un témoin neutre
@@ -225,6 +234,7 @@ Le guide Git est en français ; les autres références techniques sont en angla
 | Vous souhaitez… | Commencez ici |
 | --- | --- |
 | Préparer un dépôt | [Initialisation](docs/repository-init.md) · [Audit statique](docs/repository-audit.md) |
+| Vérifier une régression Bun | [Migration Bun](docs/migration-verification-v3.md) |
 | Comprendre un blocage | [Diagnostic dynamique](docs/runtime-doctor.md) · [Explication des motifs](docs/diagnostics.md) |
 | Essayer une correction historique | [Exemple Unicode-regexp](examples/git-history/README.md) |
 | Qualifier une correction ou connecter Codex | [Parcours Git](docs/git-regression.md) · [Prise en main](docs/developer-experience.md) |

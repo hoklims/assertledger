@@ -57,6 +57,10 @@ const required = [
   "conformance/schema-extensions.json",
   "dist/build-info.json",
   "integrations/skill/SKILL.md",
+  "integrations/bun/assertions.mjs",
+  "integrations/bun/assertions.d.mts",
+  "integrations/bun/driver.mjs",
+  "integrations/bun/preload.mjs",
   "benchmarks/agentic-profile/public/README.md",
   ...readdirSync(path.join(ROOT, "schemas"))
     .filter((name) => name.endsWith(".json"))
@@ -471,13 +475,16 @@ function main(): void {
       'import { fileURLToPath } from "node:url";',
       'import { AssertLedger, TestForge } from "assertledger";',
       'import { canonicalize } from "assertledger/core";',
+      'import { assertSame } from "assertledger/bun";',
       `const root = realpathSync(${JSON.stringify(installed)});`,
-      'for (const specifier of ["assertledger", "assertledger/core"]) {',
+      'for (const specifier of ["assertledger", "assertledger/core", "assertledger/bun"]) {',
       "  const relative = path.relative(root, realpathSync(fileURLToPath(import.meta.resolve(specifier))));",
       '  assert.ok(relative && relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative));',
       "}",
       "assert.ok(TestForge.prototype instanceof AssertLedger);",
       'assert.equal(canonicalize({ b: 2, a: 1 }), \'{"a":1,"b":2}\');',
+      "assert.doesNotThrow(() => assertSame(1, 1));",
+      'assert.throws(() => assertSame(1, 2), { name: "AssertLedgerBunAssertionError" });',
       "const sdk = new AssertLedger(); const legacy = new TestForge();",
       'assert.deepEqual(sdk.schema("replay-result"), legacy.schema("replay-result"));',
       "for (const instance of [sdk, legacy]) {",
@@ -487,7 +494,7 @@ function main(): void {
       `  const audit = await instance.audit(${JSON.stringify(fixture)}, { noGit: true });`,
       '  assert.equal(audit.schemaVersion, "1.0.0"); assert.equal(audit.fileCount, 2);',
       "}",
-      'console.log(JSON.stringify({ status: "PASS", exports: ["assertledger", "assertledger/core"], aliases: ["AssertLedger", "TestForge"] }));',
+      'console.log(JSON.stringify({ status: "PASS", exports: ["assertledger", "assertledger/core", "assertledger/bun"], aliases: ["AssertLedger", "TestForge"] }));',
       "",
     ].join("\n");
     writeFileSync(sdkScript, sdkSource);
@@ -632,6 +639,7 @@ function main(): void {
       [
         'import { AssertLedger, TestForge, type AgenticProfileReplayResult, type AgenticProfileReport, type EvidenceManifestContract, type ReplayResult } from "assertledger";',
         'import { canonicalize, replayEvidenceManifest } from "assertledger/core";',
+        'import { assertSame } from "assertledger/bun";',
         "const sdk: AssertLedger = new TestForge();",
         "const manifest: EvidenceManifestContract = await sdk.verify({});",
         "const replay: ReplayResult = sdk.replay(manifest);",
@@ -639,6 +647,7 @@ function main(): void {
         "const profileReplay: AgenticProfileReplayResult = sdk.replayProfile(profile);",
         "const valid: boolean = replayEvidenceManifest(manifest).valid && replay.valid && profileReplay.valid;",
         "const text: string = canonicalize({ valid });",
+        "assertSame(text, text);",
         "void text;",
         "",
       ].join("\n"),
@@ -692,6 +701,104 @@ function main(): void {
       decisionSemanticsValid: true,
     });
     jsonFile(path.join(artifacts, "replay.json"), replay);
+
+    const bunFixture = path.join(consumer, "bun fixture");
+    mkdirSync(path.join(bunFixture, "src"), { recursive: true });
+    mkdirSync(path.join(bunFixture, "tests"), { recursive: true });
+    jsonFile(path.join(bunFixture, "package.json"), { type: "module" });
+    writeFileSync(
+      path.join(bunFixture, "src", "subject.ts"),
+      "export const subject = () => true;\n",
+    );
+    writeFileSync(
+      path.join(bunFixture, "tests", "base.test.ts"),
+      'import { test } from "bun:test"; test("base", () => {});\n',
+    );
+    const bunRequest = {
+      schemaVersion: "3.0.0",
+      repository: { root: bunFixture, exclude: ["node_modules", ".git", ".testforge"] },
+      adapter: { kind: "bun-test", executable: "bun", baseTestFiles: ["tests/base.test.ts"] },
+      isolation: {
+        kind: "trusted-local",
+        acknowledgedUnsafeExecution: true,
+        environmentAllowlist: ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"],
+      },
+      candidateRoots: ["tests/candidates"],
+      budgets: {
+        maximumCandidates: 1,
+        maximumWorlds: 3,
+        maximumExecutions: 12,
+        maximumRepositoryFiles: 100,
+        maximumRepositoryBytes: 1_000_000,
+        maximumWorldOverlayBytes: 10_000,
+        maximumCandidateBytes: 10_000,
+        maximumTotalCandidateBytes: 10_000,
+        timeoutMsPerExecution: 10_000,
+        maximumOutputBytes: 65_536,
+      },
+      policy: {
+        policyVersion: "1.0.0",
+        requiredAttempts: 2,
+        minimumTargetWeightPermille: 1_000,
+        maximumSelectedCandidates: 1,
+        acceptedTargetOutcomes: ["ASSERTION_FAILURE"],
+      },
+      worlds: [
+        {
+          id: "reference",
+          kind: "REFERENCE",
+          required: true,
+          weight: 0,
+          provenance: "fixture:correct",
+          files: [],
+        },
+        {
+          id: "target",
+          kind: "TARGET",
+          required: true,
+          weight: 1,
+          provenance: "fixture:fault",
+          files: [{ path: "src/subject.ts", content: "export const subject = () => false;\n" }],
+        },
+        {
+          id: "neutral",
+          kind: "NEUTRAL",
+          required: true,
+          weight: 0,
+          provenance: "fixture:equivalent",
+          files: [],
+        },
+      ],
+      candidates: [
+        {
+          id: "candidate",
+          files: [
+            {
+              path: "tests/candidates/candidate.test.ts",
+              content: [
+                'import { test } from "bun:test";',
+                'import { assertSame } from "assertledger/bun";',
+                'import { subject } from "../../src/subject.ts";',
+                'test("subject stays true", () => assertSame(subject(), true));',
+                "",
+              ].join("\n"),
+            },
+          ],
+        },
+      ],
+    };
+    const bunRequestPath = path.join(consumer, "bun-request.json");
+    jsonFile(bunRequestPath, bunRequest);
+    const bunManifest = parse(
+      runBin("assertledger", ["verify", bunRequestPath, "--allow-unsafe-execution", "--json"]),
+    );
+    assert.equal(bunManifest.decision.status, "VERIFIED");
+    assert.deepEqual(bunManifest.decision.selectedCandidateIds, ["candidate"]);
+    const bunManifestPath = path.join(artifacts, "bun-manifest.json");
+    jsonFile(bunManifestPath, bunManifest);
+    const bunReplay = parse(runBin("assertledger", ["replay", bunManifestPath]));
+    assert.equal(bunReplay.valid, true);
+    jsonFile(path.join(artifacts, "bun-replay.json"), bunReplay);
 
     // Agentic Test Profile v1 derived by the installed CLI and SDK from the manifest verified above.
     const profileRequest = {
@@ -1057,6 +1164,7 @@ function main(): void {
       artifacts,
       decision: manifest.decision,
       replay,
+      bun: { decision: bunManifest.decision, replayValid: bunReplay.valid },
       sdk,
       typescript: JSON.parse(
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),

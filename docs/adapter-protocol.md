@@ -78,6 +78,67 @@ these deterministic facts without a timestamp under
 File-based runtime attribution is stronger than source scanning, but it is not authenticated. The
 Node.js runner, reporter events, candidate code, dependencies, and host remain trusted inputs.
 
+## Built-in `bun:test` adapter (verification v3)
+
+The official Bun profile accepts a verification request with:
+
+```json
+{
+  "kind": "bun-test",
+  "executable": "bun",
+  "baseTestFiles": ["tests/base.test.ts"]
+}
+```
+
+It is qualified for Bun `1.4.2` revision `744846f844374847c902b5e7fd59b4342a51ef99`
+using a controlled `bun:test` preload on explicitly unsandboxed `trusted-local` execution.
+The container backend is refused. The engine resolves and hashes the Bun executable, checks its
+version and revision twice, hashes its bundled driver, preload and assertion helper, and records all of
+these identities with a fresh ten-case runtime preflight in the v3 manifest. The preflight
+separates an owned assertion from a generic throw, a caught assertion followed by a generic
+throw, a saved assertion error thrown in a later test or another parameterized row, an error from
+an earlier asynchronous continuation, two genuine failing assertion rows, an operand error, a native Bun `expect`
+failure, and a failing `afterEach` hook. Every Bun process uses argv with
+`shell: false` and `--max-concurrency=1`.
+
+Candidate tests that need assertion evidence import the packaged helper:
+
+```ts
+import { test } from "bun:test";
+import { assertSame } from "assertledger/bun";
+
+test("result", () => assertSame(compute(), expected));
+```
+
+`assertSame` evaluates its arguments before entering the helper, compares them with `Object.is`,
+and throws a fixed, AssertLedger-owned error when they differ. The engine installs the exact
+bundled helper into each disposable workspace because repository snapshots omit `node_modules`.
+The engine installs a preload before test files execute. It wraps `test` and `it` registrations,
+records their source file and completion, and checks that the thrown object belongs to a private
+set of errors actually issued by `assertSame` in the active test callback. A saved helper error
+thrown in another test or parameterized row does not acquire assertion ownership. AsyncLocalStorage
+keeps ownership with the originating test when its asynchronous work overlaps a later test.
+The driver requires every configured base file to run and checks
+that callback totals and failures agree with Bun's JUnit totals and process exit. JUnit never
+classifies an assertion or supplies candidate attribution. A generic throw, failed control,
+skipped test, missing callback or inconsistent count cannot kill a target.
+Multiple failing candidate rows count as an assertion failure only when every failure is owned
+by a helper call in its own execution.
+The preload sends signed events to the driver over a dedicated process pipe. A one-run key is
+delivered before candidate modules load and is not placed in the candidate environment or a
+workspace file. The driver emits the final bounded JSON report on its own stdout; candidate code
+cannot pre-create that result file. The generic `testforge-command` adapter retains its existing
+result-file protocol.
+Bun's separate unhandled-error summary blocks attribution when collection fails outside a
+callback. The preload records failing lifecycle hooks separately, so they cannot be hidden by an
+owned assertion failure in the same test.
+
+Native `bun:test` `expect` failures are deliberately non-attributed because they do not throw the
+AssertLedger-owned error class. A candidate that catches an `assertSame` failure and throws a
+different error is also non-attributed. The preload instrumentation is part of the qualified
+adapter and may reject Bun test registration forms that it cannot observe consistently.
+The adapter does not authenticate candidate code or provide hostile-code containment.
+
 ## Structured command adapter protocol v1
 
 The legacy wire identifier `testforge-command` lets any framework participate without moving gate logic into the

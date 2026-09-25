@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createScanner, SyntaxKind } from "typescript/unstable/ast";
 import {
   AdapterSchema,
@@ -35,17 +35,28 @@ import {
   parseEvidenceManifest,
   parseRepositoryAudit,
   parseRepositoryInitConfig,
+  parseRepositoryInitConfigV2,
   parseRepositoryInitLock,
+  parseRepositoryInitLockV2,
   parseRepositoryInitResult,
+  parseRepositoryInitResultV2,
   parseVerificationRequest,
+  parseVersionedRepositoryInitConfig,
+  parseVersionedRepositoryInitLock,
   parseVersionedVerificationRequest,
   type RepositoryAudit,
-  type RepositoryInitConfig,
+  type RepositoryInitConfigV2,
   type RepositoryInitDetections,
+  RepositoryInitDetectionsSchema,
+  type RepositoryInitDetectionsV2,
   type RepositoryInitLock,
+  type RepositoryInitLockV2,
   type RepositoryInitResult,
+  type RepositoryInitResultV2,
   repositoryInitConfigDigest,
+  repositoryInitConfigV2Digest,
   repositoryInitLockDigest,
+  repositoryInitLockV2Digest,
   type VerificationRequest as VerificationRequestContract,
 } from "../contracts/index.js";
 import {
@@ -59,6 +70,7 @@ import {
   sealManifestArtifact,
   sha256Canonical,
 } from "../core/index.js";
+import { BUN_TEST_ADAPTER_PROFILE } from "./adapters/bun-test-profile.js";
 import { NODE_TEST_ADAPTER_PROFILE } from "./adapters/node-test-profile.js";
 import {
   type NodeTestPreflightProbeExecutor,
@@ -78,12 +90,26 @@ import {
   runContainerExecution,
 } from "./container.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
-import { type RuntimeDoctorResult, runRuntimeDoctorChecks } from "./runtime-doctor.js";
+import {
+  type RuntimeDoctorResult,
+  type RuntimeDoctorResultV2,
+  runBunRuntimeDoctorChecks,
+  runRuntimeDoctorChecks,
+} from "./runtime-doctor.js";
 
 const DEFAULT_EXCLUDES = new Set([".git", ".testforge", "node_modules"]);
 const SHA256_PREFIX = "sha256:";
 const PROCESS_TERMINATION_GRACE_MS = 250;
 const CONTROLLED_REPORT_MAXIMUM_BYTES = 64 * 1024;
+const BUN_TEST_DRIVER_PATH = fileURLToPath(
+  new URL("../../integrations/bun/driver.mjs", import.meta.url),
+);
+const BUN_TEST_HELPER_PATH = fileURLToPath(
+  new URL("../../integrations/bun/assertions.mjs", import.meta.url),
+);
+const BUN_TEST_PRELOAD_PATH = fileURLToPath(
+  new URL("../../integrations/bun/preload.mjs", import.meta.url),
+);
 const TEMPORARY_CLEANUP_OPTIONS = {
   recursive: true,
   force: true,
@@ -208,6 +234,11 @@ interface VerificationRequest {
         executable: string;
         baseTestFiles: string[];
         extraArguments?: string[];
+      }
+    | {
+        kind: "bun-test";
+        executable: string;
+        baseTestFiles: string[];
       }
     | {
         kind: "testforge-command";
@@ -543,9 +574,20 @@ async function configuredRepositoryExcludes(root: string): Promise<readonly stri
     const configPath = path.join(root, INIT_CONFIG_FILE);
     if (!(await lstat(configPath)).isFile()) return [];
     const value = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-    return parseRepositoryInitConfig(value).repository.exclude;
+    return parseVersionedRepositoryInitConfig(value).repository.exclude;
   } catch {
     return [];
+  }
+}
+
+async function configuredRepositoryFramework(root: string): Promise<string | undefined> {
+  try {
+    const configPath = path.join(root, INIT_CONFIG_FILE);
+    if (!(await lstat(configPath)).isFile()) return undefined;
+    const value = JSON.parse(await readFile(configPath, "utf8")) as unknown;
+    return parseVersionedRepositoryInitConfig(value).framework;
+  } catch {
+    return undefined;
   }
 }
 
@@ -702,6 +744,10 @@ function initNodeTestSource(file: string): boolean {
   return /(?:^|\/)[^/]+\.test\.[cm]?[jt]s$/u.test(file);
 }
 
+function initBunTestSource(file: string): boolean {
+  return /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(file);
+}
+
 function initSafePathPattern(value: string): boolean {
   if (value.startsWith("-") || value.includes("\\")) return false;
   try {
@@ -744,7 +790,11 @@ function initCommandPathMatchers(
   testSources: string[],
 ): Array<(file: string) => boolean> {
   const conventionalDirectories = new Set(["test", "tests", "spec", "specs", "__tests__"]);
-  return command.arguments
+  const operands =
+    command.executable === "bun" && command.arguments[0] === "test"
+      ? command.arguments.slice(1)
+      : command.arguments;
+  return operands
     .filter(
       (argument) =>
         initSafePathPattern(argument) &&
@@ -929,11 +979,12 @@ function initEmptyDetections(reasonCodes: string[]): RepositoryInitDetections {
 
 function initTerminalResult(
   status: "BLOCKED" | "CONFLICT",
-  detections: RepositoryInitDetections,
+  detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
   reasonCodes: string[],
-): RepositoryInitResult {
-  return parseRepositoryInitResult({
-    schemaVersion: "1.0.0",
+): RepositoryInitResult | RepositoryInitResultV2 {
+  const bunBuiltIn = detections.adapterRecommendation === "bun-test";
+  const result = {
+    schemaVersion: bunBuiltIn ? "2.0.0" : "1.0.0",
     status,
     reasonCodes: [...new Set(reasonCodes)].sort(),
     detections: { ...detections, reasonCodes: [...new Set(detections.reasonCodes)].sort() },
@@ -941,14 +992,15 @@ function initTerminalResult(
     files: [],
     requiredOperatorInputs: ["worlds", "candidates"],
     nextCommands: [{ executable: "assertledger", arguments: ["audit", ".", "--json"] }],
-  });
+  };
+  return bunBuiltIn ? parseRepositoryInitResultV2(result) : parseRepositoryInitResult(result);
 }
 
 export async function initializeRepository(
   requestedRoot: string,
   options: RepositoryInitOptions = {},
   writeDependencies: RepositoryInitWriteDependencies = {},
-): Promise<RepositoryInitResult> {
+): Promise<RepositoryInitResult | RepositoryInitResultV2> {
   let root: string;
   try {
     root = await realpath(requestedRoot);
@@ -1101,7 +1153,7 @@ export async function initializeRepository(
   )
     frameworkFacts.add("pytest");
 
-  const frameworkOverride = options.framework;
+  const frameworkOverride = options.framework ?? (await configuredRepositoryFramework(root));
   if (frameworkOverride !== undefined && !isInitFramework(frameworkOverride)) {
     const detections = initEmptyDetections(["FRAMEWORK_OVERRIDE_INVALID"]);
     detections.packageManager = packageManager;
@@ -1162,8 +1214,8 @@ export async function initializeRepository(
         .filter((value): value is NonNullable<typeof value> => value !== undefined),
     ),
   ].sort();
-  let adapter: RepositoryInitConfig["adapter"] | undefined;
-  let adapterRecommendation: RepositoryInitDetections["adapterRecommendation"] = "unavailable";
+  let adapter: RepositoryInitConfigV2["adapter"] | undefined;
+  let adapterRecommendation: RepositoryInitDetectionsV2["adapterRecommendation"] = "unavailable";
   let adapterEvidencePath: string | undefined;
   if (options.adapterConfigPath !== undefined) {
     try {
@@ -1219,13 +1271,32 @@ export async function initializeRepository(
       adapter = { kind: "node-test", executable: "node", baseTestFiles };
       adapterRecommendation = "node-test";
     }
+  } else if (framework === "bun:test") {
+    const testSources = inScopeFiles.filter(
+      (file) =>
+        initBunTestSource(file) &&
+        initJavaScriptModuleSpecifiers(contents.get(file) ?? "").has("bun:test"),
+    );
+    const pathMatchers = initCommandPathMatchers(testCommand, testSources);
+    const baseTestFiles =
+      pathMatchers.length === 0
+        ? testSources
+        : testSources.filter((file) => pathMatchers.some((matcher) => matcher(file)));
+    if (baseTestFiles.length > 0) {
+      adapter = { kind: "bun-test", executable: "bun", baseTestFiles };
+      adapterRecommendation = "bun-test";
+    }
   }
 
   const reasonCodes =
     adapter === undefined
-      ? [framework === "node:test" ? "BASE_TEST_FILES_UNAVAILABLE" : "OFFICIAL_ADAPTER_UNAVAILABLE"]
+      ? [
+          framework === "node:test" || framework === "bun:test"
+            ? "BASE_TEST_FILES_UNAVAILABLE"
+            : "OFFICIAL_ADAPTER_UNAVAILABLE",
+        ]
       : [];
-  const detections: RepositoryInitDetections = {
+  const detections: RepositoryInitDetectionsV2 = {
     packageManager,
     framework,
     testCommand,
@@ -1236,17 +1307,24 @@ export async function initializeRepository(
   if (adapter === undefined) return initTerminalResult("BLOCKED", detections, reasonCodes);
   await options.afterEvidenceSnapshot?.();
 
-  const config = parseRepositoryInitConfig({
-    schemaVersion: "1.0.0",
+  const bunBuiltIn = adapter.kind === "bun-test";
+  const configValue = {
+    schemaVersion: bunBuiltIn ? "2.0.0" : "1.0.0",
     repository: { root: ".", exclude: repositoryExclude },
     packageManager,
     framework,
     testCommand,
     adapter,
     candidateRoots: [...candidateRoots],
-  });
+  };
+  const config = bunBuiltIn
+    ? parseRepositoryInitConfigV2(configValue)
+    : parseRepositoryInitConfig(configValue);
   const configContent = initJsonBytes(config);
-  const configDigest = repositoryInitConfigDigest(config);
+  const configDigest =
+    config.schemaVersion === "2.0.0"
+      ? repositoryInitConfigV2Digest(config)
+      : repositoryInitConfigDigest(config);
   const evidenceFiles = inScopeFiles.filter((file) => initEvidenceKind(file) !== undefined);
   if (adapterEvidencePath !== undefined && !evidenceFiles.includes(adapterEvidencePath))
     evidenceFiles.push(adapterEvidencePath);
@@ -1264,17 +1342,32 @@ export async function initializeRepository(
           : (initEvidenceKind(file) ?? "ADAPTER_CONFIG"),
     });
   }
-  const lockBase: Omit<RepositoryInitLock, "lockDigest"> = {
-    schemaVersion: "1.0.0",
-    configDigest,
-    detector: { name: "assertledger-init", version: "1.0.0" },
-    evidence,
-    detections,
-  };
-  const lock = parseRepositoryInitLock({
-    ...lockBase,
-    lockDigest: repositoryInitLockDigest(lockBase),
-  });
+  let lock: RepositoryInitLock | RepositoryInitLockV2;
+  if (bunBuiltIn) {
+    const lockBase: Omit<RepositoryInitLockV2, "lockDigest"> = {
+      schemaVersion: "2.0.0",
+      configDigest,
+      detector: { name: "assertledger-init", version: "2.0.0" },
+      evidence,
+      detections,
+    };
+    lock = parseRepositoryInitLockV2({
+      ...lockBase,
+      lockDigest: repositoryInitLockV2Digest(lockBase),
+    });
+  } else {
+    const lockBase: Omit<RepositoryInitLock, "lockDigest"> = {
+      schemaVersion: "1.0.0",
+      configDigest,
+      detector: { name: "assertledger-init", version: "1.0.0" },
+      evidence,
+      detections: RepositoryInitDetectionsSchema.parse(detections),
+    };
+    lock = parseRepositoryInitLock({
+      ...lockBase,
+      lockDigest: repositoryInitLockDigest(lockBase),
+    });
+  }
   const lockContent = initJsonBytes(lock);
   const plannedFiles: RepositoryInitResult["files"] = [
     { path: INIT_CONFIG_FILE, digest: rawSha256(configContent), content: configContent },
@@ -1341,10 +1434,10 @@ export async function initializeRepository(
     ]);
   }
   if (existingLock !== undefined) {
-    let structural: RepositoryInitLock;
+    let structural: RepositoryInitLock | RepositoryInitLockV2;
     try {
       const value = JSON.parse(existingLock) as unknown;
-      structural = parseRepositoryInitLock(value);
+      structural = parseVersionedRepositoryInitLock(value);
     } catch {
       return initTerminalResult("CONFLICT", { ...detections, reasonCodes: ["LOCK_INVALID"] }, [
         "LOCK_INVALID",
@@ -1359,8 +1452,8 @@ export async function initializeRepository(
     }
   }
   if (existingConfig === configContent && existingLock === lockContent) {
-    return parseRepositoryInitResult({
-      schemaVersion: "1.0.0",
+    const result = {
+      schemaVersion: bunBuiltIn ? "2.0.0" : "1.0.0",
       status: "UNCHANGED",
       reasonCodes: [],
       detections,
@@ -1368,7 +1461,8 @@ export async function initializeRepository(
       files: plannedFiles,
       requiredOperatorInputs: ["worlds", "candidates"],
       nextCommands: [{ executable: "assertledger", arguments: ["audit", ".", "--json"] }],
-    });
+    };
+    return bunBuiltIn ? parseRepositoryInitResultV2(result) : parseRepositoryInitResult(result);
   }
   const actions: RepositoryInitResult["actions"] = [];
   if (existingConfig === undefined) actions.push({ kind: "CREATE", path: INIT_CONFIG_FILE });
@@ -1376,8 +1470,8 @@ export async function initializeRepository(
   else if (existingLock !== lockContent) actions.push({ kind: "REGENERATE", path: INIT_LOCK_FILE });
   actions.sort((left, right) => left.path.localeCompare(right.path));
   const status = options.dryRun ? "WOULD_CREATE" : "CREATED";
-  const result = parseRepositoryInitResult({
-    schemaVersion: "1.0.0",
+  const resultValue = {
+    schemaVersion: bunBuiltIn ? "2.0.0" : "1.0.0",
     status,
     reasonCodes: [],
     detections,
@@ -1385,7 +1479,10 @@ export async function initializeRepository(
     files: plannedFiles,
     requiredOperatorInputs: ["worlds", "candidates"],
     nextCommands: [{ executable: "assertledger", arguments: ["audit", ".", "--json"] }],
-  });
+  };
+  const result = bunBuiltIn
+    ? parseRepositoryInitResultV2(resultValue)
+    : parseRepositoryInitResult(resultValue);
   if (!options.dryRun) {
     const installedPaths: string[] = [];
     for (const action of actions) {
@@ -1439,11 +1536,68 @@ async function probeRuntimeTemporaryWorkspace(): Promise<void> {
 export async function doctorRepositoryRuntime(
   requestedRoot: string,
   options: RuntimeDoctorOptions,
-): Promise<RuntimeDoctorResult> {
+): Promise<RuntimeDoctorResult | RuntimeDoctorResultV2> {
   const repositoryRoot = path.resolve(requestedRoot);
+  const configuration = options.allowUnsafeExecution
+    ? await initializeRepository(repositoryRoot, { dryRun: true })
+    : undefined;
+  if (
+    configuration?.schemaVersion === "2.0.0" &&
+    configuration.detections.adapterRecommendation === "bun-test"
+  ) {
+    const configFile = configuration.files.find((file) => file.path === INIT_CONFIG_FILE);
+    if (configFile === undefined) throw new Error("BUN_TEST_CONFIG_MISSING");
+    const config = parseRepositoryInitConfigV2(JSON.parse(configFile.content));
+    const environmentAllowlist = ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"];
+    let resolvedExecutable = config.adapter.executable;
+    return runBunRuntimeDoctorChecks(repositoryRoot, configuration, {
+      probeExecutable: async () => {
+        const identity = await probeBunTestExecutable(
+          config.adapter.executable,
+          repositoryRoot,
+          environmentAllowlist,
+          5_000,
+          CONTROLLED_REPORT_MAXIMUM_BYTES,
+        );
+        resolvedExecutable = identity.resolvedExecutable;
+        return { bunVersion: identity.bunVersion };
+      },
+      probeDependencies: async () => {
+        const result = await runProcess({
+          executable: resolvedExecutable,
+          args: ["-e", 'import("bun:test").then(() => process.stdout.write("READY"))'],
+          cwd: repositoryRoot,
+          environment: environmentFromAllowlist(environmentAllowlist),
+          timeoutMs: 5_000,
+          maximumOutputBytes: CONTROLLED_REPORT_MAXIMUM_BYTES,
+        });
+        if (
+          result.outcome !== "PASS" ||
+          result.stdout.text !== "READY" ||
+          result.stderr.totalBytes !== 0
+        ) {
+          throw new Error("BUN_TEST_DEPENDENCY_UNAVAILABLE");
+        }
+      },
+      probeTemporaryWorkspace: probeRuntimeTemporaryWorkspace,
+      runSyntheticPreflight: async () => {
+        await runBunTestRuntimePreflight(
+          resolvedExecutable,
+          environmentAllowlist,
+          5_000,
+          CONTROLLED_REPORT_MAXIMUM_BYTES,
+        );
+      },
+    });
+  }
   let resolvedExecutable = process.execPath;
   return runRuntimeDoctorChecks(repositoryRoot, options.allowUnsafeExecution, {
-    inspectConfiguration: () => initializeRepository(repositoryRoot, { dryRun: true }),
+    inspectConfiguration: async () => {
+      const inspected =
+        configuration ?? (await initializeRepository(repositoryRoot, { dryRun: true }));
+      if (inspected.schemaVersion !== "1.0.0") throw new Error("RUNTIME_CONFIGURATION_UNAVAILABLE");
+      return inspected;
+    },
     probeExecutable: async () => {
       const identity = await probeNodeTestExecutable(
         process.execPath,
@@ -2289,7 +2443,11 @@ function parseRequest(value: unknown): VerificationRequest {
   );
   if (candidateRoots.length === 0) throw new TypeError("INVALID_CANDIDATE_ROOTS");
   assertPortableStringCollection(candidateRoots, "DUPLICATE_CANDIDATE_ROOT");
-  if (adapter.kind !== "node-test" && adapter.kind !== "testforge-command") {
+  if (
+    adapter.kind !== "node-test" &&
+    adapter.kind !== "bun-test" &&
+    adapter.kind !== "testforge-command"
+  ) {
     throw new TypeError("UNSUPPORTED_ADAPTER");
   }
   // The versioned contract already restricts container isolation to v2 requests.
@@ -2442,15 +2600,18 @@ function parseRequest(value: unknown): VerificationRequest {
     throw new TypeError("INVALID_MINIMUM_TARGET_WEIGHT_PERMILLE");
   }
   const normalizedAdapter: VerificationRequest["adapter"] =
-    adapter.kind === "node-test"
+    adapter.kind === "node-test" || adapter.kind === "bun-test"
       ? (() => {
-          const extraArguments = parseNodeTestExtraArguments(adapter.extraArguments);
+          const extraArguments =
+            adapter.kind === "node-test"
+              ? parseNodeTestExtraArguments(adapter.extraArguments)
+              : undefined;
           const baseTestFiles = requireStringArray(adapter.baseTestFiles, "base_test_files").map(
             (file) => assertSafeRelativePath(file, ["."]),
           );
           assertPortableStringCollection(baseTestFiles, "DUPLICATE_BASE_TEST_FILE");
           return {
-            kind: "node-test" as const,
+            kind: adapter.kind,
             executable: requireString(adapter.executable, "adapter_executable"),
             baseTestFiles,
             ...(extraArguments === undefined ? {} : { extraArguments }),
@@ -2680,6 +2841,21 @@ async function readStructuredCommandReport(
   );
 }
 
+function readBunDriverReport(processResult: ProcessResult): StructuredCommandReport | undefined {
+  if (
+    processResult.outcome === "TIMEOUT" ||
+    processResult.outcome === "INFRA_ERROR" ||
+    processResult.stdout.truncated ||
+    processResult.stdout.totalBytes > CONTROLLED_REPORT_MAXIMUM_BYTES
+  )
+    return undefined;
+  try {
+    return parseStructuredCommandReport(JSON.parse(processResult.stdout.text), processResult);
+  } catch {
+    return undefined;
+  }
+}
+
 async function readNodeTestReport(
   resultFile: string,
   processResult: ProcessResult,
@@ -2799,6 +2975,108 @@ async function probeNodeTestExecutable(
     resolvedExecutable,
     executableDigest: await sha256File(resolvedExecutable),
     nodeVersion: secondProbe.nodeVersion,
+  };
+}
+
+interface BunExecutableIdentity {
+  requestedExecutable: string;
+  resolvedExecutable: string;
+  executableDigest: string;
+  bunVersion: string;
+  bunRevision: string;
+}
+
+async function runBunExecutableProbe(
+  executable: string,
+  repositoryRoot: string,
+  environmentAllowlist: string[],
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<{ execPath: string; bunVersion: string; bunRevision: string }> {
+  const result = await runProcess({
+    executable,
+    args: [
+      "-e",
+      "console.log(JSON.stringify({execPath:process.execPath,bunVersion:Bun.version,bunRevision:Bun.revision}))",
+    ],
+    cwd: repositoryRoot,
+    environment: environmentFromAllowlist(environmentAllowlist),
+    timeoutMs: Math.min(timeoutMs, 5_000),
+    maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+  });
+  if (result.outcome !== "PASS" || result.stdout.truncated || result.stderr.totalBytes !== 0) {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  let report: unknown;
+  try {
+    report = JSON.parse(result.stdout.text.trim()) as unknown;
+  } catch {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  if (
+    !isRecord(report) ||
+    Object.keys(report).sort().join("\0") !== "bunRevision\0bunVersion\0execPath" ||
+    typeof report.execPath !== "string" ||
+    report.execPath.length === 0 ||
+    typeof report.bunVersion !== "string" ||
+    typeof report.bunRevision !== "string"
+  ) {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  if (
+    report.bunVersion !== BUN_TEST_ADAPTER_PROFILE.bunVersion ||
+    report.bunRevision !== BUN_TEST_ADAPTER_PROFILE.bunRevision
+  ) {
+    throw new Error("BUN_TEST_VERSION_UNSUPPORTED");
+  }
+  return {
+    execPath: report.execPath,
+    bunVersion: report.bunVersion,
+    bunRevision: report.bunRevision,
+  };
+}
+
+async function probeBunTestExecutable(
+  requestedExecutable: string,
+  repositoryRoot: string,
+  environmentAllowlist: string[],
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<BunExecutableIdentity> {
+  const first = await runBunExecutableProbe(
+    requestedExecutable,
+    repositoryRoot,
+    environmentAllowlist,
+    timeoutMs,
+    maximumOutputBytes,
+  );
+  let resolvedExecutable: string;
+  try {
+    resolvedExecutable = await realpath(first.execPath);
+    if (!(await stat(resolvedExecutable)).isFile()) throw new Error("not a file");
+  } catch {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  const second = await runBunExecutableProbe(
+    resolvedExecutable,
+    repositoryRoot,
+    environmentAllowlist,
+    timeoutMs,
+    maximumOutputBytes,
+  );
+  if (
+    (await realpath(second.execPath)) !== resolvedExecutable ||
+    second.bunVersion !== first.bunVersion ||
+    second.bunRevision !== first.bunRevision
+  ) {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  return {
+    requestedExecutable,
+    resolvedExecutable,
+    executableDigest: await sha256File(resolvedExecutable),
+    bunVersion: second.bunVersion,
+    bunRevision: second.bunRevision,
   };
 }
 
@@ -2965,6 +3243,7 @@ async function executeContainerAdapter(
   candidateFiles: string[],
 ): Promise<AdapterExecution> {
   const adapter = request.adapter;
+  if (adapter.kind === "bun-test") throw new Error("BUN_TEST_CONTAINER_UNSUPPORTED");
   const executed = await runContainerExecution(
     container,
     {
@@ -3075,6 +3354,8 @@ async function executeTrustedLocalAdapter(
   if (request.adapter.kind === "testforge-command") {
     environment.TESTFORGE_RESULT_FILE = resultFile;
     environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
+  } else if (request.adapter.kind === "bun-test") {
+    environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
   } else {
     if (nodeTestReporterPath === undefined) throw new Error("NODE_TEST_REPORTER_MISSING");
     environment.TESTFORGE_NODE_CANDIDATE_FILES = JSON.stringify(
@@ -3092,21 +3373,31 @@ async function executeTrustedLocalAdapter(
           ...request.adapter.baseTestFiles,
           ...candidateFiles,
         ]
-      : request.adapter.arguments;
+      : request.adapter.kind === "bun-test"
+        ? [
+            BUN_TEST_DRIVER_PATH,
+            request.adapter.executable,
+            BUN_TEST_HELPER_PATH,
+            ...request.adapter.baseTestFiles,
+          ]
+        : request.adapter.arguments;
   const result = await runProcess({
-    executable: request.adapter.executable,
+    executable: request.adapter.kind === "bun-test" ? process.execPath : request.adapter.executable,
     args,
     cwd: workspace,
     environment,
     timeoutMs: request.budgets.timeoutMsPerExecution,
     maximumOutputBytes: request.budgets.maximumOutputBytes,
   });
+  const structuredReport =
+    request.adapter.kind === "testforge-command"
+      ? await readStructuredCommandReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
+      : request.adapter.kind === "bun-test"
+        ? readBunDriverReport(result)
+        : undefined;
   return {
     result,
-    structuredReport:
-      request.adapter.kind === "testforge-command"
-        ? await readStructuredCommandReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
-        : undefined,
+    structuredReport,
     nodeTestReport:
       request.adapter.kind === "node-test"
         ? await readNodeTestReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
@@ -3177,6 +3468,150 @@ export interface VerifyCampaignOptions {
   containerRuntime?: { command: readonly string[] };
 }
 
+interface BunTestRuntimePreflight {
+  protocolVersion: "1.0.0";
+  probes: Array<{
+    name: string;
+    outcome: Observation["outcome"];
+    attributed: boolean;
+    testsDiscovered: number;
+    candidateTestsDiscovered: number;
+  }>;
+}
+
+async function runBunTestRuntimePreflight(
+  executable: string,
+  environmentAllowlist: string[],
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<BunTestRuntimePreflight> {
+  const probeSources = [
+    {
+      name: "assertion",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("assertion", () => assertSame(1, 2));\n',
+      outcome: "ASSERTION_FAILURE",
+      attributed: true,
+    },
+    {
+      name: "generic-throw",
+      source:
+        'import { test } from "bun:test"; test("generic", () => { throw new Error("generic"); });\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "caught-assertion",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("caught", () => { try { assertSame(1, 2); } catch {} throw new Error("generic"); });\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "replayed-assertion",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; try { assertSame(1, 2); } catch (error) { saved = error; } test("replayed", () => { throw saved; });\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "replayed-row",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; test.each([0, 1])("row %i", (row) => { if (row === 0) { try { assertSame(1, 2); } catch (error) { saved = error; } return; } throw saved; });\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "async-cross-test",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let signalReady; const ready = new Promise((resolve) => { signalReady = resolve; }); let rejectReceiver; test("origin", () => { ready.then(() => { try { assertSame(1, 2); } catch (error) { rejectReceiver(error); } }); }); test("receiver", () => new Promise((_, reject) => { rejectReceiver = reject; signalReady(); }));\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "multi-assertion-rows",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test.each([1, 2])("row %i", (row) => assertSame(row, 0));\n',
+      outcome: "ASSERTION_FAILURE",
+      attributed: true,
+    },
+    {
+      name: "operand-throw",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("operand", () => assertSame((() => { throw new Error("operand"); })(), 1));\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "native-expect",
+      source: 'import { test, expect } from "bun:test"; test("native", () => expect(1).toBe(2));\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "hook-failure",
+      source:
+        'import { afterEach, test } from "bun:test"; import { assertSame } from "assertledger/bun"; afterEach(() => { throw new Error("hook"); }); test("candidate", () => assertSame(1, 2));\n',
+      outcome: "INFRA_ERROR",
+      attributed: false,
+    },
+  ] as const;
+  try {
+    const probes: BunTestRuntimePreflight["probes"] = [];
+    for (const probe of probeSources) {
+      const evidence = await withEmptyWorkspace(async (workspace) => {
+        await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
+        await writeFile(
+          path.join(workspace, "base.test.ts"),
+          'import { test } from "bun:test"; test("control", () => {});\n',
+        );
+        const candidatePath = path.join(workspace, "candidate.test.ts");
+        await writeFile(candidatePath, probe.source);
+        const result = await runProcess({
+          executable: process.execPath,
+          args: [BUN_TEST_DRIVER_PATH, executable, BUN_TEST_HELPER_PATH, "base.test.ts"],
+          cwd: workspace,
+          environment: {
+            ...environmentFromAllowlist(environmentAllowlist),
+            TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
+          },
+          timeoutMs: Math.min(timeoutMs, 5_000),
+          maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+        });
+        const report = readBunDriverReport(result);
+        const expectedCandidateCount =
+          probe.name === "hook-failure"
+            ? 0
+            : probe.name === "replayed-row" ||
+                probe.name === "async-cross-test" ||
+                probe.name === "multi-assertion-rows"
+              ? 2
+              : 1;
+        if (
+          report?.outcome !== probe.outcome ||
+          report.attributed !== probe.attributed ||
+          report.testsDiscovered !==
+            (expectedCandidateCount === 0 ? 0 : expectedCandidateCount + 1) ||
+          report.candidateTestsDiscovered !== expectedCandidateCount
+        ) {
+          throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED");
+        }
+        return {
+          name: probe.name,
+          outcome: report.outcome,
+          attributed: report.attributed,
+          testsDiscovered: report.testsDiscovered,
+          candidateTestsDiscovered: report.candidateTestsDiscovered,
+        };
+      });
+      probes.push(evidence);
+    }
+    return { protocolVersion: "1.0.0", probes };
+  } catch (error) {
+    throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED", { cause: error });
+  }
+}
+
 export async function verifyCampaign(
   value: unknown,
   options: VerifyCampaignOptions = {},
@@ -3220,6 +3655,25 @@ export async function verifyCampaign(
   if (request.adapter.kind === "node-test" && nodeIdentity !== undefined) {
     request.adapter.executable = nodeIdentity.resolvedExecutable;
   }
+  const bunIdentity =
+    request.adapter.kind === "bun-test"
+      ? await probeBunTestExecutable(
+          request.adapter.executable,
+          repositoryRoot,
+          trustedLocalEnvironmentAllowlist(request),
+          request.budgets.timeoutMsPerExecution,
+          request.budgets.maximumOutputBytes,
+        )
+      : undefined;
+  if (request.adapter.kind === "bun-test" && bunIdentity !== undefined) {
+    request.adapter.executable = bunIdentity.resolvedExecutable;
+  }
+  const bunDriverDigest =
+    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_DRIVER_PATH) : undefined;
+  const bunHelperDigest =
+    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_HELPER_PATH) : undefined;
+  const bunPreloadDigest =
+    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_PRELOAD_PATH) : undefined;
   const nodeRuntimePreflight: NodeTestRuntimePreflight | undefined =
     request.adapter.kind === "node-test" && nodeIdentity !== undefined
       ? await runNodeTestRuntimePreflight({
@@ -3239,6 +3693,15 @@ export async function verifyCampaign(
               }),
         })
       : undefined;
+  const bunRuntimePreflight =
+    request.adapter.kind === "bun-test" && bunIdentity !== undefined
+      ? await runBunTestRuntimePreflight(
+          bunIdentity.resolvedExecutable,
+          trustedLocalEnvironmentAllowlist(request),
+          request.budgets.timeoutMsPerExecution,
+          request.budgets.maximumOutputBytes,
+        )
+      : undefined;
   const campaignRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-")));
   const repositorySnapshot = path.join(campaignRoot, "repository");
   try {
@@ -3253,7 +3716,9 @@ export async function verifyCampaign(
     const inputPaths = [
       ...request.worlds.flatMap((world) => world.files.map((file) => file.path)),
       ...request.candidates.flatMap((candidate) => candidate.files.map((file) => file.path)),
-      ...(request.adapter.kind === "node-test" ? request.adapter.baseTestFiles : []),
+      ...(request.adapter.kind === "node-test" || request.adapter.kind === "bun-test"
+        ? request.adapter.baseTestFiles
+        : []),
       ...request.candidateRoots,
     ];
     for (const inputPath of inputPaths) {
@@ -3319,7 +3784,9 @@ export async function verifyCampaign(
           version:
             request.adapter.kind === "testforge-command"
               ? request.adapter.protocolVersion
-              : (nodeIdentity?.nodeVersion ?? "unprobed"),
+              : request.adapter.kind === "bun-test"
+                ? (bunIdentity?.bunVersion ?? "unprobed")
+                : (nodeIdentity?.nodeVersion ?? "unprobed"),
           configuration:
             request.adapter.kind === "node-test" && nodeIdentity !== undefined
               ? {
@@ -3343,7 +3810,31 @@ export async function verifyCampaign(
                     ...request.adapter.baseTestFiles,
                   ],
                 }
-              : request.adapter,
+              : request.adapter.kind === "bun-test" && bunIdentity !== undefined
+                ? {
+                    kind: "bun-test",
+                    profile: BUN_TEST_ADAPTER_PROFILE,
+                    requestedExecutable: bunIdentity.requestedExecutable,
+                    resolvedExecutable: bunIdentity.resolvedExecutable,
+                    executableDigest: bunIdentity.executableDigest,
+                    bunVersion: bunIdentity.bunVersion,
+                    bunRevision: bunIdentity.bunRevision,
+                    driverDigest: bunDriverDigest,
+                    helperDigest: bunHelperDigest,
+                    preloadDigest: bunPreloadDigest,
+                    runtimePreflight: bunRuntimePreflight,
+                    arguments: [
+                      "test",
+                      "--max-concurrency=1",
+                      "--retry=0",
+                      "--preload",
+                      "./node_modules/assertledger/preload.mjs",
+                      "--reporter=junit",
+                      "--reporter-outfile=<generated-junit-file>",
+                      ...request.adapter.baseTestFiles,
+                    ],
+                  }
+                : request.adapter,
         },
         execution: {
           isolation: container === undefined ? "UNSANDBOXED" : "CONTAINER",
@@ -3403,9 +3894,23 @@ export async function verifyCampaign(
           ? [
               "UNSANDBOXED trusted-local execution cannot safely contain hostile candidate code.",
               "Process-tree termination is best effort and depends on host operating-system facilities.",
+              ...(request.adapter.kind === "bun-test"
+                ? [
+                    "Only failures from the AssertLedger-owned assertSame helper are admitted as Bun assertions; native bun:test expect failures are not assertion evidence.",
+                    "Bun callback instrumentation determines assertion ownership; JUnit counts only check completeness and never classify assertions.",
+                  ]
+                : []),
             ]
           : [...CONTAINER_LIMITATIONS],
     };
+    if (
+      request.adapter.kind === "bun-test" &&
+      ((await sha256File(BUN_TEST_DRIVER_PATH)) !== bunDriverDigest ||
+        (await sha256File(BUN_TEST_HELPER_PATH)) !== bunHelperDigest ||
+        (await sha256File(BUN_TEST_PRELOAD_PATH)) !== bunPreloadDigest)
+    ) {
+      throw new Error("BUN_TEST_ASSET_CHANGED_DURING_CAMPAIGN");
+    }
     return sealManifestArtifact(finalManifest);
   } finally {
     await removeTemporaryDirectory(campaignRoot);

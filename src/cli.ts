@@ -45,7 +45,7 @@ Commands:
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
         (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
          | --allow-unsafe-execution)            Qualify one committed node:test regression
-  doctor [repository] [--exclude NAME ...] [--json]
+  doctor [repository] [--framework ID] [--exclude NAME ...] [--json]
                                                Inspect static repository readiness without writing
   doctor [repository] --runtime --allow-unsafe-execution [--json]
                                                Run controlled trusted-local runtime probes
@@ -63,9 +63,9 @@ Commands:
                                                Detect and write portable initialization files
   audit [repository] [--verification-request PATH] [--emit-verification-request] [--no-git]
                                                Produce a static audit and campaign cost projection
-  schema <verification-request|verification-request-v2|repository-analysis|repository-audit|
+  schema <verification-request|verification-request-v2|verification-request-v3|repository-analysis|repository-audit|
           repository-init-config|repository-init-lock|repository-init-result|
-          evidence-manifest|evidence-manifest-v2|replay-result|
+          evidence-manifest|evidence-manifest-v2|evidence-manifest-v3|replay-result|
           agentic-profile-request|agentic-profile-report|agentic-profile-replay-result|
            agentic-profile-request-v2|agentic-profile-report-v2|agentic-profile-replay-result-v2|
           agentic-benchmark-request|agentic-benchmark-artifact|agentic-benchmark-replay-result|
@@ -622,6 +622,11 @@ const VALIDATION_ERROR_CODES = new Set([
   "AGENTIC_PROFILE_V2_COHORT_INVALID",
   "NODE_TEST_EXECUTABLE_PROBE_FAILED",
   "NODE_TEST_VERSION_UNSUPPORTED",
+  "BUN_TEST_EXECUTABLE_PROBE_FAILED",
+  "BUN_TEST_VERSION_UNSUPPORTED",
+  "BUN_TEST_PROFILE_PREFLIGHT_FAILED",
+  "BUN_TEST_CONTAINER_UNSUPPORTED",
+  "BUN_TEST_ASSET_CHANGED_DURING_CAMPAIGN",
   "PORTABLE_PATH_COLLISION",
   "REPOSITORY_BYTES_BUDGET_EXCEEDED",
   "REPOSITORY_FILE_BUDGET_EXCEEDED",
@@ -724,9 +729,13 @@ export async function runCli(
         let usageError = false;
         for (let index = 1; index < argv.length && !usageError; index += 1) {
           const argument = argv[index] ?? "";
-          if (argument === "--exclude") {
+          if (argument === "--exclude" || argument === "--framework") {
             const value = argv[index + 1];
-            usageError = value === undefined || value.startsWith("--");
+            usageError =
+              value === undefined ||
+              value.startsWith("-") ||
+              (argument === "--framework" && seenFlags.has(argument));
+            seenFlags.add(argument);
             index += 1;
           } else if (booleanFlags.has(argument)) {
             usageError = seenFlags.has(argument);
@@ -740,7 +749,12 @@ export async function runCli(
         const runtime = seenFlags.has("--runtime");
         const allowUnsafeExecution = seenFlags.has("--allow-unsafe-execution");
         const exclude = repeatedFlagValues(argv, "--exclude");
-        if (usageError || (allowUnsafeExecution && !runtime) || (runtime && exclude.length > 0)) {
+        const framework = optionalFlag(argv, "--framework");
+        if (
+          usageError ||
+          (allowUnsafeExecution && !runtime) ||
+          (runtime && (exclude.length > 0 || framework !== undefined))
+        ) {
           io.writeStderr(USAGE);
           return 64;
         }
@@ -772,7 +786,10 @@ export async function runCli(
           }
           return runtimeResult.status === "READY" ? 0 : 3;
         }
-        const result = await ledger.doctor(root, exclude.length === 0 ? {} : { exclude });
+        const result = await ledger.doctor(root, {
+          ...(exclude.length === 0 ? {} : { exclude }),
+          ...(framework === undefined ? {} : { framework }),
+        });
         if (argv.includes("--json")) {
           writeJson(io, result);
         } else {
@@ -1112,13 +1129,18 @@ export async function runCli(
         if (
           name !== "verification-request" &&
           name !== "verification-request-v2" &&
+          name !== "verification-request-v3" &&
           name !== "repository-analysis" &&
           name !== "repository-audit" &&
           name !== "repository-init-config" &&
+          name !== "repository-init-config-v2" &&
           name !== "repository-init-lock" &&
+          name !== "repository-init-lock-v2" &&
           name !== "repository-init-result" &&
+          name !== "repository-init-result-v2" &&
           name !== "evidence-manifest" &&
           name !== "evidence-manifest-v2" &&
+          name !== "evidence-manifest-v3" &&
           name !== "replay-result" &&
           name !== "agentic-benchmark-request" &&
           name !== "agentic-benchmark-artifact" &&
@@ -1174,15 +1196,20 @@ export async function runCli(
           return 4;
         }
         const version2 = isRecord(request) && request.schemaVersion === "2.0.0";
-        const result =
-          containerRequest || version2
+        const version3 = isRecord(request) && request.schemaVersion === "3.0.0";
+        const runtimeOptions =
+          runtimeArgument === undefined
+            ? {}
+            : { containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) } };
+        const result = version3
+          ? await ledger.verifyV3(
+              containerRequest ? request : authorizeTrustedLocalExecution(request),
+              runtimeOptions,
+            )
+          : containerRequest || version2
             ? await ledger.verifyV2(
                 containerRequest ? request : authorizeTrustedLocalExecution(request),
-                runtimeArgument === undefined
-                  ? {}
-                  : {
-                      containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) },
-                    },
+                runtimeOptions,
               )
             : await ledger.verify(authorizeTrustedLocalExecution(request));
         writeJson(io, result);
