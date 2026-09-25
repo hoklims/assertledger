@@ -40,6 +40,26 @@ export interface ClientConnectionPlan {
   states: ClientConnectionArtifactState[];
 }
 
+export interface ClientConnectionRollback {
+  removed: string[];
+  unresolved: string[];
+}
+
+export class ClientConnectionApplyError extends Error {
+  readonly rollback: ClientConnectionRollback;
+
+  constructor(cause: unknown, rollback: ClientConnectionRollback) {
+    super("CONNECT_APPLY_FAILED", { cause });
+    this.name = "ClientConnectionApplyError";
+    this.rollback = rollback;
+  }
+}
+
+export interface ConnectClientDependencies {
+  writeArtifact?(artifact: ClientConnectionArtifact): Promise<void>;
+  removeArtifact?(artifact: ClientConnectionArtifact): Promise<void>;
+}
+
 function tomlString(value: string): string {
   return JSON.stringify(value);
 }
@@ -314,17 +334,31 @@ async function createSafeParents(root: string, targetPath: string): Promise<void
   }
 }
 
-async function rollbackCreated(artifacts: readonly ClientConnectionArtifact[]): Promise<void> {
+async function rollbackCreated(
+  artifacts: readonly ClientConnectionArtifact[],
+  removeArtifact: (artifact: ClientConnectionArtifact) => Promise<void>,
+): Promise<ClientConnectionRollback> {
+  const removed: string[] = [];
+  const unresolved: string[] = [];
   for (const artifact of [...artifacts].reverse()) {
     if (artifact.path === null) continue;
     try {
-      if ((await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE")) === "UNCHANGED") {
-        await unlink(artifact.path);
+      const state = await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE");
+      if (state === "ABSENT") {
+        removed.push(artifact.path);
+      } else if (state === "UNCHANGED") {
+        await removeArtifact(artifact);
+        removed.push(artifact.path);
+      } else {
+        unresolved.push(artifact.path);
       }
     } catch {
-      // Preserve the original failure; rollback is best-effort under the trusted local stability model.
+      unresolved.push(artifact.path);
     }
   }
+  removed.sort((left, right) => left.localeCompare(right));
+  unresolved.sort((left, right) => left.localeCompare(right));
+  return { removed, unresolved };
 }
 
 export async function connectClient(
@@ -332,6 +366,7 @@ export async function connectClient(
   requestedCliEntry: string,
   client: ConnectionClient,
   write: boolean,
+  dependencies: ConnectClientDependencies = {},
 ): Promise<ClientConnectionResult> {
   const plan = await planClientConnection(requestedRoot, requestedCliEntry, client);
   const { artifacts } = plan.result;
@@ -342,7 +377,19 @@ export async function connectClient(
     return { client, status: "UNCHANGED", artifacts };
   }
 
-  const created: ClientConnectionArtifact[] = [];
+  const attempted: ClientConnectionArtifact[] = [];
+  const writeArtifact =
+    dependencies.writeArtifact ??
+    ((artifact: ClientConnectionArtifact) => {
+      if (artifact.path === null) throw new Error("CONNECT_PLAN_INCONSISTENT");
+      return writeFile(artifact.path, artifact.content, { encoding: "utf8", flag: "wx" });
+    });
+  const removeArtifact =
+    dependencies.removeArtifact ??
+    ((artifact: ClientConnectionArtifact) => {
+      if (artifact.path === null) throw new Error("CONNECT_PLAN_INCONSISTENT");
+      return unlink(artifact.path);
+    });
   try {
     for (const [index, artifact] of artifacts.entries()) {
       if (artifact.path === null || states[index] === "UNCHANGED") continue;
@@ -350,12 +397,17 @@ export async function connectClient(
     }
     for (const [index, artifact] of artifacts.entries()) {
       if (artifact.path === null || states[index] === "UNCHANGED") continue;
-      await writeFile(artifact.path, artifact.content, { encoding: "utf8", flag: "wx" });
-      created.push(artifact);
+      attempted.push(artifact);
+      await writeArtifact(artifact);
     }
   } catch (error) {
-    await rollbackCreated(created);
-    throw error;
+    const raced = (error as NodeJS.ErrnoException).code === "EEXIST" ? attempted.pop() : undefined;
+    const rollback = await rollbackCreated(attempted, removeArtifact);
+    if (raced?.path !== null && raced?.path !== undefined) {
+      rollback.unresolved.push(raced.path);
+      rollback.unresolved.sort((left, right) => left.localeCompare(right));
+    }
+    throw new ClientConnectionApplyError(error, rollback);
   }
   return { client, status: "CREATED", artifacts };
 }

@@ -1,7 +1,12 @@
 import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { RepositoryInitResult } from "../contracts/index.js";
-import { type ClientConnectionResult, connectClient, planClientConnection } from "./connection.js";
+import {
+  ClientConnectionApplyError,
+  type ClientConnectionResult,
+  connectClient,
+  planClientConnection,
+} from "./connection.js";
 import { initializeRepository } from "./index.js";
 
 export type SetupClient = "codex" | "claude-code";
@@ -45,6 +50,8 @@ export interface RepositorySetupResult {
 
 export interface SetupRepositoryDependencies {
   afterInitApplied?(): Promise<void>;
+  applyInit?(root: string): Promise<RepositoryInitResult>;
+  applyConnection?(): Promise<ClientConnectionResult>;
 }
 
 function initArtifactState(
@@ -99,14 +106,29 @@ async function rollbackCreatedInitFiles(
 }
 
 function rollbackArtifactState(
+  root: string,
   artifact: RepositorySetupArtifact,
   rollback: RepositorySetupRollback,
 ): RepositorySetupArtifactState {
-  if (artifact.owner === "connection") return "CONFLICT";
-  const relative = path.basename(artifact.path);
+  const relative = path.relative(root, artifact.path).split(path.sep).join("/");
   if (rollback.removed.includes(relative)) return "ROLLED_BACK";
   if (rollback.unresolved.includes(relative)) return "PARTIAL";
   return artifact.state;
+}
+
+function mergeRollback(
+  root: string,
+  init: RepositorySetupRollback,
+  connection: { removed: string[]; unresolved: string[] },
+): RepositorySetupRollback {
+  const relative = (file: string) => path.relative(root, file).split(path.sep).join("/");
+  const removed = [...init.removed, ...connection.removed.map(relative)].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  const unresolved = [...init.unresolved, ...connection.unresolved.map(relative)].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  return { status: unresolved.length === 0 ? "COMPLETE" : "PARTIAL", removed, unresolved };
 }
 
 export async function setupRepository(
@@ -158,7 +180,21 @@ export async function setupRepository(
   const unchanged = artifacts.every((artifact) => artifact.state === "UNCHANGED");
   if (!write) return { status: unchanged ? "UNCHANGED" : "WOULD_CREATE", ...base };
 
-  const appliedInit = await initializeRepository(root);
+  let appliedInit: RepositoryInitResult;
+  try {
+    appliedInit = await (dependencies.applyInit?.(root) ?? initializeRepository(root));
+  } catch {
+    const rollback = await rollbackCreatedInitFiles(root, initPlan);
+    return {
+      status: "PARTIAL_FAILURE",
+      ...base,
+      artifacts: artifacts.map((artifact) => ({
+        ...artifact,
+        state: rollbackArtifactState(root, artifact, rollback),
+      })),
+      rollback,
+    };
+  }
   if (appliedInit.status === "CONFLICT" || appliedInit.status === "BLOCKED") {
     return {
       status: appliedInit.status,
@@ -169,17 +205,31 @@ export async function setupRepository(
   let appliedConnection: ClientConnectionResult;
   try {
     await dependencies.afterInitApplied?.();
-    appliedConnection = await connectClient(root, cliEntry, client, true);
+    appliedConnection = await (dependencies.applyConnection?.() ??
+      connectClient(root, cliEntry, client, true));
   } catch (error) {
-    const rollback = await rollbackCreatedInitFiles(root, appliedInit);
-    if (rollback.status === "COMPLETE") throw error;
+    const initRollback = await rollbackCreatedInitFiles(root, appliedInit);
+    if (!(error instanceof ClientConnectionApplyError)) {
+      if (initRollback.status === "COMPLETE") throw error;
+      return {
+        status: "PARTIAL_FAILURE",
+        ...base,
+        init: appliedInit,
+        artifacts: artifacts.map((artifact) => ({
+          ...artifact,
+          state: rollbackArtifactState(root, artifact, initRollback),
+        })),
+        rollback: initRollback,
+      };
+    }
+    const rollback = mergeRollback(root, initRollback, error.rollback);
     return {
       status: "PARTIAL_FAILURE",
       ...base,
       init: appliedInit,
       artifacts: artifacts.map((artifact) => ({
         ...artifact,
-        state: rollbackArtifactState(artifact, rollback),
+        state: rollbackArtifactState(root, artifact, rollback),
       })),
       rollback,
     };
@@ -193,7 +243,10 @@ export async function setupRepository(
       connection: appliedConnection,
       artifacts: artifacts.map((artifact) => ({
         ...artifact,
-        state: rollbackArtifactState(artifact, rollback),
+        state:
+          artifact.owner === "connection"
+            ? ("CONFLICT" as const)
+            : rollbackArtifactState(root, artifact, rollback),
       })),
       rollback,
     };

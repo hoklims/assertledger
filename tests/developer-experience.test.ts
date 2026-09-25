@@ -16,7 +16,7 @@ import {
   disconnectClient,
 } from "../src/engine/connection.js";
 import { runFixtureDemo } from "../src/engine/demo.js";
-import { verifyCampaign as executeCampaign } from "../src/engine/index.js";
+import { verifyCampaign as executeCampaign, initializeRepository } from "../src/engine/index.js";
 import { setupRepository } from "../src/engine/setup.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
@@ -154,6 +154,87 @@ describe("developer entry points", () => {
       await readFile(path.join(root, "assertledger.config.json"), "utf8"),
       '{"operator":"changed"}\n',
     );
+  });
+
+  it("rolls back a byte-owned first init file when the second init write fails", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-init-write-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const plan = await initializeRepository(root, { dryRun: true });
+    const config = plan.files.find((file) => file.path === "assertledger.config.json");
+    assert(config);
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      async applyInit() {
+        await writeFile(path.join(root, config.path), config.content, { flag: "wx" });
+        throw new Error("FAULT_SECOND_INIT_WRITE");
+      },
+    });
+
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "COMPLETE",
+      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      unresolved: [],
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.state),
+      ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE"],
+    );
+    for (const managed of ["assertledger.config.json", "assertledger.lock.json"]) {
+      await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
+    }
+  });
+
+  it("reports partial connection bytes and cleanup failures without deleting either file", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-write-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const partialSkill = "partial skill bytes\n";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyConnection: () =>
+        connectClient(root, builtEntry, "codex", true, {
+          async writeArtifact(artifact) {
+            assert(artifact.path);
+            if (artifact.kind === "configuration") {
+              await writeFile(artifact.path, artifact.content, { flag: "wx" });
+              return;
+            }
+            await writeFile(artifact.path, partialSkill, { flag: "wx" });
+            throw new Error("FAULT_PARTIAL_CONNECTION_WRITE");
+          },
+          async removeArtifact(artifact) {
+            assert(artifact.path);
+            throw new Error("FAULT_CONNECTION_CLEANUP");
+          },
+        }),
+    });
+
+    const configPath = path.join(root, ".codex", "config.toml");
+    const skillPath = path.join(root, ".agents", "skills", "assertledger", "SKILL.md");
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "PARTIAL",
+      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      unresolved: [".agents/skills/assertledger/SKILL.md", ".codex/config.toml"],
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.state),
+      ["ROLLED_BACK", "ROLLED_BACK", "PARTIAL", "PARTIAL"],
+    );
+    assert.equal(await readFile(configPath, "utf8"), result.connection.artifacts[0]?.content);
+    assert.equal(await readFile(skillPath, "utf8"), partialSkill);
   });
 
   it("preflights initialization and client conflicts before setup writes any managed file", async () => {
