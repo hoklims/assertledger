@@ -134,8 +134,16 @@ function parseCodexSetupConfiguration(content: string): CodexSetupConfiguration 
 function assertSameFileIdentity(leftPath: string, rightPath: string, errorCode: string): void {
   const left = statSync(leftPath, { bigint: true });
   const right = statSync(rightPath, { bigint: true });
-  assert.equal(left.dev, right.dev, errorCode);
-  assert.equal(left.ino, right.ino, errorCode);
+  if (process.platform === "win32") {
+    assert.equal(
+      path.normalize(realpathSync.native(leftPath)).toLowerCase(),
+      path.normalize(realpathSync.native(rightPath)).toLowerCase(),
+      errorCode,
+    );
+  } else {
+    assert.equal(left.dev, right.dev, errorCode);
+    assert.equal(left.ino, right.ino, errorCode);
+  }
   assert.equal(left.isFile(), right.isFile(), errorCode);
   assert.equal(left.isDirectory(), right.isDirectory(), errorCode);
 }

@@ -869,10 +869,21 @@ async function atomicInitWrite(
       targetInstalled = true;
     }
   } catch (error) {
-    if (!temporaryOwned && (error as NodeJS.ErrnoException).code !== "EEXIST") {
-      temporaryOwned = true;
-    }
     let temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED" = "NOT_OWNED";
+    if (!temporaryOwned && (error as NodeJS.ErrnoException).code !== "EEXIST") {
+      try {
+        const temporaryStatus = await lstat(temporary);
+        if (temporaryStatus.isFile() && !temporaryStatus.isSymbolicLink()) {
+          temporaryOwned = true;
+        } else {
+          temporaryCleanup = "UNRESOLVED";
+        }
+      } catch (inspectionError) {
+        if ((inspectionError as NodeJS.ErrnoException).code !== "ENOENT") {
+          temporaryCleanup = "UNRESOLVED";
+        }
+      }
+    }
     if (temporaryOwned) {
       temporaryCleanup = "REMOVED";
       try {

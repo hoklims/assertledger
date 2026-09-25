@@ -300,6 +300,39 @@ describe("developer entry points", () => {
     assert.equal(await readFile(temporaryPath, "utf8"), otherInvocationBytes);
   });
 
+  it("does not report an absent init temporary after a pre-creation write failure", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-temp-absent-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    let temporaryPath = "";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyInit: (setupRoot) =>
+        initializeRepository(
+          setupRoot,
+          {},
+          {
+            async writeTemporary(temporary) {
+              temporaryPath = temporary;
+              const failure = new Error("FAULT_INIT_TEMP_PRE_CREATE") as NodeJS.ErrnoException;
+              failure.code = "EACCES";
+              throw failure;
+            },
+          },
+        ),
+    });
+
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, { status: "COMPLETE", removed: [], unresolved: [] });
+    assert.equal(result.artifacts.length, 4);
+    await assert.rejects(lstat(temporaryPath), /ENOENT/u);
+  });
+
   it("reports partial temporary bytes when this invocation writes then fails", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-temp-partial-"));
