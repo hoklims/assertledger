@@ -15,6 +15,8 @@ import {
   createCodexProjectConfig,
   disconnectClient,
 } from "../src/engine/connection.js";
+import { runFixtureDemo } from "../src/engine/demo.js";
+import { setupRepository } from "../src/engine/setup.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const packageMetadata = JSON.parse(
@@ -71,6 +73,110 @@ function captureIo(cwd: string): { io: CliIo; stdout(): string; stderr(): string
 }
 
 describe("developer entry points", () => {
+  it("preflights initialization and client conflicts before setup writes any managed file", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-entry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(
+      path.join(builtRoot, "integrations", "skill", "SKILL.md"),
+      "---\nname: assertledger\n---\n",
+    );
+
+    const conflictPath = path.join(root, ".agents", "skills", "assertledger", "SKILL.md");
+    await mkdir(path.dirname(conflictPath), { recursive: true });
+    await writeFile(conflictPath, "operator-owned\n");
+
+    const conflict = await setupRepository(root, builtEntry, "codex", true);
+    assert.equal(conflict.status, "CONFLICT");
+    assert.equal(await readFile(conflictPath, "utf8"), "operator-owned\n");
+    for (const managed of [
+      "assertledger.config.json",
+      "assertledger.lock.json",
+      path.join(".codex", "config.toml"),
+    ]) {
+      await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
+    }
+
+    await rm(conflictPath);
+    const preview = await setupRepository(root, builtEntry, "codex", false);
+    assert.equal(preview.status, "WOULD_CREATE");
+    assert.equal(preview.init.status, "WOULD_CREATE");
+    assert.equal(preview.connection.status, "EMITTED");
+    assert.deepEqual(
+      preview.artifacts.map((artifact) => artifact.state),
+      ["WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE", "WOULD_CREATE"],
+    );
+    await assert.rejects(readFile(path.join(root, "assertledger.config.json"), "utf8"), /ENOENT/u);
+
+    const created = await setupRepository(root, builtEntry, "codex", true);
+    assert.equal(created.status, "CREATED");
+    assert.equal((await setupRepository(root, builtEntry, "codex", true)).status, "UNCHANGED");
+  });
+
+  it("runs the shipped demonstration only with explicit unsafe authorization and limits its claim", async () => {
+    const builtEntry = path.resolve("dist", "cli.js");
+    await assert.rejects(
+      runFixtureDemo(builtEntry, false),
+      /UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED/u,
+    );
+
+    const result = await runFixtureDemo(builtEntry, true);
+    assert.equal(result.status, "VERIFIED");
+    assert.equal(result.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.deepEqual(result.selectedCandidateIds, ["strong"]);
+    assert.match(result.limitation, /does not prove.*user repository/iu);
+    assert.equal(result.temporaryWorkspaceRemoved, true);
+  });
+
+  it("exposes setup preview, setup write, and the bounded demo through the built CLI", async () => {
+    const root = await fixtureRepository();
+    const cli = path.resolve("dist", "cli.js");
+
+    const preview = await execFileAsync(
+      process.execPath,
+      [cli, "setup", root, "--client", "claude-code", "--dry-run", "--json"],
+      { cwd: root },
+    );
+    assert.equal(JSON.parse(preview.stdout).status, "WOULD_CREATE");
+    await assert.rejects(readFile(path.join(root, "assertledger.config.json"), "utf8"), /ENOENT/u);
+
+    const applied = await execFileAsync(
+      process.execPath,
+      [cli, "setup", root, "--client", "claude-code", "--write", "--json"],
+      { cwd: root },
+    );
+    assert.equal(JSON.parse(applied.stdout).status, "CREATED");
+    assert.equal(
+      JSON.parse(await readFile(path.join(root, "assertledger.config.json"), "utf8")).schemaVersion,
+      "1.0.0",
+    );
+    assert.equal(
+      JSON.parse(await readFile(path.join(root, ".mcp.json"), "utf8")).mcpServers !== undefined,
+      true,
+    );
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cli, "demo", "--json"], { cwd: root }),
+      (error: unknown) => {
+        assert.match((error as { stderr: string }).stderr, /--allow-unsafe-execution/u);
+        return true;
+      },
+    );
+    const demo = await execFileAsync(
+      process.execPath,
+      [cli, "demo", "--allow-unsafe-execution", "--json"],
+      { cwd: root },
+    );
+    const demoResult = JSON.parse(demo.stdout);
+    assert.equal(demoResult.status, "VERIFIED");
+    assert.equal(demoResult.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.match(demoResult.limitation, /does not prove.*user repository/iu);
+  });
+
   it("reports static doctor JSON through the existing init result without mutation", async () => {
     const root = await fixtureRepository();
     const before = await readFile(path.join(root, "package.json"), "utf8");

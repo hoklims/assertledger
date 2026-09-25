@@ -7,6 +7,7 @@ import { ContractError } from "./contracts/index.js";
 import { renderDiagnostics } from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
+import { runFixtureDemo } from "./engine/demo.js";
 import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
@@ -20,6 +21,7 @@ import {
 } from "./evaluation/agentic-corpus.js";
 import { createAssertLedgerServer } from "./mcp/index.js";
 import { AssertLedger } from "./sdk/index.js";
+import { type SetupClient, setupRepository } from "./engine/setup.js";
 import { ASSERTLEDGER_VERSION } from "./version.js";
 
 export interface CliIo {
@@ -42,6 +44,9 @@ Commands:
                                                Inspect static repository readiness without writing
   doctor [repository] --runtime --allow-unsafe-execution [--json]
                                                Run controlled trusted-local runtime probes
+  setup [repository] --client <codex|claude-code> [--dry-run|--write] [--json]
+                                               Preview or apply init and client integration together
+  demo --allow-unsafe-execution [--json]       Verify the shipped fixture in a disposable workspace
   connect [repository] --client <codex|claude-code> [--write]
                                                Preview or install project-local client integration
   connect [repository] --client mcp            Emit a generic stdio descriptor as JSON
@@ -200,6 +205,55 @@ interface ClientArguments {
   root: string;
   client: ConnectionClient;
   write: boolean;
+}
+
+interface SetupArguments {
+  root: string;
+  client: SetupClient;
+  write: boolean;
+  json: boolean;
+}
+
+function parseSetupArguments(argv: readonly string[], cwd: string): SetupArguments | undefined {
+  let client: string | undefined;
+  let rootArgument = ".";
+  let rootSeen = false;
+  let clientSeen = false;
+  let dryRunSeen = false;
+  let writeSeen = false;
+  let jsonSeen = false;
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if (argument === "--client") {
+      if (clientSeen) return undefined;
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("-")) return undefined;
+      client = value;
+      clientSeen = true;
+      index += 1;
+    } else if (argument === "--dry-run") {
+      if (dryRunSeen || writeSeen) return undefined;
+      dryRunSeen = true;
+    } else if (argument === "--write") {
+      if (writeSeen || dryRunSeen) return undefined;
+      writeSeen = true;
+    } else if (argument === "--json") {
+      if (jsonSeen) return undefined;
+      jsonSeen = true;
+    } else if (argument.startsWith("-") || rootSeen) {
+      return undefined;
+    } else {
+      rootArgument = argument;
+      rootSeen = true;
+    }
+  }
+  if (client !== "codex" && client !== "claude-code") return undefined;
+  return {
+    root: path.resolve(cwd, rootArgument),
+    client,
+    write: writeSeen,
+    json: jsonSeen,
+  };
 }
 
 function parseClientArguments(
@@ -646,6 +700,72 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (result.status === "BLOCKED") return 3;
         if (result.status === "CONFLICT") return 4;
         return 0;
+      }
+      case "setup": {
+        const parsed = parseSetupArguments(argv, io.cwd);
+        if (parsed === undefined) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const currentEntry = fileURLToPath(import.meta.url);
+        if (
+          path.basename(currentEntry) !== "cli.js" ||
+          path.basename(path.dirname(currentEntry)) !== "dist"
+        ) {
+          io.writeStderr("SETUP_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
+          return 3;
+        }
+        const result = await setupRepository(
+          parsed.root,
+          currentEntry,
+          parsed.client,
+          parsed.write,
+        );
+        if (parsed.json) writeJson(io, result);
+        else {
+          io.writeStdout(`Setup status: ${result.status}\n`);
+          for (const artifact of result.artifacts) {
+            io.writeStdout(`${artifact.state}: ${artifact.path}\n`);
+          }
+          for (const limitation of result.limitations) io.writeStdout(`Limit: ${limitation}\n`);
+          if (!parsed.write && result.status === "WOULD_CREATE") {
+            io.writeStdout("No files changed. Re-run with --write to apply this plan.\n");
+          }
+        }
+        if (result.status === "BLOCKED") return 3;
+        if (result.status === "CONFLICT") return 4;
+        return 0;
+      }
+      case "demo": {
+        const allowedFlags = new Set(["--allow-unsafe-execution", "--json"]);
+        if (
+          argv.slice(1).some((argument) => !allowedFlags.has(argument)) ||
+          [...allowedFlags].some((flag) => argv.filter((argument) => argument === flag).length > 1)
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        if (!argv.includes("--allow-unsafe-execution")) {
+          io.writeStderr(
+            "Refusing UNSANDBOXED fixture execution without --allow-unsafe-execution.\n",
+          );
+          return 4;
+        }
+        const currentEntry = fileURLToPath(import.meta.url);
+        const result = await runFixtureDemo(currentEntry, true);
+        if (argv.includes("--json")) writeJson(io, result);
+        else {
+          io.writeStdout(
+            [
+              `Demo status: ${result.status}`,
+              `Selected candidates: ${result.selectedCandidateIds.join(", ")}`,
+              `Artifact digest: ${result.artifactDigest}`,
+              `Limit: ${result.limitation}`,
+              "",
+            ].join("\n"),
+          );
+        }
+        return result.status === "VERIFIED" ? 0 : 3;
       }
       case "connect": {
         const parsed = parseClientArguments(argv, io.cwd, "connect");

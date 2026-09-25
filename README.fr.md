@@ -71,8 +71,14 @@ L’exemple fourni contient une fonction de parité correcte, sa version invers�
 puis lancez :
 
 ```sh
+node dist/cli.js demo --allow-unsafe-execution
+# Ou pour examiner directement le manifeste complet :
 node dist/cli.js verify examples/node-test/request.json --allow-unsafe-execution --json
 ```
+
+`demo` copie l’exemple fourni dans un dossier temporaire jetable, puis le supprime. Son résultat
+démontre uniquement le paquet AssertLedger installé ; il ne constitue pas une preuve sur votre
+dépôt.
 
 > **Exécutez uniquement du code de confiance.** L’option `--allow-unsafe-execution` autorise
 > l’exécution locale du code. Ce mode est explicitement **UNSANDBOXED**, sans bac à sable :
@@ -144,6 +150,18 @@ Commencez par un diagnostic statique. Il lit le dépôt sans exécuter ses tests
 node dist/cli.js doctor path/to/your-repository
 node dist/cli.js doctor path/to/your-repository --json
 ```
+
+Pour prévisualiser l’initialisation et la connexion en lecture seule d’un agent dans une seule
+opération contrôlée :
+
+```sh
+node dist/cli.js setup path/to/your-repository --client codex --dry-run
+node dist/cli.js setup path/to/your-repository --client codex --write
+```
+
+Utilisez `--client claude-code` pour Claude Code. Sans option de mode, `setup` reste une
+prévisualisation. La commande contrôle toutes les cibles avant sa première écriture ; un conflit
+laisse tous les fichiers gérés inchangés.
 
 `WOULD_CREATE` signifie qu’une configuration peut être préparée. Vous fournissez encore le test
 candidat et les contrôles. Le [guide d’initialisation](docs/repository-init.md) décrit `init`,

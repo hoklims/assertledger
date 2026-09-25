@@ -1141,6 +1141,36 @@ describe("repository init v1", () => {
       JSON.parse(await readFile(path.join(repository, "assertledger.lock.json"), "utf8")),
     );
 
+    const setupPreview = await execFileAsync(
+      process.execPath,
+      [cli, "setup", repository, "--client", "codex", "--dry-run", "--json"],
+      { cwd: consumer },
+    );
+    assert.equal(JSON.parse(setupPreview.stdout).status, "WOULD_CREATE");
+    await assert.rejects(
+      readFile(path.join(repository, ".codex", "config.toml"), "utf8"),
+      /ENOENT/u,
+    );
+    const setupApplied = await execFileAsync(
+      process.execPath,
+      [cli, "setup", repository, "--client", "codex", "--write", "--json"],
+      { cwd: consumer },
+    );
+    assert.equal(JSON.parse(setupApplied.stdout).status, "CREATED");
+    assert.match(
+      await readFile(path.join(repository, ".codex", "config.toml"), "utf8"),
+      /^\[mcp_servers\.assertledger\]$/mu,
+    );
+    const demo = await execFileAsync(
+      process.execPath,
+      [cli, "demo", "--allow-unsafe-execution", "--json"],
+      { cwd: consumer },
+    );
+    const demoResult = JSON.parse(demo.stdout);
+    assert.equal(demoResult.status, "VERIFIED");
+    assert.equal(demoResult.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.match(demoResult.limitation, /does not prove.*user repository/iu);
+
     const requestPath = path.join(consumer, "request.json");
     const manifestPath = path.join(consumer, "manifest.json");
     await writeFile(

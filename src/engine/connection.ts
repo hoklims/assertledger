@@ -33,6 +33,13 @@ export interface ClientConnectionResult {
   artifacts: ClientConnectionArtifact[];
 }
 
+export type ClientConnectionArtifactState = "ABSENT" | "UNCHANGED" | "CONFLICT";
+
+export interface ClientConnectionPlan {
+  result: ClientConnectionResult;
+  states: ClientConnectionArtifactState[];
+}
+
 function tomlString(value: string): string {
   return JSON.stringify(value);
 }
@@ -326,25 +333,11 @@ export async function connectClient(
   client: ConnectionClient,
   write: boolean,
 ): Promise<ClientConnectionResult> {
-  assertConnectionClient(client);
+  const plan = await planClientConnection(requestedRoot, requestedCliEntry, client);
+  const { artifacts } = plan.result;
+  const { states } = plan;
+  if (plan.result.status === "CONFLICT" || client === "mcp" || !write) return plan.result;
   const root = await resolveRepositoryRoot(requestedRoot);
-  const cliEntry = await resolveBuiltEntry(requestedCliEntry);
-  if (client === "mcp") {
-    return {
-      client,
-      status: "EMITTED",
-      artifacts: clientArtifacts(client, root, cliEntry, undefined),
-    };
-  }
-  const artifacts = clientArtifacts(client, root, cliEntry, await packagedSkill(cliEntry));
-  const states: Array<"ABSENT" | "UNCHANGED" | "CONFLICT"> = [];
-  for (const artifact of artifacts) {
-    if (artifact.path === null) continue;
-    await validateParentPath(root, artifact.path, "CONNECT_CONFIG_PATH_UNSAFE");
-    states.push(await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE"));
-  }
-  if (states.includes("CONFLICT")) return { client, status: "CONFLICT", artifacts };
-  if (!write) return { client, status: "EMITTED", artifacts };
   if (states.every((state) => state === "UNCHANGED")) {
     return { client, status: "UNCHANGED", artifacts };
   }
@@ -365,6 +358,41 @@ export async function connectClient(
     throw error;
   }
   return { client, status: "CREATED", artifacts };
+}
+
+export async function planClientConnection(
+  requestedRoot: string,
+  requestedCliEntry: string,
+  client: ConnectionClient,
+): Promise<ClientConnectionPlan> {
+  assertConnectionClient(client);
+  const root = await resolveRepositoryRoot(requestedRoot);
+  const cliEntry = await resolveBuiltEntry(requestedCliEntry);
+  if (client === "mcp") {
+    return {
+      result: {
+        client,
+        status: "EMITTED",
+        artifacts: clientArtifacts(client, root, cliEntry, undefined),
+      },
+      states: ["ABSENT"],
+    };
+  }
+  const artifacts = clientArtifacts(client, root, cliEntry, await packagedSkill(cliEntry));
+  const states: ClientConnectionArtifactState[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.path === null) continue;
+    await validateParentPath(root, artifact.path, "CONNECT_CONFIG_PATH_UNSAFE");
+    states.push(await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE"));
+  }
+  return {
+    result: {
+      client,
+      status: states.includes("CONFLICT") ? "CONFLICT" : "EMITTED",
+      artifacts,
+    },
+    states,
+  };
 }
 
 export async function disconnectClient(

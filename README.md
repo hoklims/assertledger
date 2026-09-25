@@ -69,8 +69,14 @@ The bundled example contains a correct parity function, an inverted version, a n
 and the two tests above. Inspect [its request](examples/node-test/request.json), then run:
 
 ```sh
+node dist/cli.js demo --allow-unsafe-execution
+# Or inspect the complete manifest directly:
 node dist/cli.js verify examples/node-test/request.json --allow-unsafe-execution --json
 ```
+
+`demo` copies the shipped example to a disposable temporary directory and removes it afterward.
+Its result demonstrates the installed AssertLedger package only; it is not evidence about your
+repository.
 
 > **Run trusted code only.** `--allow-unsafe-execution` authorizes local code execution.
 > This backend is explicitly **UNSANDBOXED**. Use a trusted checkout; it cannot contain hostile code.
@@ -137,6 +143,17 @@ Start with a static diagnostic. It reads the repository without running its test
 node dist/cli.js doctor path/to/your-repository
 node dist/cli.js doctor path/to/your-repository --json
 ```
+
+To preview initialization and a read-only agent connection as one conflict-checked operation:
+
+```sh
+node dist/cli.js setup path/to/your-repository --client codex --dry-run
+node dist/cli.js setup path/to/your-repository --client codex --write
+```
+
+Use `--client claude-code` for Claude Code. The preview is also the default when neither mode flag
+is present. Setup checks every initialization and connection target before its first managed-file
+write; a conflict leaves all managed files unchanged.
 
 `WOULD_CREATE` means a configuration can be planned. You still supply the candidate and controls.
 The [initialization guide](docs/repository-init.md) explains `init`, the configuration and evidence
