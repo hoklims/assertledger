@@ -117,6 +117,11 @@ set of errors actually issued by `assertSame`. The driver requires every configu
 that callback totals and failures agree with Bun's JUnit totals and process exit. JUnit never
 classifies an assertion or supplies candidate attribution. A generic throw, failed control,
 skipped test, missing callback or inconsistent count cannot kill a target.
+The preload sends signed events to the driver over a dedicated process pipe. A one-run key is
+delivered before candidate modules load and is not placed in the candidate environment or a
+workspace file. The driver emits the final bounded JSON report on its own stdout; candidate code
+cannot pre-create that result file. The generic `testforge-command` adapter retains its existing
+result-file protocol.
 Bun's separate unhandled-error summary blocks attribution when collection fails outside a
 callback. The preload records failing lifecycle hooks separately, so they cannot be hidden by an
 owned assertion failure in the same test.

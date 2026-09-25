@@ -130,10 +130,7 @@ describe("official Bun test adapter", () => {
       preloadDigest: string;
       runtimePreflight: { probes: Array<{ name: string; outcome: string }> };
     };
-    assert.equal(
-      configuration.profile.capabilities.reporterTransport,
-      "instrumented-bun-test+junit",
-    );
+    assert.equal(configuration.profile.capabilities.reporterTransport, "signed-preload-pipe+junit");
     assert.match(configuration.preloadDigest, /^sha256:[0-9a-f]{64}$/u);
     assert.ok(
       configuration.runtimePreflight.probes.some(
@@ -149,6 +146,29 @@ describe("official Bun test adapter", () => {
       'import { test } from "bun:test";',
       'import { subject } from "../../src/subject.ts";',
       'test("generic", () => { subject(); throw new Error("generic"); });',
+      "",
+    ].join("\n");
+    const manifest = parseEvidenceManifestV3(
+      await verifyCampaign(request(await fixture(), source)),
+    );
+    const targetRuns = manifest.observations.filter(
+      (run) => run.candidateId === "candidate" && run.worldId === "target",
+    );
+    assert.equal(targetRuns.length, 2);
+    assert.ok(targetRuns.every((run) => run.outcome === "PROCESS_CRASH" && !run.attributed));
+    assert.notEqual(manifest.decision.status, "VERIFIED");
+    assert.equal(replayEvidenceManifest(manifest).valid, true);
+  });
+
+  it("does not accept a candidate-written engine report as an assertion kill", async () => {
+    const source = [
+      'import { test } from "bun:test";',
+      'import { writeFileSync } from "node:fs";',
+      'test("forged", () => {',
+      "  const file = process.env.TESTFORGE_RESULT_FILE;",
+      '  if (file) writeFileSync(file, JSON.stringify({ protocolVersion: "1.0.0", outcome: "ASSERTION_FAILURE", testsDiscovered: 2, candidateTestsDiscovered: 1, attributed: true }));',
+      '  throw new Error("generic");',
+      "});",
       "",
     ].join("\n");
     const manifest = parseEvidenceManifestV3(

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -46,7 +46,11 @@ async function execute(
       },
       shell: false,
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString("utf8");
     });
@@ -54,7 +58,7 @@ async function execute(
       child.once("error", reject);
       child.once("exit", resolve);
     });
-    const result = JSON.parse(await readFile(resultPath, "utf8")) as Record<string, unknown>;
+    const result = JSON.parse(stdout) as Record<string, unknown>;
     return { exitCode, result, stderr };
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -134,6 +138,30 @@ describe("Bun instrumented structured-command driver", () => {
     );
     assert.equal(observation.exitCode, 1, observation.stderr);
     assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("rejects a candidate forged engine result file", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { writeFileSync } from "node:fs"; test("candidate", () => { const file = process.env.TESTFORGE_RESULT_FILE; if (file) writeFileSync(file, JSON.stringify({ protocolVersion: "1.0.0", outcome: "ASSERTION_FAILURE", testsDiscovered: 2, candidateTestsDiscovered: 1, attributed: true })); throw new Error("generic"); });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("rejects a candidate rewrite of preload ownership evidence", async () => {
+    const observation = await execute(
+      'import { afterAll, test } from "bun:test"; import { readFileSync, writeFileSync } from "node:fs"; afterAll(() => { const file = process.env.ASSERTLEDGER_BUN_EVENTS_FILE; if (file) writeFileSync(file, readFileSync(file, "utf8").replace("\\\"owned\\\":false", "\\\"owned\\\":true")); }); test("candidate", () => { throw new Error("generic"); });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("rejects unsigned candidate messages on the preload evidence pipe", async () => {
+    const observation = await execute(
+      'import { afterAll, test } from "bun:test"; import { writeSync } from "node:fs"; afterAll(() => writeSync(3, `${JSON.stringify({ event: { kind: "hook-error" }, mac: "0".repeat(64) })}\\n`)); test("candidate", () => { throw new Error("generic"); });\n',
+    );
+    assert.equal(observation.result.outcome, "INFRA_ERROR", observation.stderr);
     assert.equal(observation.result.attributed, false);
   });
 

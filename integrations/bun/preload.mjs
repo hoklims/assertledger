@@ -1,20 +1,30 @@
-import { randomUUID } from "node:crypto";
-import { appendFileSync } from "node:fs";
+import { createHmac, randomUUID } from "node:crypto";
+import { closeSync, readSync, writeSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isAssertSameFailure } from "./bun.mjs";
 import * as bunTest from "bun:test";
 
 const root = process.env.ASSERTLEDGER_BUN_ROOT;
-const eventsFile = process.env.ASSERTLEDGER_BUN_EVENTS_FILE;
-if (!path.isAbsolute(root ?? "") || !path.isAbsolute(eventsFile ?? "")) {
+if (!path.isAbsolute(root ?? "")) {
   throw new Error("ASSERTLEDGER_BUN_PRELOAD_CONFIGURATION_INVALID");
 }
 
 const preloadPath = fileURLToPath(import.meta.url);
 const verifyIssuedError = isAssertSameFailure;
+const stringify = JSON.stringify.bind(JSON);
+const evidenceKey = Buffer.alloc(32);
+let received = 0;
+while (received < evidenceKey.length) {
+  const length = readSync(4, evidenceKey, received, evidenceKey.length - received, null);
+  if (length === 0) throw new Error("ASSERTLEDGER_BUN_EVIDENCE_KEY_MISSING");
+  received += length;
+}
+closeSync(4);
 function record(event) {
-  appendFileSync(eventsFile, `${JSON.stringify(event)}\n`, { encoding: "utf8" });
+  const body = stringify(event);
+  const mac = createHmac("sha256", evidenceKey).update(body).digest("hex");
+  writeSync(3, `${stringify({ event, mac })}\n`);
 }
 
 function registrationFile() {

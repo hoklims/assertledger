@@ -15,6 +15,8 @@ never decide whether a failure is an assertion.
   `bun:test` callback instrumentation in explicitly unsandboxed trusted-local execution; container
   Bun requests are refused. Missing or inconsistent callback and JUnit counts, ordinary errors,
   and timeouts cannot kill a target.
+- Carry assertion ownership from the preload through a signed process pipe and emit the final
+  report from the driver. Candidate-written files cannot forge either evidence channel.
 - Package the `assertledger/bun` helper and validate its JavaScript and TypeScript exports in a
   fresh package consumer. See [verification v3 migration](docs/migration-verification-v3.md).
 - Let static `doctor` select `--framework bun:test` in mixed repositories, including through SDK

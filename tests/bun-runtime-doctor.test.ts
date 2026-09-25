@@ -24,7 +24,7 @@ it("qualifies the generated Bun adapter with controlled callback probes", async 
     const init = await initializeRepository(root);
     assert.equal(init.status, "CREATED");
     const result = await doctorRepositoryRuntime(root, { allowUnsafeExecution: true });
-    assert.equal(result.status, "READY");
+    assert.equal(result.status, "READY", JSON.stringify(result));
     assert.equal(result.schemaVersion, "2.0.0");
     assert.equal(result.adapter, "bun:test");
     assert.equal(result.bunVersion, "1.4.2");

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -86,18 +86,32 @@ function parseJunitSummary(xml) {
   return { tests, failures, skipped };
 }
 
-function parseEvents(content, root, allowedFiles) {
+function parseEvents(content, root, allowedFiles, evidenceKey) {
   if (!content.endsWith("\n")) return undefined;
   const lines = content.trimEnd().split("\n");
   if (lines.length === 1 && lines[0] === "") return [];
   const events = [];
   for (const line of lines) {
-    let value;
+    let envelope;
     try {
-      value = JSON.parse(line);
+      envelope = JSON.parse(line);
     } catch {
       return undefined;
     }
+    if (
+      typeof envelope !== "object" ||
+      envelope === null ||
+      Array.isArray(envelope) ||
+      Object.keys(envelope).sort().join(",") !== "event,mac" ||
+      typeof envelope.mac !== "string" ||
+      !/^[0-9a-f]{64}$/u.test(envelope.mac)
+    )
+      return undefined;
+    const expectedMac = createHmac("sha256", evidenceKey)
+      .update(JSON.stringify(envelope.event))
+      .digest();
+    if (!timingSafeEqual(expectedMac, Buffer.from(envelope.mac, "hex"))) return undefined;
+    const value = envelope.event;
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return undefined;
     }
@@ -226,8 +240,13 @@ async function installHelper(helperSource, root) {
   );
 }
 
-async function runBun(executable, files, eventFile, junitFile, root) {
+async function runBun(executable, files, junitFile, root, evidenceKey) {
   const exactPath = (file) => `./${file.replaceAll(path.sep, "/")}`;
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.TESTFORGE_RESULT_FILE;
+  delete childEnvironment.TESTFORGE_CANDIDATE_FILES;
+  delete childEnvironment.ASSERTLEDGER_BUN_EVENTS_FILE;
+  childEnvironment.ASSERTLEDGER_BUN_ROOT = root;
   const child = spawn(
     executable,
     [
@@ -242,18 +261,21 @@ async function runBun(executable, files, eventFile, junitFile, root) {
     ],
     {
       cwd: root,
-      env: {
-        ...process.env,
-        ASSERTLEDGER_BUN_ROOT: root,
-        ASSERTLEDGER_BUN_EVENTS_FILE: eventFile,
-      },
+      env: childEnvironment,
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "pipe", "pipe"],
     },
   );
+  let keyDeliveryError = false;
+  child.stdio[4].on("error", () => {
+    keyDeliveryError = true;
+  });
+  child.stdio[4].end(evidenceKey);
   let outputBytes = 0;
   let overflow = false;
   let stderr = "";
+  let evidenceBytes = 0;
+  const evidenceChunks = [];
   const collect = (chunk) => {
     outputBytes += chunk.length;
     if (outputBytes > MAX_OUTPUT_BYTES) {
@@ -266,6 +288,15 @@ async function runBun(executable, files, eventFile, junitFile, root) {
     collect(chunk);
     if (!overflow) stderr += chunk.toString("utf8");
   });
+  child.stdio[3].on("data", (chunk) => {
+    evidenceBytes += chunk.length;
+    if (evidenceBytes > MAX_REPORT_BYTES) {
+      overflow = true;
+      child.kill();
+    } else {
+      evidenceChunks.push(chunk);
+    }
+  });
   const exitCode = await new Promise((resolve) => {
     child.once("error", () => resolve(null));
     child.once("close", (code) => resolve(code));
@@ -274,14 +305,15 @@ async function runBun(executable, files, eventFile, junitFile, root) {
   const operationalError =
     plainStderr.includes("Unhandled error between tests") ||
     /(?:^|\r?\n)\s*[1-9][0-9]*\s+errors?\s*(?:\r?\n|$)/u.test(plainStderr);
-  return { exitCode: overflow ? null : exitCode, operationalError };
+  return {
+    exitCode: overflow || keyDeliveryError ? null : exitCode,
+    operationalError,
+    eventContent: overflow ? undefined : Buffer.concat(evidenceChunks).toString("utf8"),
+  };
 }
 
 async function main() {
   const root = await realpath(process.cwd());
-  const resultFile = process.env.TESTFORGE_RESULT_FILE;
-  if (typeof resultFile !== "string" || resultFile.length === 0)
-    throw new Error("RESULT_FILE_REQUIRED");
   const [executable, helperSourcePath, ...baseTests] = process.argv.slice(2);
   if (
     !path.isAbsolute(executable ?? "") ||
@@ -311,23 +343,23 @@ async function main() {
   const files = [...normalizedBase, ...normalizedCandidates];
   if (new Set(files).size !== files.length) throw new Error("DUPLICATE_TEST_FILE");
   await installHelper(await readFile(helperSourcePath, "utf8"), root);
-  const eventFile = path.join(root, `__assertledger_bun_events_${randomUUID()}.jsonl`);
   const junitFile = path.join(root, `__assertledger_bun_junit_${randomUUID()}.xml`);
-  await writeFile(eventFile, "", { flag: "wx" });
+  const evidenceKey = randomBytes(32);
   const execution = await runBun(
     executable,
     [...baseTests, ...candidates],
-    eventFile,
     junitFile,
     root,
+    evidenceKey,
   );
   let outcome;
   try {
-    const eventContent = await readBoundedRegularFile(eventFile, root);
     const junitContent = await readBoundedRegularFile(junitFile, root);
     const allowed = new Set(files);
     outcome = classifyBunInstrumentedEvidence(
-      parseEvents(eventContent, root, allowed),
+      execution.eventContent === undefined
+        ? undefined
+        : parseEvents(execution.eventContent, root, allowed, evidenceKey),
       parseJunitSummary(junitContent),
       new Set(normalizedBase),
       new Set(normalizedCandidates),
@@ -337,19 +369,14 @@ async function main() {
   } catch {
     outcome = infrastructureFailure("MISSING_OR_INVALID_REPORT");
   }
-  await writeFile(resultFile, `${JSON.stringify(outcome)}\n`, { flag: "wx" });
+  process.stdout.write(`${JSON.stringify(outcome)}\n`);
   process.exitCode = outcome.outcome === "PASS" ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch(async (error) => {
+  main().catch((error) => {
     console.error(error instanceof Error ? error.message : "UNKNOWN_DRIVER_ERROR");
-    try {
-      const resultFile = process.env.TESTFORGE_RESULT_FILE;
-      if (typeof resultFile === "string" && resultFile.length > 0) {
-        await writeFile(resultFile, `${JSON.stringify(report("INFRA_ERROR"))}\n`, { flag: "wx" });
-      }
-    } catch {}
+    process.stdout.write(`${JSON.stringify(report("INFRA_ERROR"))}\n`);
     process.exitCode = 1;
   });
 }

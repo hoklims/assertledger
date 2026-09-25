@@ -2734,6 +2734,21 @@ async function readStructuredCommandReport(
   );
 }
 
+function readBunDriverReport(processResult: ProcessResult): StructuredCommandReport | undefined {
+  if (
+    processResult.outcome === "TIMEOUT" ||
+    processResult.outcome === "INFRA_ERROR" ||
+    processResult.stdout.truncated ||
+    processResult.stdout.totalBytes > CONTROLLED_REPORT_MAXIMUM_BYTES
+  )
+    return undefined;
+  try {
+    return parseStructuredCommandReport(JSON.parse(processResult.stdout.text), processResult);
+  } catch {
+    return undefined;
+  }
+}
+
 async function readNodeTestReport(
   resultFile: string,
   processResult: ProcessResult,
@@ -3229,8 +3244,10 @@ async function executeTrustedLocalAdapter(
 ): Promise<AdapterExecution> {
   const resultFile = path.join(temporaryRoot, "structured-command-result.json");
   const environment = environmentFromAllowlist(trustedLocalEnvironmentAllowlist(request));
-  if (request.adapter.kind === "testforge-command" || request.adapter.kind === "bun-test") {
+  if (request.adapter.kind === "testforge-command") {
     environment.TESTFORGE_RESULT_FILE = resultFile;
+    environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
+  } else if (request.adapter.kind === "bun-test") {
     environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
   } else {
     if (nodeTestReporterPath === undefined) throw new Error("NODE_TEST_REPORTER_MISSING");
@@ -3266,9 +3283,11 @@ async function executeTrustedLocalAdapter(
     maximumOutputBytes: request.budgets.maximumOutputBytes,
   });
   const structuredReport =
-    request.adapter.kind === "testforge-command" || request.adapter.kind === "bun-test"
+    request.adapter.kind === "testforge-command"
       ? await readStructuredCommandReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
-      : undefined;
+      : request.adapter.kind === "bun-test"
+        ? readBunDriverReport(result)
+        : undefined;
   return {
     result,
     structuredReport,
@@ -3412,7 +3431,6 @@ async function runBunTestRuntimePreflight(
           'import { test } from "bun:test"; test("control", () => {});\n',
         );
         const candidatePath = path.join(workspace, "candidate.test.ts");
-        const reportPath = path.join(workspace, `${probe.name}.json`);
         await writeFile(candidatePath, probe.source);
         const result = await runProcess({
           executable: process.execPath,
@@ -3420,17 +3438,12 @@ async function runBunTestRuntimePreflight(
           cwd: workspace,
           environment: {
             ...environmentFromAllowlist(environmentAllowlist),
-            TESTFORGE_RESULT_FILE: reportPath,
             TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
           },
           timeoutMs: Math.min(timeoutMs, 5_000),
           maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
         });
-        const report = await readStructuredCommandReport(
-          reportPath,
-          result,
-          CONTROLLED_REPORT_MAXIMUM_BYTES,
-        );
+        const report = readBunDriverReport(result);
         if (
           report?.outcome !== probe.outcome ||
           report.attributed !== probe.attributed ||
