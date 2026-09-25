@@ -477,6 +477,54 @@ describe("developer entry points", () => {
     assert.equal(await readFile(skillPath, "utf8"), partialSkill);
   });
 
+  it("removes owned partial connection bytes so setup can be retried", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-retry-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+
+    const failed = await setupRepository(root, builtEntry, "codex", true, {
+      applyConnection: () =>
+        connectClient(root, builtEntry, "codex", true, {
+          async writeArtifact(artifact, handle) {
+            if (artifact.kind === "configuration") {
+              await handle.writeFile(artifact.content);
+              return;
+            }
+            await handle.writeFile("owned partial skill bytes\n");
+            throw new Error("FAULT_PARTIAL_CONNECTION_WRITE_RETRY");
+          },
+        }),
+    });
+
+    assert.equal(failed.status, "PARTIAL_FAILURE");
+    assert.deepEqual(failed.rollback, {
+      status: "COMPLETE",
+      removed: [
+        ".agents/skills/assertledger/SKILL.md",
+        ".codex/config.toml",
+        "assertledger.config.json",
+        "assertledger.lock.json",
+      ],
+      unresolved: [],
+    });
+    assert.deepEqual(
+      failed.artifacts.map((artifact) => artifact.state),
+      ["ROLLED_BACK", "ROLLED_BACK", "ROLLED_BACK", "ROLLED_BACK"],
+    );
+
+    const retried = await setupRepository(root, builtEntry, "codex", true);
+    assert.equal(retried.status, "CREATED");
+    assert.deepEqual(
+      retried.artifacts.map((artifact) => artifact.state),
+      ["CREATED", "CREATED", "CREATED", "CREATED"],
+    );
+  });
+
   it("does not report an absent connection artifact as rolled back when its write fails", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-absent-"));
@@ -594,6 +642,49 @@ describe("developer entry points", () => {
       result.artifacts.map((artifact) => artifact.state),
       ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE"],
     );
+  });
+
+  it("returns typed JSON when connection preflight fails before setup writes", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-preflight-error-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    const capture = captureIo(root);
+
+    const exitCode = await runCli(
+      ["setup", root, "--client", "codex", "--write", "--json"],
+      capture.io,
+      {
+        setupEntry: builtEntry,
+        setupRepository: (setupRoot, cliEntry, client, write) =>
+          setupRepository(setupRoot, cliEntry, client, write, {
+            async planConnection() {
+              throw new Error("FAULT_CONNECTION_PREFLIGHT_READ");
+            },
+          }),
+      },
+    );
+    const result = JSON.parse(capture.stdout()) as RepositorySetupResult;
+
+    assert.equal(exitCode, 4);
+    assert.equal(capture.stderr(), "");
+    assert.equal(result.status, "CONFLICT");
+    assert.equal(result.mode, "write");
+    assert.equal(result.connection.status, "CONFLICT");
+    assert.deepEqual(result.connection.artifacts, []);
+    assert.deepEqual(result.rollback, { status: "NOT_REQUIRED", removed: [], unresolved: [] });
+    assert.deepEqual(result.reasonCodes, ["CONNECTION_PREFLIGHT_FAILED"]);
+    assert.deepEqual(result.nextActions, [
+      "Inspect the installed package skill and client configuration path, then rerun setup.",
+    ]);
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.state),
+      ["WOULD_CREATE", "WOULD_CREATE"],
+    );
+    await assert.rejects(readFile(path.join(root, "assertledger.config.json")), /ENOENT/u);
+    await assert.rejects(readFile(path.join(root, "assertledger.lock.json")), /ENOENT/u);
   });
 
   it("preflights initialization and client conflicts before setup writes any managed file", async () => {

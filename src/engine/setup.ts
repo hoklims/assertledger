@@ -3,6 +3,7 @@ import path from "node:path";
 import type { RepositoryInitResult } from "../contracts/index.js";
 import {
   ClientConnectionApplyError,
+  type ClientConnectionPlan,
   type ClientConnectionResult,
   connectClient,
   planClientConnection,
@@ -46,12 +47,19 @@ export interface RepositorySetupResult {
   artifacts: RepositorySetupArtifact[];
   rollback: RepositorySetupRollback;
   limitations: string[];
+  reasonCodes?: string[];
+  nextActions?: string[];
 }
 
 export interface SetupRepositoryDependencies {
   afterInitApplied?(): Promise<void>;
   applyInit?(root: string): Promise<RepositoryInitResult>;
   applyConnection?(): Promise<ClientConnectionResult>;
+  planConnection?(
+    root: string,
+    cliEntry: string,
+    client: SetupClient,
+  ): Promise<ClientConnectionPlan>;
 }
 
 const SETUP_LIMITATIONS = [
@@ -158,12 +166,31 @@ export async function setupRepository(
     };
   }
   root = await realpath(root);
-  const connectionPlan = await planClientConnection(root, cliEntry, client);
   const initArtifacts: RepositorySetupArtifact[] = initPlan.files.map((file) => ({
     owner: "init",
     path: path.join(root, file.path),
     state: initArtifactState(initPlan, file.path),
   }));
+  let connectionPlan: ClientConnectionPlan;
+  try {
+    connectionPlan = await (dependencies.planConnection?.(root, cliEntry, client) ??
+      planClientConnection(root, cliEntry, client));
+  } catch {
+    return {
+      status: "CONFLICT",
+      client,
+      mode: write ? "write" : "dry-run",
+      init: initPlan,
+      connection: { client, status: "CONFLICT", artifacts: [] },
+      artifacts: initArtifacts,
+      rollback: { status: "NOT_REQUIRED", removed: [], unresolved: [] },
+      limitations: [...SETUP_LIMITATIONS],
+      reasonCodes: ["CONNECTION_PREFLIGHT_FAILED"],
+      nextActions: [
+        "Inspect the installed package skill and client configuration path, then rerun setup.",
+      ],
+    };
+  }
   const connectionArtifacts: RepositorySetupArtifact[] = connectionPlan.result.artifacts.flatMap(
     (artifact, index) => {
       if (artifact.path === null) return [];
