@@ -18,7 +18,8 @@ never decide whether a failure is an assertion.
 - Carry assertion ownership from the preload through a signed process pipe and emit the final
   report from the driver. Candidate-written files cannot forge either evidence channel. Ownership
   is scoped to each test callback execution, including each parameterized row, so a saved error
-  cannot be replayed.
+  cannot be replayed. AsyncLocalStorage preserves that scope across asynchronous continuations.
+  Multiple failing candidate rows are credited only when every failure is an owned assertion.
 - Package the `assertledger/bun` helper and validate its JavaScript and TypeScript exports in a
   fresh package consumer. See [verification v3 migration](docs/migration-verification-v3.md).
 - Let static `doctor` select `--framework bun:test` in mixed repositories, including through SDK

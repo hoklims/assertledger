@@ -134,4 +134,34 @@ describe("instrumented Bun test evidence classification", () => {
     assert.equal(result.outcome, "INFRA_ERROR");
     assert.equal(result.attributed, false);
   });
+
+  it("credits multiple candidate failures only when every one is a helper assertion", () => {
+    const rows = [
+      foundBase,
+      basePass,
+      foundCandidate,
+      candidateFail,
+      { kind: "found", id: "candidate-row-2", file: "candidate.test.ts" },
+      { ...candidateFail, id: "candidate-row-2" },
+    ] satisfies BunTestEvent[];
+    const owned = classifyBunInstrumentedEvidence(
+      rows,
+      { tests: 3, failures: 2, skipped: 0 },
+      base,
+      candidates,
+      1,
+    );
+    assert.equal(owned.outcome, "ASSERTION_FAILURE");
+    assert.equal(owned.attributed, true);
+
+    const mixed = classifyBunInstrumentedEvidence(
+      [...rows.slice(0, -1), { ...candidateFail, id: "candidate-row-2", owned: false }],
+      { tests: 3, failures: 2, skipped: 0 },
+      base,
+      candidates,
+      1,
+    );
+    assert.equal(mixed.outcome, "PROCESS_CRASH");
+    assert.equal(mixed.attributed, false);
+  });
 });

@@ -132,6 +132,14 @@ describe("Bun instrumented structured-command driver", () => {
     );
   });
 
+  it("attributes a helper failure after an asynchronous continuation", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("async", async () => { await Promise.resolve(); assertSame(1, 2); });\n',
+    );
+    assert.equal(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
+    assert.equal(observation.result.attributed, true);
+  });
+
   it("keeps a plain throw unattributed", async () => {
     const observation = await execute(
       'import { test } from "bun:test";\ntest("candidate", () => { throw new Error("boom"); });\n',
@@ -250,6 +258,23 @@ describe("Bun instrumented structured-command driver", () => {
   it("rejects a helper error replayed by another parameterized row", async () => {
     const observation = await execute(
       'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; test.each([0, 1])("row %i", (row) => { if (row === 0) { try { assertSame(1, 2); } catch (error) { saved = error; } return; } throw saved; });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("credits two parameterized rows that each fail their own helper assertion", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test.each([1, 2])("row %i", (row) => assertSame(row, 0));\n',
+    );
+    assert.equal(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
+    assert.equal(observation.result.attributed, true);
+    assert.equal(observation.result.candidateTestsDiscovered, 2);
+  });
+
+  it("rejects a helper error issued by an earlier asynchronous test continuation", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let signalReady; const ready = new Promise((resolve) => { signalReady = resolve; }); let rejectReceiver; test("origin", () => { ready.then(() => { try { assertSame(1, 2); } catch (error) { rejectReceiver(error); } }); }); test("receiver", () => new Promise((_, reject) => { rejectReceiver = reject; signalReady(); }));\n',
     );
     assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
     assert.equal(observation.result.attributed, false);

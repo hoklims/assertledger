@@ -3415,6 +3415,20 @@ async function runBunTestRuntimePreflight(
       attributed: false,
     },
     {
+      name: "async-cross-test",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let signalReady; const ready = new Promise((resolve) => { signalReady = resolve; }); let rejectReceiver; test("origin", () => { ready.then(() => { try { assertSame(1, 2); } catch (error) { rejectReceiver(error); } }); }); test("receiver", () => new Promise((_, reject) => { rejectReceiver = reject; signalReady(); }));\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
+      name: "multi-assertion-rows",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test.each([1, 2])("row %i", (row) => assertSame(row, 0));\n',
+      outcome: "ASSERTION_FAILURE",
+      attributed: true,
+    },
+    {
       name: "operand-throw",
       source:
         'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("operand", () => assertSame((() => { throw new Error("operand"); })(), 1));\n',
@@ -3458,13 +3472,20 @@ async function runBunTestRuntimePreflight(
           maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
         });
         const report = readBunDriverReport(result);
+        const expectedCandidateCount =
+          probe.name === "hook-failure"
+            ? 0
+            : probe.name === "replayed-row" ||
+                probe.name === "async-cross-test" ||
+                probe.name === "multi-assertion-rows"
+              ? 2
+              : 1;
         if (
           report?.outcome !== probe.outcome ||
           report.attributed !== probe.attributed ||
           report.testsDiscovered !==
-            (probe.name === "hook-failure" ? 0 : probe.name === "replayed-row" ? 3 : 2) ||
-          report.candidateTestsDiscovered !==
-            (probe.name === "hook-failure" ? 0 : probe.name === "replayed-row" ? 2 : 1)
+            (expectedCandidateCount === 0 ? 0 : expectedCandidateCount + 1) ||
+          report.candidateTestsDiscovered !== expectedCandidateCount
         ) {
           throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED");
         }

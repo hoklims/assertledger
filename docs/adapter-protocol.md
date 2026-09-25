@@ -94,9 +94,10 @@ It is qualified for Bun `1.4.2` revision `744846f844374847c902b5e7fd59b4342a51ef
 using a controlled `bun:test` preload on explicitly unsandboxed `trusted-local` execution.
 The container backend is refused. The engine resolves and hashes the Bun executable, checks its
 version and revision twice, hashes its bundled driver, preload and assertion helper, and records all of
-these identities with a fresh eight-case runtime preflight in the v3 manifest. The preflight
+these identities with a fresh ten-case runtime preflight in the v3 manifest. The preflight
 separates an owned assertion from a generic throw, a caught assertion followed by a generic
-throw, a saved assertion error thrown in a later test or another parameterized row, an operand error, a native Bun `expect`
+throw, a saved assertion error thrown in a later test or another parameterized row, an error from
+an earlier asynchronous continuation, two genuine failing assertion rows, an operand error, a native Bun `expect`
 failure, and a failing `afterEach` hook. Every Bun process uses argv with
 `shell: false` and `--max-concurrency=1`.
 
@@ -115,10 +116,14 @@ bundled helper into each disposable workspace because repository snapshots omit 
 The engine installs a preload before test files execute. It wraps `test` and `it` registrations,
 records their source file and completion, and checks that the thrown object belongs to a private
 set of errors actually issued by `assertSame` in the active test callback. A saved helper error
-thrown in another test or parameterized row does not acquire assertion ownership. The driver requires every configured base file to run and checks
+thrown in another test or parameterized row does not acquire assertion ownership. AsyncLocalStorage
+keeps ownership with the originating test when its asynchronous work overlaps a later test.
+The driver requires every configured base file to run and checks
 that callback totals and failures agree with Bun's JUnit totals and process exit. JUnit never
 classifies an assertion or supplies candidate attribution. A generic throw, failed control,
 skipped test, missing callback or inconsistent count cannot kill a target.
+Multiple failing candidate rows count as an assertion failure only when every failure is owned
+by a helper call in its own execution.
 The preload sends signed events to the driver over a dedicated process pipe. A one-run key is
 delivered before candidate modules load and is not placed in the candidate environment or a
 workspace file. The driver emits the final bounded JSON report on its own stdout; candidate code

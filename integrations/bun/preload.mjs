@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHmac, randomUUID } from "node:crypto";
 import { closeSync, readSync, writeSync } from "node:fs";
 import path from "node:path";
@@ -18,12 +19,15 @@ const verifyIssuedError = assertionHelper.isAssertSameFailure;
 const issuedDuringTest = new WeakMap();
 const markIssuingTest = WeakMap.prototype.set.bind(issuedDuringTest);
 const issuingTest = WeakMap.prototype.get.bind(issuedDuringTest);
-let activeTestId = null;
+const activeTestExecution = new AsyncLocalStorage();
+const currentTestId = AsyncLocalStorage.prototype.getStore.bind(activeTestExecution);
+const runInTest = AsyncLocalStorage.prototype.run.bind(activeTestExecution);
 function scopedAssertSame(...arguments_) {
   try {
     return safeApply(rawAssertSame, undefined, arguments_);
   } catch (error) {
-    if (activeTestId !== null && verifyIssuedError(error)) markIssuingTest(error, activeTestId);
+    const id = currentTestId();
+    if (id !== undefined && verifyIssuedError(error)) markIssuingTest(error, id);
     throw error;
   }
 }
@@ -84,31 +88,29 @@ function wrapRegistration(native, cache) {
       wrappedArguments[callbackIndex] = function (...callbackArguments) {
         const id = randomUUID();
         record({ kind: "found", id, file });
-        const previousActiveTestId = activeTestId;
-        activeTestId = id;
-        const passed = (value) => {
-          activeTestId = previousActiveTestId;
-          record({ kind: "end", id, status: "pass" });
-          return value;
-        };
-        const failed = (error) => {
-          activeTestId = previousActiveTestId;
-          record({
-            kind: "end",
-            id,
-            status: "fail",
-            owned: verifyIssuedError(error) && issuingTest(error) === id,
-          });
-          throw error;
-        };
-        try {
-          const result = safeApply(callback, this, callbackArguments);
-          return result && typeof result.then === "function"
-            ? Promise.resolve(result).then(passed, failed)
-            : passed(result);
-        } catch (error) {
-          return failed(error);
-        }
+        return runInTest(id, () => {
+          const passed = (value) => {
+            record({ kind: "end", id, status: "pass" });
+            return value;
+          };
+          const failed = (error) => {
+            record({
+              kind: "end",
+              id,
+              status: "fail",
+              owned: verifyIssuedError(error) && issuingTest(error) === id,
+            });
+            throw error;
+          };
+          try {
+            const result = safeApply(callback, this, callbackArguments);
+            return result && typeof result.then === "function"
+              ? Promise.resolve(result).then(passed, failed)
+              : passed(result);
+          } catch (error) {
+            return failed(error);
+          }
+        });
       };
       return safeApply(target, thisArg, wrappedArguments);
     },

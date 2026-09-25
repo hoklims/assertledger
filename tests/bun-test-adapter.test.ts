@@ -147,6 +147,16 @@ describe("official Bun test adapter", () => {
         (probe) => probe.name === "replayed-row" && probe.outcome === "PROCESS_CRASH",
       ),
     );
+    assert.ok(
+      configuration.runtimePreflight.probes.some(
+        (probe) => probe.name === "async-cross-test" && probe.outcome === "PROCESS_CRASH",
+      ),
+    );
+    assert.ok(
+      configuration.runtimePreflight.probes.some(
+        (probe) => probe.name === "multi-assertion-rows" && probe.outcome === "ASSERTION_FAILURE",
+      ),
+    );
     assert.equal(manifest.adapter.kind, "bun-test");
     assert.deepEqual(replayEvidenceManifest(manifest).valid, true);
   });

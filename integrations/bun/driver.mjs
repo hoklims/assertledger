@@ -198,7 +198,9 @@ export function classifyBunInstrumentedEvidence(
     return report("PROCESS_CRASH", completed.length, candidateIds.length, false);
   }
   const attributed =
-    failures.length === 1 && candidateFailures.length === 1 && candidateFailures[0].owned;
+    candidateFailures.length > 0 &&
+    failures.length === candidateFailures.length &&
+    candidateFailures.every((entry) => entry.owned);
   return report(
     attributed ? "ASSERTION_FAILURE" : "PROCESS_CRASH",
     completed.length,
