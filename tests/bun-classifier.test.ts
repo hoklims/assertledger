@@ -62,6 +62,16 @@ describe("instrumented Bun test evidence classification", () => {
     );
     assert.equal(collectionError.outcome, "INFRA_ERROR");
     assert.equal(collectionError.attributed, false);
+
+    const hookError = classifyBunInstrumentedEvidence(
+      [...complete, { kind: "hook-error" }],
+      { tests: 2, failures: 1, skipped: 0 },
+      base,
+      candidates,
+      1,
+    );
+    assert.equal(hookError.outcome, "INFRA_ERROR");
+    assert.equal(hookError.attributed, false);
   });
 
   it("keeps generic throws, caught assertions and skipped tests non-attributed", () => {

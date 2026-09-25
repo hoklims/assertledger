@@ -128,12 +128,18 @@ describe("official Bun test adapter", () => {
     const configuration = manifest.evidenceContext.adapter.configuration as {
       profile: { capabilities: { reporterTransport: string } };
       preloadDigest: string;
+      runtimePreflight: { probes: Array<{ name: string; outcome: string }> };
     };
     assert.equal(
       configuration.profile.capabilities.reporterTransport,
       "instrumented-bun-test+junit",
     );
     assert.match(configuration.preloadDigest, /^sha256:[0-9a-f]{64}$/u);
+    assert.ok(
+      configuration.runtimePreflight.probes.some(
+        (probe) => probe.name === "hook-failure" && probe.outcome === "INFRA_ERROR",
+      ),
+    );
     assert.equal(manifest.adapter.kind, "bun-test");
     assert.deepEqual(replayEvidenceManifest(manifest).valid, true);
   });

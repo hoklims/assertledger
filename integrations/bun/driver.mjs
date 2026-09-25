@@ -98,13 +98,15 @@ function parseEvents(content, root, allowedFiles) {
     } catch {
       return undefined;
     }
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      Array.isArray(value) ||
-      typeof value.id !== "string" ||
-      !/^[0-9a-f-]{36}$/u.test(value.id)
-    ) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    if (value.kind === "hook-error") {
+      if (Object.keys(value).join(",") !== "kind") return undefined;
+      events.push({ kind: "hook-error" });
+      continue;
+    }
+    if (typeof value.id !== "string" || !/^[0-9a-f-]{36}$/u.test(value.id)) {
       return undefined;
     }
     if (value.kind === "found") {
@@ -136,7 +138,8 @@ export function classifyBunInstrumentedEvidence(
     junit === undefined ||
     exitCode === null ||
     junit.skipped !== 0 ||
-    operationalError
+    operationalError ||
+    events.some((event) => event.kind === "hook-error")
   ) {
     return infrastructureFailure("INCOMPLETE_CONTROLLED_REPORT");
   }

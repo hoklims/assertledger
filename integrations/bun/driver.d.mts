@@ -14,7 +14,8 @@ export interface BunInstrumentedResult {
 
 export type BunTestEvent =
   | { kind: "found"; id: string; file: string }
-  | { kind: "end"; id: string; status: "pass" | "fail"; owned: boolean };
+  | { kind: "end"; id: string; status: "pass" | "fail"; owned: boolean }
+  | { kind: "hook-error" };
 
 export function classifyBunInstrumentedEvidence(
   events: readonly BunTestEvent[] | undefined,

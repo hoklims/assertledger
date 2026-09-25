@@ -3394,6 +3394,13 @@ async function runBunTestRuntimePreflight(
       outcome: "PROCESS_CRASH",
       attributed: false,
     },
+    {
+      name: "hook-failure",
+      source:
+        'import { afterEach, test } from "bun:test"; import { assertSame } from "assertledger/bun"; afterEach(() => { throw new Error("hook"); }); test("candidate", () => assertSame(1, 2));\n',
+      outcome: "INFRA_ERROR",
+      attributed: false,
+    },
   ] as const;
   try {
     const probes: BunTestRuntimePreflight["probes"] = [];
@@ -3427,8 +3434,8 @@ async function runBunTestRuntimePreflight(
         if (
           report?.outcome !== probe.outcome ||
           report.attributed !== probe.attributed ||
-          report.testsDiscovered !== 2 ||
-          report.candidateTestsDiscovered !== 1
+          report.testsDiscovered !== (probe.name === "hook-failure" ? 0 : 2) ||
+          report.candidateTestsDiscovered !== (probe.name === "hook-failure" ? 0 : 1)
         ) {
           throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED");
         }

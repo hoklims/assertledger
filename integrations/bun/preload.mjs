@@ -93,7 +93,37 @@ function wrapRegistration(native, cache) {
   return wrapper;
 }
 
+function wrapHook(nativeHook) {
+  return (callback, ...options) => {
+    if (typeof callback !== "function")
+      return Reflect.apply(nativeHook, bunTest, [callback, ...options]);
+    const wrappedCallback = function (...arguments_) {
+      const failed = (error) => {
+        record({ kind: "hook-error" });
+        throw error;
+      };
+      try {
+        const result = Reflect.apply(callback, this, arguments_);
+        return result && typeof result.then === "function"
+          ? Promise.resolve(result).catch(failed)
+          : result;
+      } catch (error) {
+        return failed(error);
+      }
+    };
+    return Reflect.apply(nativeHook, bunTest, [wrappedCallback, ...options]);
+  };
+}
+
 const cache = new WeakMap();
 const wrappedTest = wrapRegistration(bunTest.test, cache);
 const wrappedIt = wrapRegistration(bunTest.it, cache);
-bunTest.mock.module("bun:test", () => ({ ...bunTest, test: wrappedTest, it: wrappedIt }));
+bunTest.mock.module("bun:test", () => ({
+  ...bunTest,
+  test: wrappedTest,
+  it: wrappedIt,
+  beforeAll: wrapHook(bunTest.beforeAll),
+  afterAll: wrapHook(bunTest.afterAll),
+  beforeEach: wrapHook(bunTest.beforeEach),
+  afterEach: wrapHook(bunTest.afterEach),
+}));

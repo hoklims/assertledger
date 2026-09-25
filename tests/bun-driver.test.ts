@@ -176,6 +176,16 @@ describe("Bun instrumented structured-command driver", () => {
     assert.equal(observation.result.attributed, false);
   });
 
+  for (const hook of ["beforeAll", "afterAll", "beforeEach", "afterEach"]) {
+    it(`does not credit an assertion alongside a failing ${hook} hook`, async () => {
+      const observation = await execute(
+        `import { ${hook}, test } from "bun:test"; import { assertSame } from "assertledger/bun"; ${hook}(() => { throw new Error("hook failure"); }); test("candidate", () => assertSame(1, 2));\n`,
+      );
+      assert.notEqual(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
+      assert.equal(observation.result.attributed, false);
+    });
+  }
+
   it("rejects a candidate attempt to spoof the helper error name", async () => {
     const observation = await execute(
       'import { test } from "bun:test";\ntest("candidate", () => { const error = new Error("AssertLedger assertSame failed"); error.name = "AssertLedgerBunAssertionError"; throw error; });\n',
@@ -188,6 +198,14 @@ describe("Bun instrumented structured-command driver", () => {
   it("rejects a fresh error constructed from a caught helper error", async () => {
     const observation = await execute(
       'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let Captured; try { assertSame(1, 2); } catch (error) { Captured = error.constructor; } test("forged", () => { throw new Captured(); });\n',
+    );
+    assert.notEqual(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("rejects a generic error when a candidate replaces WeakSet.prototype.has", async () => {
+    const observation = await execute(
+      'import { afterEach, test } from "bun:test"; const original = WeakSet.prototype.has; afterEach(() => { WeakSet.prototype.has = original; }); test("spoof", () => { WeakSet.prototype.has = function(value) { return value instanceof Error ? true : original.call(this, value); }; throw new Error("generic"); });\n',
     );
     assert.notEqual(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
     assert.equal(observation.result.attributed, false);
