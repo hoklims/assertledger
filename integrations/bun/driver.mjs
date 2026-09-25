@@ -199,8 +199,8 @@ async function readBoundedRegularFile(file, root) {
   return readFile(file, "utf8");
 }
 
-async function installHelper(helperSource) {
-  const packageRoot = path.join(process.cwd(), "node_modules", "assertledger");
+async function installHelper(helperSource, root) {
+  const packageRoot = path.join(root, "node_modules", "assertledger");
   await mkdir(packageRoot, { recursive: true });
   await writeFile(path.join(packageRoot, "bun.mjs"), helperSource, { flag: "wx" });
   await writeFile(
@@ -215,7 +215,7 @@ async function installHelper(helperSource) {
   );
 }
 
-async function runBun(executable, files, eventFile, junitFile) {
+async function runBun(executable, files, eventFile, junitFile, root) {
   const exactPath = (file) => `./${file.replaceAll(path.sep, "/")}`;
   const child = spawn(
     executable,
@@ -230,10 +230,10 @@ async function runBun(executable, files, eventFile, junitFile) {
       ...files.map(exactPath),
     ],
     {
-      cwd: process.cwd(),
+      cwd: root,
       env: {
         ...process.env,
-        ASSERTLEDGER_BUN_ROOT: process.cwd(),
+        ASSERTLEDGER_BUN_ROOT: root,
         ASSERTLEDGER_BUN_EVENTS_FILE: eventFile,
       },
       shell: false,
@@ -259,6 +259,7 @@ async function runBun(executable, files, eventFile, junitFile) {
 }
 
 async function main() {
+  const root = await realpath(process.cwd());
   const resultFile = process.env.TESTFORGE_RESULT_FILE;
   if (typeof resultFile !== "string" || resultFile.length === 0)
     throw new Error("RESULT_FILE_REQUIRED");
@@ -290,12 +291,17 @@ async function main() {
   }
   const files = [...normalizedBase, ...normalizedCandidates];
   if (new Set(files).size !== files.length) throw new Error("DUPLICATE_TEST_FILE");
-  await installHelper(await readFile(helperSourcePath, "utf8"));
-  const root = process.cwd();
+  await installHelper(await readFile(helperSourcePath, "utf8"), root);
   const eventFile = path.join(root, `__assertledger_bun_events_${randomUUID()}.jsonl`);
   const junitFile = path.join(root, `__assertledger_bun_junit_${randomUUID()}.xml`);
   await writeFile(eventFile, "", { flag: "wx" });
-  const exitCode = await runBun(executable, [...baseTests, ...candidates], eventFile, junitFile);
+  const exitCode = await runBun(
+    executable,
+    [...baseTests, ...candidates],
+    eventFile,
+    junitFile,
+    root,
+  );
   let outcome;
   try {
     const eventContent = await readBoundedRegularFile(eventFile, root);
