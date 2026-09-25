@@ -801,6 +801,7 @@ describe("developer entry points", () => {
     const root = await fixtureRepository();
     await mkdir(path.join(root, ".codex", "config.toml"), { recursive: true });
     const cli = path.resolve("dist", "cli.js");
+    const resolvedRoot = await realpath(root);
 
     await assert.rejects(
       execFileAsync(
@@ -817,7 +818,9 @@ describe("developer entry points", () => {
         assert.equal(result.connection.artifacts.length, 2);
         assert.equal(result.artifacts[2]?.state, "CONFLICT");
         assert.deepEqual(result.reasonCodes, ["CONNECTION_TARGET_PATH_UNSAFE"]);
-        assert.deepEqual(result.diagnosticPaths, [path.join(root, ".codex", "config.toml")]);
+        assert.deepEqual(result.diagnosticPaths, [
+          path.join(resolvedRoot, ".codex", "config.toml"),
+        ]);
         assert.deepEqual(result.nextActions, [
           "Replace unsafe client target paths with regular local paths, then rerun setup.",
         ]);
