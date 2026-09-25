@@ -11,6 +11,20 @@ assertledger init . --json
 assertledger audit . --json
 ```
 
+To initialize and install a project-local read-only agent connection through one preflight, use:
+
+```sh
+assertledger setup . --client codex --dry-run --json
+assertledger setup . --client codex --write --json
+```
+
+`setup` previews by default. It composes the existing `init` and `connect` checks and refuses the
+whole operation before its first managed-file write if either side is blocked or conflicting. Use
+`--client claude-code` for Claude Code. It does not authorize execution, reload a client, or prove
+repository behavior. If a new connection conflict appears after init, rollback removes only regular
+init files created by this setup call whose bytes still equal the plan. A regenerated or changed
+file is preserved and reported under `PARTIAL_FAILURE` with exit code 5.
+
 The dry run emits the exact canonical bytes and SHA-256 digests that a subsequent write plans to
 use. Writes use a same-directory temporary file followed by an atomic rename. A second run returns
 `UNCHANGED` without rewriting matching files. A missing lock or a stale, structurally valid lock

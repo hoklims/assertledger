@@ -11,6 +11,38 @@ The JSON form is the existing repository initialization result. `WOULD_CREATE` m
 configuration can be planned; it does not mean worlds, candidates, campaign evidence, or an MCP
 client connection are ready. `BLOCKED` exits with code 3 and `CONFLICT` with code 4.
 
+For a single onboarding preflight, compose static initialization and the client connection:
+
+```text
+assertledger setup . --client codex --dry-run --json
+assertledger setup . --client codex --write --json
+assertledger setup . --client claude-code --write --json
+```
+
+`setup` previews when neither `--dry-run` nor `--write` is supplied. It checks every managed init
+and connection target before writing any of them. A blocked initialization or any conflict leaves
+the full managed set unchanged during preflight. If a connection conflict appears after init,
+rollback removes only files created by this invocation whose bytes still match the plan. A changed
+or regenerated file is preserved and yields `PARTIAL_FAILURE`, with the unresolved paths in JSON.
+Exit codes are 3 for blocked readiness, 4 for a fully rolled-back conflict, 5 for partial failure or
+unexpected I/O, and 64 for invalid CLI usage.
+
+`setup --write` has no cross-process filesystem lock and requires a stable trusted repository tree.
+A concurrent edit can be overwritten while an existing lock file is regenerated, or removed if it
+replaces a managed file after the rollback byte check but before unlink. Stop concurrent writers
+before setup; this stability requirement is a reported limitation, not a concurrency guarantee.
+
+To confirm the installed engine can run its packaged example, execute:
+
+```text
+assertledger demo --allow-unsafe-execution --json
+```
+
+The authorization applies only to a copy of the shipped fixture in a disposable temporary
+directory. The result is explicitly scoped to `SHIPPED_FIXTURE_ONLY`; it is not evidence about the
+user repository and does not change that repository. Its `status` preserves the exact decision:
+`VERIFIED`, `REJECTED`, `INCONCLUSIVE`, or `ENGINE_ERROR`. Exit codes match `verify`: 0, 2, 3, or 5.
+
 After installing and building AssertLedger, generate a project-local Codex MCP descriptor:
 
 ```text

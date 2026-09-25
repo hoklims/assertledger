@@ -9,12 +9,12 @@ Vous obtenez un verdict, les observations qui le justifient et un fichier de pre
 
 [Essayer l’exemple](#essayer-lexemple) · [Comprendre le résultat](#comprendre-le-résultat) · [Utiliser votre dépôt](#utiliser-votre-dépôt) · [Documentation](#documentation)
 
-**1.2 · node:test et bun:test · CLI, SDK et MCP · MIT**
+**1.3 · node:test et bun:test · CLI, SDK et MCP · MIT**
 
 Installez l’outil dans votre dépôt avec Node.js 22.15 ou une version ultérieure :
 
 ```sh
-npm install --save-dev assertledger@1.2.0
+npm install --save-dev assertledger@1.3.0
 npx assertledger doctor .
 ```
 
@@ -60,7 +60,7 @@ flowchart LR
 Prérequis : **Git**, **Node.js 22.15+** et **pnpm 11.1.2**. L’exemple utilise l’adaptateur intégré `node:test`.
 
 ```sh
-git clone --branch v1.2.0 https://github.com/hoklims/assertledger.git
+git clone --branch v1.3.0 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build
@@ -71,8 +71,14 @@ L’exemple fourni contient une fonction de parité correcte, sa version invers�
 puis lancez :
 
 ```sh
+node dist/cli.js demo --allow-unsafe-execution
+# Ou pour examiner directement le manifeste complet :
 node dist/cli.js verify examples/node-test/request.json --allow-unsafe-execution --json
 ```
+
+`demo` copie l’exemple fourni dans un dossier temporaire jetable, puis le supprime. Son résultat
+démontre uniquement le paquet AssertLedger installé ; il ne constitue pas une preuve sur votre
+dépôt.
 
 > **Exécutez uniquement du code de confiance.** L’option `--allow-unsafe-execution` autorise
 > l’exécution locale du code. Ce mode est explicitement **UNSANDBOXED**, sans bac à sable :
@@ -144,6 +150,20 @@ Commencez par un diagnostic statique. Il lit le dépôt sans exécuter ses tests
 node dist/cli.js doctor path/to/your-repository
 node dist/cli.js doctor path/to/your-repository --json
 ```
+
+Pour prévisualiser l’initialisation et la connexion en lecture seule d’un agent dans une seule
+opération contrôlée :
+
+```sh
+node dist/cli.js setup path/to/your-repository --client codex --dry-run
+node dist/cli.js setup path/to/your-repository --client codex --write
+```
+
+Utilisez `--client claude-code` pour Claude Code. Sans option de mode, `setup` reste une
+prévisualisation. La commande contrôle toutes les cibles avant sa première écriture ; un conflit
+apparu après l’initialisation ne retire que les fichiers créés par cette invocation et restés
+strictement identiques. Si une restauration sûre est impossible, la commande renvoie
+`PARTIAL_FAILURE`, le code 5 et la liste explicite des fichiers non restaurés.
 
 `WOULD_CREATE` signifie qu’une configuration peut être préparée. Vous fournissez encore le test
 candidat et les contrôles. Le [guide d’initialisation](docs/repository-init.md) décrit `init`,

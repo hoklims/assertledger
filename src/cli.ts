@@ -7,11 +7,13 @@ import { ContractError } from "./contracts/index.js";
 import { renderDiagnostics } from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
+import { runFixtureDemo } from "./engine/demo.js";
 import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
   renderGitRegressionSummary,
 } from "./engine/git-regression.js";
+import { type RepositorySetupResult, type SetupClient, setupRepository } from "./engine/setup.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -29,6 +31,12 @@ export interface CliIo {
   writeStderr(text: string): void;
 }
 
+export interface CliDependencies {
+  setupEntry?: string;
+  setupRepository?: typeof setupRepository;
+  runFixtureDemo?: typeof runFixtureDemo;
+}
+
 const USAGE = `Usage: assertledger <command> [arguments] [--json]
        (legacy alias: testforge <command> [arguments] [--json])
 
@@ -42,6 +50,9 @@ Commands:
                                                Inspect static repository readiness without writing
   doctor [repository] --runtime --allow-unsafe-execution [--json]
                                                Run controlled trusted-local runtime probes
+  setup [repository] --client <codex|claude-code> [--dry-run|--write] [--json]
+                                               Preview or apply init and client integration together
+  demo --allow-unsafe-execution [--json]       Verify the shipped fixture in a disposable workspace
   connect [repository] --client <codex|claude-code> [--write]
                                                Preview or install project-local client integration
   connect [repository] --client mcp            Emit a generic stdio descriptor as JSON
@@ -202,6 +213,135 @@ interface ClientArguments {
   write: boolean;
 }
 
+interface SetupArguments {
+  root: string;
+  client: SetupClient;
+  write: boolean;
+  json: boolean;
+}
+
+interface SetupCommandFailure {
+  status: "BLOCKED" | "PARTIAL_FAILURE";
+  code: string;
+  client?: SetupClient;
+  mode?: "dry-run" | "write";
+  artifacts: [];
+  rollback: { status: "NOT_REQUIRED" | "UNKNOWN"; removed: []; unresolved: [] };
+  reasonCodes: string[];
+  diagnosticPaths: string[];
+  nextActions: string[];
+  limitations: string[];
+}
+
+function setupCommandFailure(
+  status: SetupCommandFailure["status"],
+  code: string,
+  nextAction: string,
+  rollbackStatus: SetupCommandFailure["rollback"]["status"],
+  options: {
+    client?: SetupClient;
+    mode?: "dry-run" | "write";
+    diagnosticPaths?: string[];
+  } = {},
+): SetupCommandFailure {
+  return {
+    status,
+    code,
+    ...(options.client === undefined ? {} : { client: options.client }),
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
+    artifacts: [],
+    rollback: { status: rollbackStatus, removed: [], unresolved: [] },
+    reasonCodes: [code],
+    diagnosticPaths: options.diagnosticPaths ?? [],
+    nextActions: [nextAction],
+    limitations: [],
+  };
+}
+
+function writeSetupCommandReport(
+  io: CliIo,
+  report: RepositorySetupResult | SetupCommandFailure,
+  json: boolean,
+): void {
+  if (json) {
+    writeJson(io, report);
+    return;
+  }
+  io.writeStdout(`Setup status: ${report.status}\n`);
+  for (const artifact of report.artifacts) io.writeStdout(`${artifact.state}: ${artifact.path}\n`);
+  if (report.rollback.status !== "NOT_REQUIRED") {
+    io.writeStdout(`Rollback: ${report.rollback.status}\n`);
+    for (const unresolved of report.rollback.unresolved) {
+      io.writeStdout(`Unresolved managed file: ${unresolved}\n`);
+    }
+  }
+  const nestedReasonCodes = "init" in report ? report.init.reasonCodes : [];
+  for (const reasonCode of report.reasonCodes ?? nestedReasonCodes) {
+    io.writeStdout(`Reason code: ${reasonCode}\n`);
+  }
+  for (const diagnosticPath of report.diagnosticPaths ?? []) {
+    io.writeStdout(`Diagnostic path: ${diagnosticPath}\n`);
+  }
+  for (const nextAction of report.nextActions ?? []) {
+    io.writeStdout(`Next action: ${nextAction}\n`);
+  }
+  for (const limitation of report.limitations) io.writeStdout(`Limit: ${limitation}\n`);
+  if ("init" in report && report.mode === "dry-run" && report.status === "WOULD_CREATE") {
+    io.writeStdout("No files changed. Re-run with --write to apply this plan.\n");
+  }
+}
+
+function setupCommandExitCode(
+  status: RepositorySetupResult["status"] | SetupCommandFailure["status"],
+): number {
+  if (status === "BLOCKED") return 3;
+  if (status === "CONFLICT") return 4;
+  if (status === "PARTIAL_FAILURE") return 5;
+  return 0;
+}
+
+function parseSetupArguments(argv: readonly string[], cwd: string): SetupArguments | undefined {
+  let client: string | undefined;
+  let rootArgument = ".";
+  let rootSeen = false;
+  let clientSeen = false;
+  let dryRunSeen = false;
+  let writeSeen = false;
+  let jsonSeen = false;
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if (argument === "--client") {
+      if (clientSeen) return undefined;
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("-")) return undefined;
+      client = value;
+      clientSeen = true;
+      index += 1;
+    } else if (argument === "--dry-run") {
+      if (dryRunSeen || writeSeen) return undefined;
+      dryRunSeen = true;
+    } else if (argument === "--write") {
+      if (writeSeen || dryRunSeen) return undefined;
+      writeSeen = true;
+    } else if (argument === "--json") {
+      if (jsonSeen) return undefined;
+      jsonSeen = true;
+    } else if (argument.startsWith("-") || rootSeen) {
+      return undefined;
+    } else {
+      rootArgument = argument;
+      rootSeen = true;
+    }
+  }
+  if (client !== "codex" && client !== "claude-code") return undefined;
+  return {
+    root: path.resolve(cwd, rootArgument),
+    client,
+    write: writeSeen,
+    json: jsonSeen,
+  };
+}
+
 function parseClientArguments(
   argv: readonly string[],
   cwd: string,
@@ -327,9 +467,8 @@ function evidenceContentMap(value: unknown): Map<string, Uint8Array> {
   return new Map(entries);
 }
 
-function decisionExitCode(result: unknown): number {
-  if (!isRecord(result) || !isRecord(result.decision)) return 5;
-  switch (result.decision.status) {
+function decisionStatusExitCode(status: unknown): number {
+  switch (status) {
     case "VERIFIED":
       return 0;
     case "REJECTED":
@@ -339,6 +478,11 @@ function decisionExitCode(result: unknown): number {
     default:
       return 5;
   }
+}
+
+function decisionExitCode(result: unknown): number {
+  if (!isRecord(result) || !isRecord(result.decision)) return 5;
+  return decisionStatusExitCode(result.decision.status);
 }
 
 function profileExitCode(result: unknown): number {
@@ -533,7 +677,11 @@ function classifyError(error: unknown): number {
   return 5;
 }
 
-export async function runCli(argv: string[], io: CliIo): Promise<number> {
+export async function runCli(
+  argv: string[],
+  io: CliIo,
+  dependencies: CliDependencies = {},
+): Promise<number> {
   const ledger = new AssertLedger();
   const positional = argv.filter((argument) => !argument.startsWith("--"));
   const command = ["--help", "-h", "--version", "-v"].includes(argv[0] ?? "")
@@ -663,6 +811,143 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (result.status === "BLOCKED") return 3;
         if (result.status === "CONFLICT") return 4;
         return 0;
+      }
+      case "setup": {
+        const parsed = parseSetupArguments(argv, io.cwd);
+        if (parsed === undefined) {
+          writeSetupCommandReport(
+            io,
+            setupCommandFailure(
+              "BLOCKED",
+              "SETUP_ARGUMENT_INVALID",
+              "Correct the setup arguments and rerun setup.",
+              "NOT_REQUIRED",
+            ),
+            argv.includes("--json"),
+          );
+          return 64;
+        }
+        const currentEntry = dependencies.setupEntry ?? fileURLToPath(import.meta.url);
+        if (
+          path.basename(currentEntry) !== "cli.js" ||
+          path.basename(path.dirname(currentEntry)) !== "dist"
+        ) {
+          const expectedEntry = path.join(
+            path.dirname(path.dirname(currentEntry)),
+            "dist",
+            "cli.js",
+          );
+          const failure = setupCommandFailure(
+            "BLOCKED",
+            "SETUP_BUILD_REQUIRED",
+            "Run `pnpm build`, invoke the generated dist/cli.js, then rerun setup.",
+            "NOT_REQUIRED",
+            {
+              client: parsed.client,
+              mode: parsed.write ? "write" : "dry-run",
+              diagnosticPaths: [expectedEntry],
+            },
+          );
+          if (parsed.json) writeSetupCommandReport(io, failure, true);
+          else io.writeStderr("SETUP_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
+          return 3;
+        }
+        let result: RepositorySetupResult;
+        try {
+          result = await (dependencies.setupRepository ?? setupRepository)(
+            parsed.root,
+            currentEntry,
+            parsed.client,
+            parsed.write,
+          );
+        } catch {
+          const failure = setupCommandFailure(
+            "PARTIAL_FAILURE",
+            "SETUP_UNEXPECTED_FAILURE",
+            "Inspect repository state and managed paths, then rerun setup.",
+            "UNKNOWN",
+            {
+              client: parsed.client,
+              mode: parsed.write ? "write" : "dry-run",
+              diagnosticPaths: [parsed.root],
+            },
+          );
+          writeSetupCommandReport(io, failure, parsed.json);
+          return 5;
+        }
+        writeSetupCommandReport(io, result, parsed.json);
+        return setupCommandExitCode(result.status);
+      }
+      case "demo": {
+        const allowedFlags = new Set(["--allow-unsafe-execution", "--json"]);
+        if (
+          argv.slice(1).some((argument) => !allowedFlags.has(argument)) ||
+          [...allowedFlags].some((flag) => argv.filter((argument) => argument === flag).length > 1)
+        ) {
+          if (argv.includes("--json")) {
+            writeJson(io, {
+              schemaVersion: "1.0.0",
+              status: "REFUSED",
+              scope: "SHIPPED_FIXTURE_ONLY",
+              reasonCodes: ["DEMO_ARGUMENT_INVALID"],
+              nextActions: ["Remove unsupported or duplicate demo flags, then rerun demo."],
+              execution: "NOT_STARTED",
+            });
+          } else io.writeStderr(USAGE);
+          return 64;
+        }
+        if (!argv.includes("--allow-unsafe-execution")) {
+          if (argv.includes("--json")) {
+            writeJson(io, {
+              schemaVersion: "1.0.0",
+              status: "REFUSED",
+              reasonCodes: ["UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED"],
+              scope: "SHIPPED_FIXTURE_ONLY",
+              requiredFlag: "--allow-unsafe-execution",
+              execution: "UNSANDBOXED",
+            });
+          } else {
+            io.writeStderr(
+              "Refusing UNSANDBOXED fixture execution without --allow-unsafe-execution.\n",
+            );
+          }
+          return 4;
+        }
+        const currentEntry = fileURLToPath(import.meta.url);
+        let result: Awaited<ReturnType<typeof runFixtureDemo>>;
+        try {
+          result = await (dependencies.runFixtureDemo ?? runFixtureDemo)(currentEntry, true);
+        } catch {
+          const failure = {
+            schemaVersion: "1.0.0",
+            status: "ENGINE_ERROR",
+            scope: "SHIPPED_FIXTURE_ONLY",
+            reasonCodes: ["DEMO_UNEXPECTED_FAILURE"],
+            nextActions: ["Inspect the installed package and rerun the shipped fixture demo."],
+            execution: "UNSANDBOXED",
+          };
+          if (argv.includes("--json")) writeJson(io, failure);
+          else {
+            io.writeStderr(
+              "DEMO_UNEXPECTED_FAILURE: inspect the installed package and rerun the shipped fixture demo.\n",
+            );
+          }
+          return 5;
+        }
+        if (argv.includes("--json")) writeJson(io, result);
+        else {
+          io.writeStdout(
+            [
+              `Demo status: ${result.status}`,
+              `Selected candidates: ${result.selectedCandidateIds.join(", ")}`,
+              `Reason codes: ${result.reasonCodes.join(", ")}`,
+              `Artifact digest: ${result.artifactDigest}`,
+              `Limit: ${result.limitation}`,
+              "",
+            ].join("\n"),
+          );
+        }
+        return decisionStatusExitCode(result.status);
       }
       case "connect": {
         const parsed = parseClientArguments(argv, io.cwd, "connect");

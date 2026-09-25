@@ -1111,6 +1111,7 @@ describe("repository init v1", () => {
     assert.equal((await stat(installedRuntime)).isFile(), true);
     const installedCliRealpath = await realpath(cli);
     const installedRuntimeRealpath = await realpath(installedRuntime);
+    const sourceCheckout = await realpath(path.resolve("."));
     assert.deepEqual(
       [installedCliRealpath, installedRuntimeRealpath].map((file) =>
         path.relative(installedPackageRoot, file).replaceAll("\\", "/"),
@@ -1122,7 +1123,13 @@ describe("repository init v1", () => {
       installedCliRealpath,
       installedRuntimeRealpath,
     ]) {
-      assert.equal(path.relative(repository, installedPath).split(path.sep)[0], "..");
+      const relativeToSource = path.relative(sourceCheckout, installedPath);
+      assert.ok(
+        path.isAbsolute(relativeToSource) ||
+          relativeToSource === ".." ||
+          relativeToSource.startsWith(`..${path.sep}`),
+        `INSTALLED_PATH_RESOLVES_TO_SOURCE_CHECKOUT: ${installedPath}`,
+      );
     }
     const { stdout } = await execFileAsync(process.execPath, [cli, "init", repository, "--json"], {
       cwd: consumer,
@@ -1134,6 +1141,36 @@ describe("repository init v1", () => {
     parseRepositoryInitLock(
       JSON.parse(await readFile(path.join(repository, "assertledger.lock.json"), "utf8")),
     );
+
+    const setupPreview = await execFileAsync(
+      process.execPath,
+      [cli, "setup", repository, "--client", "codex", "--dry-run", "--json"],
+      { cwd: consumer },
+    );
+    assert.equal(JSON.parse(setupPreview.stdout).status, "WOULD_CREATE");
+    await assert.rejects(
+      readFile(path.join(repository, ".codex", "config.toml"), "utf8"),
+      /ENOENT/u,
+    );
+    const setupApplied = await execFileAsync(
+      process.execPath,
+      [cli, "setup", repository, "--client", "codex", "--write", "--json"],
+      { cwd: consumer },
+    );
+    assert.equal(JSON.parse(setupApplied.stdout).status, "CREATED");
+    assert.match(
+      await readFile(path.join(repository, ".codex", "config.toml"), "utf8"),
+      /^\[mcp_servers\.assertledger\]$/mu,
+    );
+    const demo = await execFileAsync(
+      process.execPath,
+      [cli, "demo", "--allow-unsafe-execution", "--json"],
+      { cwd: consumer },
+    );
+    const demoResult = JSON.parse(demo.stdout);
+    assert.equal(demoResult.status, "VERIFIED");
+    assert.equal(demoResult.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.match(demoResult.limitation, /does not prove.*user repository/iu);
 
     const requestPath = path.join(consumer, "request.json");
     const manifestPath = path.join(consumer, "manifest.json");

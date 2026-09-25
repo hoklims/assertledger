@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,6 +13,8 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -82,6 +85,15 @@ interface CommandResult {
   stdout: string;
   stderr: string;
 }
+interface CodexSetupConfiguration {
+  command: string;
+  args: string[];
+  cwd: string;
+}
+interface SetupCommandConfiguration {
+  command: string;
+  args: string[];
+}
 const commands: CommandResult[] = [];
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 function inside(root: string, target: string): boolean {
@@ -92,6 +104,87 @@ function inside(root: string, target: string): boolean {
     !relative.startsWith(`..${path.sep}`) &&
     !path.isAbsolute(relative)
   );
+}
+function within(root: string, target: string): boolean {
+  return root === target || inside(root, target);
+}
+function assertInstalledPath(packageRoot: string, filename: string): string {
+  const installedRoot = realpathSync(packageRoot);
+  const resolved = realpathSync(path.join(packageRoot, filename));
+  assert.ok(!within(ROOT, resolved), `INSTALLED_FILE_RESOLVES_TO_CHECKOUT: ${filename}`);
+  assert.ok(within(installedRoot, resolved), `INSTALLED_FILE_ESCAPE: ${filename}`);
+  return resolved;
+}
+function parseCodexSetupConfiguration(content: string): CodexSetupConfiguration {
+  const lines = content.trim().split(/\r?\n/u);
+  assert.equal(lines.shift(), "[mcp_servers.assertledger]");
+  assert.equal(lines.length, 3, "SETUP_CONFIG_FIELD_COUNT_MISMATCH");
+  const values = new Map(
+    lines.map((line) => {
+      const separator = line.indexOf(" = ");
+      assert.ok(separator > 0, `SETUP_CONFIG_FIELD_INVALID: ${line}`);
+      return [line.slice(0, separator), JSON.parse(line.slice(separator + 3))] as const;
+    }),
+  );
+  assert.deepEqual([...values.keys()].sort(), ["args", "command", "cwd"]);
+  const command = values.get("command");
+  const args = values.get("args");
+  const cwd = values.get("cwd");
+  assert.equal(typeof command, "string");
+  assert.ok(Array.isArray(args) && args.every((argument) => typeof argument === "string"));
+  assert.equal(typeof cwd, "string");
+  return { command: command as string, args: args as string[], cwd: cwd as string };
+}
+function assertSameFileIdentity(leftPath: string, rightPath: string, errorCode: string): void {
+  const left = statSync(leftPath, { bigint: true });
+  const right = statSync(rightPath, { bigint: true });
+  if (process.platform === "win32") {
+    assert.equal(
+      path.normalize(realpathSync.native(leftPath)).toLowerCase(),
+      path.normalize(realpathSync.native(rightPath)).toLowerCase(),
+      errorCode,
+    );
+  } else {
+    assert.equal(left.dev, right.dev, errorCode);
+    assert.equal(left.ino, right.ino, errorCode);
+  }
+  assert.equal(left.isFile(), right.isFile(), errorCode);
+  assert.equal(left.isDirectory(), right.isDirectory(), errorCode);
+}
+function assertInstalledSetupCommand(
+  configuration: SetupCommandConfiguration,
+  installedRoot: string,
+  installedCli: string,
+  repository: string,
+): void {
+  assert.equal(configuration.command, process.execPath);
+  assert.deepEqual(configuration.args.slice(1, 3), ["mcp", "--root"]);
+  assert.equal(configuration.args.length, 4);
+  assertSameFileIdentity(
+    configuration.args[3] ?? "",
+    repository,
+    "SETUP_CONFIG_ROOT_IDENTITY_MISMATCH",
+  );
+  const configuredCliPath = configuration.args[0] ?? "";
+  const configuredCli = realpathSync.native(configuredCliPath);
+  assert.ok(
+    !within(realpathSync.native(ROOT), configuredCli),
+    "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT",
+  );
+  assert.ok(
+    within(realpathSync.native(installedRoot), configuredCli),
+    "SETUP_CONFIG_CLI_ESCAPES_PACKAGE",
+  );
+  assertSameFileIdentity(configuredCliPath, installedCli, "SETUP_CONFIG_CLI_IDENTITY_MISMATCH");
+}
+function assertInstalledCodexSetup(
+  configuration: CodexSetupConfiguration,
+  installedRoot: string,
+  installedCli: string,
+  repository: string,
+): void {
+  assertInstalledSetupCommand(configuration, installedRoot, installedCli, repository);
+  assertSameFileIdentity(configuration.cwd, repository, "SETUP_CONFIG_CWD_IDENTITY_MISMATCH");
 }
 function jsonFile(target: string, value: unknown): void {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
@@ -251,16 +344,59 @@ function main(): void {
         "--loglevel=error",
       ]),
     );
+    const installedRoot = realpathSync(installed);
+    assert.ok(!within(ROOT, installedRoot), "INSTALLED_PACKAGE_RESOLVES_TO_CHECKOUT");
     for (const filename of required) {
-      const resolved = realpathSync(path.join(installed, filename));
-      assert.ok(inside(realpathSync(installed), resolved), `INSTALLED_FILE_ESCAPE: ${filename}`);
-      assert.ok(!inside(ROOT, resolved), "INSTALLED_FILE_RESOLVES_TO_CHECKOUT");
+      const resolved = assertInstalledPath(installed, filename);
       assert.equal(
         hash(readFileSync(resolved)),
         hash(readFileSync(path.join(ROOT, filename))),
         `INSTALLED_CONTENT_MISMATCH: ${filename}`,
       );
     }
+    for (const filename of [
+      "dist/cli.js",
+      "dist/engine/adapters/node-test-runtime.js",
+      "examples/node-test/request.json",
+      "examples/node-test/repository/package.json",
+      "examples/node-test/repository/src/is-even.js",
+      "examples/node-test/repository/tests/base.test.js",
+    ]) {
+      assertInstalledPath(installed, filename);
+    }
+
+    const escapeWitness = path.join(workspace, "fixture-resolution-escape-witness");
+    const witnessFixture = "examples/node-test/repository/package.json";
+    cpSync(path.join(installed, "examples"), path.join(escapeWitness, "examples"), {
+      recursive: true,
+    });
+    assertInstalledPath(escapeWitness, witnessFixture);
+    const witnessRepository = path.join(escapeWitness, "examples", "node-test", "repository");
+    rmSync(witnessRepository, { recursive: true, force: true });
+    symlinkSync(
+      path.join(ROOT, "examples", "node-test", "repository"),
+      witnessRepository,
+      "junction",
+    );
+    let escapeFailure = "";
+    assert.throws(
+      () => assertInstalledPath(escapeWitness, witnessFixture),
+      (error: unknown) => {
+        escapeFailure = error instanceof Error ? error.message : String(error);
+        return /INSTALLED_FILE_RESOLVES_TO_CHECKOUT/u.test(escapeFailure);
+      },
+    );
+    rmSync(witnessRepository, { recursive: true, force: true });
+    cpSync(path.join(installed, "examples", "node-test", "repository"), witnessRepository, {
+      recursive: true,
+    });
+    assertInstalledPath(escapeWitness, witnessFixture);
+    jsonFile(path.join(artifacts, "fixture-resolution-escape-witness.json"), {
+      fault: "installed fixture repository resolves into source checkout",
+      expectedFailure: "INSTALLED_FILE_RESOLVES_TO_CHECKOUT",
+      observedFailure: escapeFailure,
+      restored: true,
+    });
     const importGuard = path.join(consumer, "installed-import-guard.mjs");
     writeFileSync(
       importGuard,
@@ -301,6 +437,29 @@ function main(): void {
     );
     const init = parse(runBin("assertledger", ["init", fixture, "--dry-run", "--json"]));
     assert.equal(init.status, "WOULD_CREATE");
+    const setup = parse(
+      runBin("assertledger", ["setup", fixture, "--client", "codex", "--dry-run", "--json"]),
+    );
+    assert.equal(setup.status, "WOULD_CREATE");
+    assert.equal(setup.mode, "dry-run");
+    assert.match(setup.limitations.join("\n"), /UNSANDBOXED/u);
+    assert.ok(!existsSync(path.join(fixture, ".codex", "config.toml")));
+    const demoRefusal = runBin("assertledger", ["demo", "--json"]);
+    assert.equal(demoRefusal.status, 4, demoRefusal.stderr);
+    assert.equal(demoRefusal.stderr, "");
+    assert.deepEqual(JSON.parse(demoRefusal.stdout), {
+      schemaVersion: "1.0.0",
+      status: "REFUSED",
+      reasonCodes: ["UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED"],
+      scope: "SHIPPED_FIXTURE_ONLY",
+      requiredFlag: "--allow-unsafe-execution",
+      execution: "UNSANDBOXED",
+    });
+    const demo = parse(runBin("assertledger", ["demo", "--allow-unsafe-execution", "--json"]));
+    assert.equal(demo.status, "VERIFIED");
+    assert.equal(demo.scope, "SHIPPED_FIXTURE_ONLY");
+    assert.equal(demo.temporaryWorkspaceRemoved, true);
+    assert.match(demo.limitation, /does not prove.*user repository/iu);
     const audit = parse(runBin("assertledger", ["audit", fixture, "--no-git", "--json"]));
     assert.equal(audit.schemaVersion, "1.0.0");
     assert.equal(audit.fileCount, 2);
@@ -341,6 +500,139 @@ function main(): void {
     writeFileSync(sdkScript, sdkSource);
     const sdk = parse(run([sdkScript], consumer, env));
     assert.equal(sdk.status, "PASS");
+
+    const installedCli = realpathSync(path.join(installed, "dist", "cli.js"));
+    const setupFixture = path.join(consumer, "setup fixture");
+    cpSync(fixture, setupFixture, { recursive: true });
+    const installedAlias = path.join(consumer, "installed package alias");
+    const setupFixtureAlias = path.join(consumer, "setup fixture alias");
+    if (process.platform === "win32") {
+      symlinkSync(installedRoot, installedAlias, "junction");
+      symlinkSync(setupFixture, setupFixtureAlias, "junction");
+    }
+    const setupResults: Record<string, { created: string; repeated: string; conflict: string }> =
+      {};
+    for (const client of ["codex", "claude-code"] as const) {
+      const created = parse(
+        runBin("assertledger", ["setup", setupFixture, "--client", client, "--write", "--json"]),
+      );
+      assert.equal(created.status, "CREATED");
+      const repeated = parse(
+        runBin("assertledger", ["setup", setupFixture, "--client", client, "--write", "--json"]),
+      );
+      assert.equal(repeated.status, "UNCHANGED");
+
+      const configurationPath =
+        client === "codex"
+          ? path.join(setupFixture, ".codex", "config.toml")
+          : path.join(setupFixture, ".mcp.json");
+      const configuration = readFileSync(configurationPath, "utf8");
+      let setupCommand: SetupCommandConfiguration;
+      if (client === "codex") {
+        const parsedConfiguration = parseCodexSetupConfiguration(configuration);
+        assertInstalledCodexSetup(parsedConfiguration, installedRoot, installedCli, setupFixture);
+        setupCommand = parsedConfiguration;
+      } else {
+        const document = JSON.parse(configuration);
+        assert.deepEqual(Object.keys(document), ["mcpServers"]);
+        assert.deepEqual(Object.keys(document.mcpServers), ["assertledger"]);
+        const server = document.mcpServers.assertledger;
+        assert.deepEqual(Object.keys(server).sort(), ["args", "command", "type"]);
+        assert.equal(server.type, "stdio");
+        setupCommand = { command: server.command, args: server.args };
+        assertInstalledSetupCommand(setupCommand, installedRoot, installedCli, setupFixture);
+      }
+
+      const checkoutEscape = {
+        ...setupCommand,
+        args: [path.join(ROOT, "dist", "cli.js"), ...setupCommand.args.slice(1)],
+      };
+      let checkoutFailure = "";
+      assert.throws(
+        () =>
+          assertInstalledSetupCommand(checkoutEscape, installedRoot, installedCli, setupFixture),
+        (error: unknown) => {
+          checkoutFailure =
+            (error instanceof Error ? error.message : String(error)).split(/\r?\n/u)[0] ?? "";
+          return /SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT/u.test(checkoutFailure);
+        },
+      );
+      const rootMismatch = {
+        ...setupCommand,
+        args: [...setupCommand.args.slice(0, 3), consumer],
+      };
+      let rootFailure = "";
+      assert.throws(
+        () => assertInstalledSetupCommand(rootMismatch, installedRoot, installedCli, setupFixture),
+        (error: unknown) => {
+          rootFailure =
+            (error instanceof Error ? error.message : String(error)).split(/\r?\n/u)[0] ?? "";
+          return /SETUP_CONFIG_ROOT_IDENTITY_MISMATCH/u.test(rootFailure);
+        },
+      );
+      jsonFile(
+        path.join(
+          artifacts,
+          client === "codex"
+            ? "setup-config-checkout-escape-witness.json"
+            : "setup-claude-config-checkout-escape-witness.json",
+        ),
+        {
+          platform: process.platform,
+          client,
+          faults: [
+            {
+              fault: "generated MCP config resolves CLI into source checkout",
+              expectedFailure: "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT",
+              observedFailure: checkoutFailure,
+            },
+            {
+              fault: "generated MCP config points at a different repository",
+              expectedFailure: "SETUP_CONFIG_ROOT_IDENTITY_MISMATCH",
+              observedFailure: rootFailure,
+            },
+          ],
+        },
+      );
+      if (process.platform === "win32") {
+        const aliasConfiguration = {
+          ...setupCommand,
+          args: [
+            path.join(installedAlias, "dist", "cli.js"),
+            ...setupCommand.args.slice(1, 3),
+            setupFixtureAlias,
+          ],
+        };
+        assertInstalledSetupCommand(aliasConfiguration, installedRoot, installedCli, setupFixture);
+        jsonFile(path.join(artifacts, `setup-${client}-windows-alias-witness.json`), {
+          platform: process.platform,
+          client,
+          accepted: true,
+          configuredCliAlias: aliasConfiguration.args[0],
+          configuredRootAlias: aliasConfiguration.args[3],
+        });
+      }
+
+      const operatorContent = `${client} operator-owned conflict\n`;
+      writeFileSync(configurationPath, operatorContent);
+      const conflictResult = runBin("assertledger", [
+        "setup",
+        setupFixture,
+        "--client",
+        client,
+        "--write",
+        "--json",
+      ]);
+      assert.equal(conflictResult.status, 4, conflictResult.stderr);
+      const conflict = JSON.parse(conflictResult.stdout);
+      assert.equal(conflict.status, "CONFLICT");
+      assert.equal(readFileSync(configurationPath, "utf8"), operatorContent);
+      setupResults[client] = {
+        created: created.status,
+        repeated: repeated.status,
+        conflict: conflict.status,
+      };
+    }
     const typesScript = path.join(consumer, "consumer.ts");
     writeFileSync(
       typesScript,
@@ -878,6 +1170,9 @@ function main(): void {
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),
       ).version,
       initStatus: init.status,
+      setupStatus: setup.status,
+      setupApplied: setupResults,
+      demoStatus: demo.status,
       profile: {
         status: profile.status,
         reportDigest: profile.reportDigest,

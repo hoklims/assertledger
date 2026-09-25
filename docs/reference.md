@@ -14,6 +14,9 @@ For a first run, use `assertledger doctor .` and the [Git qualification guide](g
 ```sh
 assertledger init . --dry-run --json
 assertledger init . --json
+assertledger setup . --client codex --dry-run --json
+assertledger setup . --client codex --write --json
+assertledger demo --allow-unsafe-execution --json
 assertledger audit . --json
 assertledger analyze . --json
 assertledger schema verification-request --json

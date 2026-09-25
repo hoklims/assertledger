@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   cp,
+  type FileHandle,
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -38,15 +40,15 @@ import {
   parseRepositoryInitLockV2,
   parseRepositoryInitResult,
   parseRepositoryInitResultV2,
+  parseVerificationRequest,
   parseVersionedRepositoryInitConfig,
   parseVersionedRepositoryInitLock,
-  parseVerificationRequest,
   parseVersionedVerificationRequest,
   type RepositoryAudit,
   type RepositoryInitConfigV2,
   type RepositoryInitDetections,
-  type RepositoryInitDetectionsV2,
   RepositoryInitDetectionsSchema,
+  type RepositoryInitDetectionsV2,
   type RepositoryInitLock,
   type RepositoryInitLockV2,
   type RepositoryInitResult,
@@ -68,13 +70,14 @@ import {
   sealManifestArtifact,
   sha256Canonical,
 } from "../core/index.js";
-import { NODE_TEST_ADAPTER_PROFILE } from "./adapters/node-test-profile.js";
 import { BUN_TEST_ADAPTER_PROFILE } from "./adapters/bun-test-profile.js";
+import { NODE_TEST_ADAPTER_PROFILE } from "./adapters/node-test-profile.js";
 import {
   type NodeTestPreflightProbeExecutor,
   type NodeTestRuntimePreflight,
   runNodeTestRuntimePreflight,
 } from "./adapters/node-test-runtime.js";
+import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
 import {
   type BoundedProcessResult,
   CONTAINER_LIMITATIONS,
@@ -86,12 +89,11 @@ import {
   prepareContainerBackend,
   runContainerExecution,
 } from "./container.js";
-import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 import {
-  runBunRuntimeDoctorChecks,
   type RuntimeDoctorResult,
   type RuntimeDoctorResultV2,
+  runBunRuntimeDoctorChecks,
   runRuntimeDoctorChecks,
 } from "./runtime-doctor.js";
 
@@ -135,6 +137,36 @@ export interface RepositoryInitOptions {
   framework?: string;
   testCommand?: { executable: string; arguments: string[] };
   afterEvidenceSnapshot?: () => void | Promise<void>;
+}
+
+export interface RepositoryInitWriteDependencies {
+  openTemporary?(temporaryPath: string): Promise<FileHandle>;
+  writeTemporary?(temporaryPath: string, content: string, handle: FileHandle): Promise<void>;
+  linkTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
+  renameTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
+  removeTemporary?(temporaryPath: string): Promise<void>;
+}
+
+export class RepositoryInitWriteError extends Error {
+  readonly targetPath: string;
+  readonly temporaryPath: string;
+  readonly temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED";
+  readonly installedPaths: string[];
+
+  constructor(
+    cause: unknown,
+    targetPath: string,
+    temporaryPath: string,
+    temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED",
+    installedPaths: string[],
+  ) {
+    super("INIT_WRITE_FAILED", { cause });
+    this.name = "RepositoryInitWriteError";
+    this.targetPath = targetPath;
+    this.temporaryPath = temporaryPath;
+    this.temporaryCleanup = temporaryCleanup;
+    this.installedPaths = installedPaths;
+  }
 }
 
 export interface RuntimeDoctorOptions {
@@ -857,15 +889,80 @@ function initJavaScriptModuleSpecifiers(source: string): Set<string> {
   return specifiers;
 }
 
-async function atomicInitWrite(root: string, relative: string, content: string): Promise<void> {
+async function atomicInitWrite(
+  root: string,
+  relative: string,
+  content: string,
+  action: "CREATE" | "REGENERATE",
+  installedPaths: readonly string[],
+  dependencies: RepositoryInitWriteDependencies = {},
+): Promise<void> {
   const target = path.join(root, relative);
   const temporary = path.join(root, `.${relative}.${process.pid}.${Date.now()}.tmp`);
+  const openTemporary =
+    dependencies.openTemporary ?? ((temporaryPath: string) => open(temporaryPath, "wx"));
+  const writeTemporary =
+    dependencies.writeTemporary ??
+    ((_temporaryPath: string, temporaryContent: string, handle: FileHandle) =>
+      handle.writeFile(temporaryContent));
+  const renameTemporary = dependencies.renameTemporary ?? rename;
+  const linkTemporary = dependencies.linkTemporary ?? link;
+  const removeTemporary =
+    dependencies.removeTemporary ?? ((temporaryPath: string) => rm(temporaryPath, { force: true }));
+  let temporaryOwned = false;
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryHandleClosed = true;
+  let targetInstalled = false;
   try {
-    await writeFile(temporary, content, { flag: "wx" });
-    await rename(temporary, target);
+    temporaryHandle = await openTemporary(temporary);
+    temporaryOwned = true;
+    temporaryHandleClosed = false;
+    try {
+      await writeTemporary(temporary, content, temporaryHandle);
+    } finally {
+      await temporaryHandle.close();
+      temporaryHandleClosed = true;
+    }
+    if (action === "CREATE") {
+      await linkTemporary(temporary, target);
+      targetInstalled = true;
+      await removeTemporary(temporary);
+    } else {
+      await renameTemporary(temporary, target);
+      targetInstalled = true;
+    }
   } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
+    let temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED" = "NOT_OWNED";
+    if (!temporaryOwned) {
+      try {
+        await lstat(temporary);
+        temporaryCleanup = "UNRESOLVED";
+      } catch (inspectionError) {
+        if ((inspectionError as NodeJS.ErrnoException).code !== "ENOENT") {
+          temporaryCleanup = "UNRESOLVED";
+        }
+      }
+    }
+    if (temporaryOwned && !temporaryHandleClosed && temporaryHandle !== undefined) {
+      try {
+        await temporaryHandle.close();
+        temporaryHandleClosed = true;
+      } catch {
+        temporaryCleanup = "UNRESOLVED";
+      }
+    }
+    if (temporaryOwned) {
+      temporaryCleanup = "REMOVED";
+      try {
+        await removeTemporary(temporary);
+      } catch {
+        temporaryCleanup = "UNRESOLVED";
+      }
+    }
+    throw new RepositoryInitWriteError(error, target, temporary, temporaryCleanup, [
+      ...installedPaths,
+      ...(targetInstalled ? [target] : []),
+    ]);
   }
 }
 
@@ -902,6 +999,7 @@ function initTerminalResult(
 export async function initializeRepository(
   requestedRoot: string,
   options: RepositoryInitOptions = {},
+  writeDependencies: RepositoryInitWriteDependencies = {},
 ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
   let root: string;
   try {
@@ -1386,10 +1484,19 @@ export async function initializeRepository(
     ? parseRepositoryInitResultV2(resultValue)
     : parseRepositoryInitResult(resultValue);
   if (!options.dryRun) {
+    const installedPaths: string[] = [];
     for (const action of actions) {
       const file = plannedFiles.find((candidate) => candidate.path === action.path);
       if (file === undefined) throw new Error("INIT_PLAN_INCONSISTENT");
-      await atomicInitWrite(root, file.path, file.content);
+      await atomicInitWrite(
+        root,
+        file.path,
+        file.content,
+        action.kind,
+        installedPaths,
+        writeDependencies,
+      );
+      if (action.kind === "CREATE") installedPaths.push(path.join(root, file.path));
     }
   }
   return result;
