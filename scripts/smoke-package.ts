@@ -86,6 +86,10 @@ interface CodexSetupConfiguration {
   args: string[];
   cwd: string;
 }
+interface SetupCommandConfiguration {
+  command: string;
+  args: string[];
+}
 const commands: CommandResult[] = [];
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 function inside(root: string, target: string): boolean {
@@ -135,8 +139,8 @@ function assertSameFileIdentity(leftPath: string, rightPath: string, errorCode: 
   assert.equal(left.isFile(), right.isFile(), errorCode);
   assert.equal(left.isDirectory(), right.isDirectory(), errorCode);
 }
-function assertInstalledCodexSetup(
-  configuration: CodexSetupConfiguration,
+function assertInstalledSetupCommand(
+  configuration: SetupCommandConfiguration,
   installedRoot: string,
   installedCli: string,
   repository: string,
@@ -149,7 +153,6 @@ function assertInstalledCodexSetup(
     repository,
     "SETUP_CONFIG_ROOT_IDENTITY_MISMATCH",
   );
-  assertSameFileIdentity(configuration.cwd, repository, "SETUP_CONFIG_CWD_IDENTITY_MISMATCH");
   const configuredCliPath = configuration.args[0] ?? "";
   const configuredCli = realpathSync.native(configuredCliPath);
   assert.ok(
@@ -161,6 +164,15 @@ function assertInstalledCodexSetup(
     "SETUP_CONFIG_CLI_ESCAPES_PACKAGE",
   );
   assertSameFileIdentity(configuredCliPath, installedCli, "SETUP_CONFIG_CLI_IDENTITY_MISMATCH");
+}
+function assertInstalledCodexSetup(
+  configuration: CodexSetupConfiguration,
+  installedRoot: string,
+  installedCli: string,
+  repository: string,
+): void {
+  assertInstalledSetupCommand(configuration, installedRoot, installedCli, repository);
+  assertSameFileIdentity(configuration.cwd, repository, "SETUP_CONFIG_CWD_IDENTITY_MISMATCH");
 }
 function jsonFile(target: string, value: unknown): void {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
@@ -483,35 +495,73 @@ function main(): void {
           ? path.join(setupFixture, ".codex", "config.toml")
           : path.join(setupFixture, ".mcp.json");
       const configuration = readFileSync(configurationPath, "utf8");
+      let setupCommand: SetupCommandConfiguration;
       if (client === "codex") {
         const parsedConfiguration = parseCodexSetupConfiguration(configuration);
         assertInstalledCodexSetup(parsedConfiguration, installedRoot, installedCli, setupFixture);
-        const checkoutEscape = {
-          ...parsedConfiguration,
-          args: [path.join(ROOT, "dist", "cli.js"), ...parsedConfiguration.args.slice(1)],
-        };
-        let observedFailure = "";
-        assert.throws(
-          () =>
-            assertInstalledCodexSetup(checkoutEscape, installedRoot, installedCli, setupFixture),
-          (error: unknown) => {
-            observedFailure = error instanceof Error ? error.message : String(error);
-            return /SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT/u.test(observedFailure);
-          },
-        );
-        jsonFile(path.join(artifacts, "setup-config-checkout-escape-witness.json"), {
-          platform: process.platform,
-          fault: "generated Codex MCP config resolves CLI into source checkout",
-          expectedFailure: "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT",
-          observedFailure,
-        });
+        setupCommand = parsedConfiguration;
       } else {
         const document = JSON.parse(configuration);
-        assert.equal(document.mcpServers.assertledger.args[0], installedCli);
-        assert.equal(document.mcpServers.assertledger.args[1], "mcp");
-        assert.equal(document.mcpServers.assertledger.args[2], "--root");
-        assert.equal(document.mcpServers.assertledger.args[3], realpathSync(setupFixture));
+        assert.deepEqual(Object.keys(document), ["mcpServers"]);
+        assert.deepEqual(Object.keys(document.mcpServers), ["assertledger"]);
+        const server = document.mcpServers.assertledger;
+        assert.deepEqual(Object.keys(server).sort(), ["args", "command", "type"]);
+        assert.equal(server.type, "stdio");
+        setupCommand = { command: server.command, args: server.args };
+        assertInstalledSetupCommand(setupCommand, installedRoot, installedCli, setupFixture);
       }
+
+      const checkoutEscape = {
+        ...setupCommand,
+        args: [path.join(ROOT, "dist", "cli.js"), ...setupCommand.args.slice(1)],
+      };
+      let checkoutFailure = "";
+      assert.throws(
+        () =>
+          assertInstalledSetupCommand(checkoutEscape, installedRoot, installedCli, setupFixture),
+        (error: unknown) => {
+          checkoutFailure =
+            (error instanceof Error ? error.message : String(error)).split(/\r?\n/u)[0] ?? "";
+          return /SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT/u.test(checkoutFailure);
+        },
+      );
+      const rootMismatch = {
+        ...setupCommand,
+        args: [...setupCommand.args.slice(0, 3), consumer],
+      };
+      let rootFailure = "";
+      assert.throws(
+        () => assertInstalledSetupCommand(rootMismatch, installedRoot, installedCli, setupFixture),
+        (error: unknown) => {
+          rootFailure =
+            (error instanceof Error ? error.message : String(error)).split(/\r?\n/u)[0] ?? "";
+          return /SETUP_CONFIG_ROOT_IDENTITY_MISMATCH/u.test(rootFailure);
+        },
+      );
+      jsonFile(
+        path.join(
+          artifacts,
+          client === "codex"
+            ? "setup-config-checkout-escape-witness.json"
+            : "setup-claude-config-checkout-escape-witness.json",
+        ),
+        {
+          platform: process.platform,
+          client,
+          faults: [
+            {
+              fault: "generated MCP config resolves CLI into source checkout",
+              expectedFailure: "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT",
+              observedFailure: checkoutFailure,
+            },
+            {
+              fault: "generated MCP config points at a different repository",
+              expectedFailure: "SETUP_CONFIG_ROOT_IDENTITY_MISMATCH",
+              observedFailure: rootFailure,
+            },
+          ],
+        },
+      );
 
       const operatorContent = `${client} operator-owned conflict\n`;
       writeFileSync(configurationPath, operatorContent);
