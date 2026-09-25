@@ -41,6 +41,8 @@ export interface ClientConnectionResult {
   client: ConnectionClient;
   status: ClientConnectionStatus;
   artifacts: ClientConnectionArtifact[];
+  reasonCodes?: string[];
+  diagnosticPaths?: string[];
 }
 
 export type ClientConnectionArtifactState = "ABSENT" | "UNCHANGED" | "CONFLICT";
@@ -396,7 +398,18 @@ export async function connectClient(
   const plan = await planClientConnection(requestedRoot, requestedCliEntry, client);
   const { artifacts } = plan.result;
   const { states } = plan;
-  if (plan.result.status === "CONFLICT" || client === "mcp" || !write) return plan.result;
+  if (plan.result.status === "CONFLICT") {
+    return {
+      ...plan.result,
+      ...(plan.reasonCodes === undefined
+        ? {}
+        : {
+            reasonCodes: plan.reasonCodes,
+            diagnosticPaths: plan.diagnosticPaths ?? [],
+          }),
+    };
+  }
+  if (client === "mcp" || !write) return plan.result;
   const root = await resolveRepositoryRoot(requestedRoot);
   if (states.every((state) => state === "UNCHANGED")) {
     return { client, status: "UNCHANGED", artifacts };
@@ -489,24 +502,22 @@ export async function planClientConnection(
       unsafePaths.push(artifact.path);
     }
   }
+  const reasonCodes = [
+    ...(unsafePaths.length === 0 ? [] : ["CONNECTION_TARGET_PATH_UNSAFE"]),
+    ...(contentConflictPaths.length === 0 ? [] : ["CONNECTION_CONTENT_CONFLICT"]),
+  ];
+  const diagnosticPaths = [...unsafePaths, ...contentConflictPaths].sort((left, right) =>
+    left.localeCompare(right),
+  );
   return {
     result: {
       client,
       status: states.includes("CONFLICT") ? "CONFLICT" : "EMITTED",
       artifacts,
+      ...(reasonCodes.length === 0 ? {} : { reasonCodes, diagnosticPaths }),
     },
     states,
-    ...(unsafePaths.length === 0 && contentConflictPaths.length === 0
-      ? {}
-      : {
-          reasonCodes: [
-            ...(unsafePaths.length === 0 ? [] : ["CONNECTION_TARGET_PATH_UNSAFE"]),
-            ...(contentConflictPaths.length === 0 ? [] : ["CONNECTION_CONTENT_CONFLICT"]),
-          ],
-          diagnosticPaths: [...unsafePaths, ...contentConflictPaths].sort((left, right) =>
-            left.localeCompare(right),
-          ),
-        }),
+    ...(reasonCodes.length === 0 ? {} : { reasonCodes, diagnosticPaths }),
   };
 }
 

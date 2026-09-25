@@ -127,6 +127,13 @@ describe("developer entry points", () => {
       removed: ["assertledger.config.json", "assertledger.lock.json"],
       unresolved: [],
     });
+    assert.deepEqual(result.reasonCodes, ["CONNECTION_CONTENT_CONFLICT"]);
+    assert.deepEqual(result.diagnosticPaths, [
+      path.join(await realpath(root), ".agents", "skills", "assertledger", "SKILL.md"),
+    ]);
+    assert.deepEqual(result.nextActions, [
+      "Inspect and resolve conflicting client artifact contents, then rerun setup.",
+    ]);
     assert.equal(await readFile(conflictPath, "utf8"), "operator-owned race\n");
     for (const managed of ["assertledger.config.json", "assertledger.lock.json"]) {
       await assert.rejects(readFile(path.join(root, managed), "utf8"), /ENOENT/u);
@@ -649,6 +656,63 @@ describe("developer entry points", () => {
     );
   });
 
+  it("reports an injected post-init connection conflict in JSON and plain output", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-apply-conflict-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const configPath = path.join(await realpath(root), ".codex", "config.toml");
+    const execute = (capture: ReturnType<typeof captureIo>, json: boolean) =>
+      runCli(
+        ["setup", root, "--client", "codex", "--write", ...(json ? ["--json"] : [])],
+        capture.io,
+        {
+          setupEntry: builtEntry,
+          setupRepository: (setupRoot, cliEntry, client, write) =>
+            setupRepository(setupRoot, cliEntry, client, write, {
+              async applyConnection() {
+                return {
+                  client: "codex",
+                  status: "CONFLICT",
+                  artifacts: [
+                    {
+                      kind: "configuration",
+                      path: configPath,
+                      content: "injected conflict\n",
+                    },
+                  ],
+                };
+              },
+            }),
+        },
+      );
+
+    const jsonCapture = captureIo(root);
+    assert.equal(await execute(jsonCapture, true), 4);
+    assert.equal(jsonCapture.stderr(), "");
+    const report = JSON.parse(jsonCapture.stdout()) as RepositorySetupResult;
+    assert.equal(report.status, "CONFLICT");
+    assert.deepEqual(report.reasonCodes, ["CONNECTION_APPLY_CONFLICT"]);
+    assert.deepEqual(report.diagnosticPaths, [configPath]);
+    assert.deepEqual(report.nextActions, [
+      "Inspect conflicting client artifacts, then rerun setup.",
+    ]);
+
+    const plainCapture = captureIo(root);
+    assert.equal(await execute(plainCapture, false), 4);
+    assert.equal(plainCapture.stderr(), "");
+    assert.match(plainCapture.stdout(), /^Reason code: CONNECTION_APPLY_CONFLICT$/mu);
+    assert.ok(plainCapture.stdout().includes(`Diagnostic path: ${configPath}\n`));
+    assert.match(
+      plainCapture.stdout(),
+      /^Next action: Inspect conflicting client artifacts, then rerun setup\.$/mu,
+    );
+  });
+
   it("returns an actionable typed conflict when the built CLI is missing", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-preflight-error-"));
@@ -901,6 +965,23 @@ describe("developer entry points", () => {
     assert.deepEqual(failureReport.reasonCodes, ["SETUP_UNEXPECTED_FAILURE"]);
     assert.equal(failureReport.rollback.status, "UNKNOWN");
     assert.doesNotMatch(failureCapture.stdout(), /SENSITIVE_UNEXPECTED_SETUP_DETAIL/u);
+  });
+
+  it("prints typed diagnostics for invalid plain setup arguments", async () => {
+    const capture = captureIo(process.cwd());
+    const exitCode = await runCli(
+      ["setup", ".", "--client", "codex", "--dry-run", "--write"],
+      capture.io,
+    );
+
+    assert.equal(exitCode, 64);
+    assert.equal(capture.stderr(), "");
+    assert.match(capture.stdout(), /^Setup status: BLOCKED$/mu);
+    assert.match(capture.stdout(), /^Reason code: SETUP_ARGUMENT_INVALID$/mu);
+    assert.match(
+      capture.stdout(),
+      /^Next action: Correct the setup arguments and rerun setup\.$/mu,
+    );
   });
 
   it("returns a structured JSON conflict for an invalid setup repository root", async () => {

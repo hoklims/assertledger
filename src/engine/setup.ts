@@ -474,6 +474,23 @@ export async function setupRepository(
         .filter((action) => action.kind !== "CREATE")
         .map((action) => path.join(root, action.path)),
     );
+    const appliedReasonCodes = appliedConnection.reasonCodes ?? ["CONNECTION_APPLY_CONFLICT"];
+    const appliedDiagnosticPaths =
+      appliedConnection.diagnosticPaths ??
+      appliedConnection.artifacts.flatMap((artifact) =>
+        artifact.path === null ? [] : [artifact.path],
+      );
+    const appliedNextActions = [
+      ...(appliedReasonCodes.includes("CONNECTION_TARGET_PATH_UNSAFE")
+        ? ["Replace unsafe client target paths with regular local paths, then rerun setup."]
+        : []),
+      ...(appliedReasonCodes.includes("CONNECTION_CONTENT_CONFLICT")
+        ? ["Inspect and resolve conflicting client artifact contents, then rerun setup."]
+        : []),
+      ...(appliedReasonCodes.includes("CONNECTION_APPLY_CONFLICT")
+        ? ["Inspect conflicting client artifacts, then rerun setup."]
+        : []),
+    ];
     return {
       status: rollback.status === "COMPLETE" ? "CONFLICT" : "PARTIAL_FAILURE",
       ...base,
@@ -487,6 +504,9 @@ export async function setupRepository(
             : rollbackArtifactState(root, artifact, rollback),
       })),
       rollback,
+      reasonCodes: appliedReasonCodes,
+      nextActions: appliedNextActions,
+      diagnosticPaths: appliedDiagnosticPaths,
     };
   }
   const appliedArtifacts = artifacts.map((artifact) => ({

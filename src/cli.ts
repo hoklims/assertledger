@@ -797,18 +797,16 @@ export async function runCli(
       case "setup": {
         const parsed = parseSetupArguments(argv, io.cwd);
         if (parsed === undefined) {
-          if (argv.includes("--json")) {
-            writeSetupCommandReport(
-              io,
-              setupCommandFailure(
-                "BLOCKED",
-                "SETUP_ARGUMENT_INVALID",
-                "Correct the setup arguments and rerun setup.",
-                "NOT_REQUIRED",
-              ),
-              true,
-            );
-          } else io.writeStderr(USAGE);
+          writeSetupCommandReport(
+            io,
+            setupCommandFailure(
+              "BLOCKED",
+              "SETUP_ARGUMENT_INVALID",
+              "Correct the setup arguments and rerun setup.",
+              "NOT_REQUIRED",
+            ),
+            argv.includes("--json"),
+          );
           return 64;
         }
         const currentEntry = dependencies.setupEntry ?? fileURLToPath(import.meta.url);
