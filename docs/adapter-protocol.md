@@ -117,6 +117,8 @@ bundled `assertSame` error class. The driver requires every configured base file
 that callback totals and failures agree with Bun's JUnit totals and process exit. JUnit never
 classifies an assertion or supplies candidate attribution. A generic throw, failed control,
 skipped test, missing callback or inconsistent count cannot kill a target.
+Bun's separate unhandled-error summary also blocks attribution when collection fails outside a
+callback, even if an owned assertion failed in another file.
 
 Native `bun:test` `expect` failures are deliberately non-attributed because they do not throw the
 AssertLedger-owned error class. A candidate that catches an `assertSame` failure and throws a

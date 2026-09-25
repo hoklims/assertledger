@@ -24,6 +24,7 @@ async function execute(
   controlSource = 'import { test } from "bun:test";\ntest("control", () => {});\n',
   candidateFiles = ["candidate.test.mjs"],
   extraControlSource?: string,
+  extraCandidateSource?: string,
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-driver-test-"));
   try {
@@ -31,6 +32,9 @@ async function execute(
     await writeFile(path.join(root, "candidate.test.mjs"), candidateSource);
     if (extraControlSource !== undefined) {
       await writeFile(path.join(root, "prefix-control.test.mjs"), extraControlSource);
+    }
+    if (extraCandidateSource !== undefined) {
+      await writeFile(path.join(root, "later.test.mjs"), extraCandidateSource);
     }
     const resultPath = path.join(root, "result.json");
     const child = spawn(process.execPath, [driver, bun, helper, "control.test.mjs"], {
@@ -157,6 +161,18 @@ describe("Bun instrumented structured-command driver", () => {
       'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("candidate", () => assertSame(1, 2)); throw new Error("collection");\n',
     );
     assert.equal(observation.result.outcome, "INFRA_ERROR", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
+  it("does not credit an assertion when a later candidate file fails during collection", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("candidate", () => assertSame(1, 2));\n',
+      'import { test } from "bun:test"; test("control", () => {});\n',
+      ["candidate.test.mjs", "later.test.mjs"],
+      undefined,
+      'throw new Error("later collection error");\n',
+    );
+    assert.notEqual(observation.result.outcome, "ASSERTION_FAILURE", observation.stderr);
     assert.equal(observation.result.attributed, false);
   });
 

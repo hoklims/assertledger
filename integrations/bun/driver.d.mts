@@ -22,4 +22,5 @@ export function classifyBunInstrumentedEvidence(
   baseFiles: ReadonlySet<string>,
   candidateFiles: ReadonlySet<string>,
   exitCode: number | null,
+  operationalError?: boolean,
 ): BunInstrumentedResult;

@@ -128,8 +128,15 @@ export function classifyBunInstrumentedEvidence(
   baseFiles,
   candidateFiles,
   exitCode,
+  operationalError = false,
 ) {
-  if (events === undefined || junit === undefined || exitCode === null || junit.skipped !== 0) {
+  if (
+    events === undefined ||
+    junit === undefined ||
+    exitCode === null ||
+    junit.skipped !== 0 ||
+    operationalError
+  ) {
     return infrastructureFailure("INCOMPLETE_CONTROLLED_REPORT");
   }
   const found = new Map();
@@ -242,6 +249,7 @@ async function runBun(executable, files, eventFile, junitFile, root) {
   );
   let outputBytes = 0;
   let overflow = false;
+  let stderr = "";
   const collect = (chunk) => {
     outputBytes += chunk.length;
     if (outputBytes > MAX_OUTPUT_BYTES) {
@@ -250,12 +258,19 @@ async function runBun(executable, files, eventFile, junitFile, root) {
     }
   };
   child.stdout.on("data", collect);
-  child.stderr.on("data", collect);
+  child.stderr.on("data", (chunk) => {
+    collect(chunk);
+    if (!overflow) stderr += chunk.toString("utf8");
+  });
   const exitCode = await new Promise((resolve) => {
     child.once("error", () => resolve(null));
     child.once("close", (code) => resolve(code));
   });
-  return overflow ? null : exitCode;
+  const plainStderr = stderr.replace(/\x1b\[[0-9;]*m/gu, "");
+  const operationalError =
+    plainStderr.includes("Unhandled error between tests") ||
+    /(?:^|\r?\n)\s*[1-9][0-9]*\s+errors?\s*(?:\r?\n|$)/u.test(plainStderr);
+  return { exitCode: overflow ? null : exitCode, operationalError };
 }
 
 async function main() {
@@ -295,7 +310,7 @@ async function main() {
   const eventFile = path.join(root, `__assertledger_bun_events_${randomUUID()}.jsonl`);
   const junitFile = path.join(root, `__assertledger_bun_junit_${randomUUID()}.xml`);
   await writeFile(eventFile, "", { flag: "wx" });
-  const exitCode = await runBun(
+  const execution = await runBun(
     executable,
     [...baseTests, ...candidates],
     eventFile,
@@ -312,7 +327,8 @@ async function main() {
       parseJunitSummary(junitContent),
       new Set(normalizedBase),
       new Set(normalizedCandidates),
-      exitCode,
+      execution.exitCode,
+      execution.operationalError,
     );
   } catch {
     outcome = infrastructureFailure("MISSING_OR_INVALID_REPORT");
