@@ -1108,6 +1108,16 @@ describe("developer entry points", () => {
 
   it("preserves INCONCLUSIVE and ENGINE_ERROR demo decisions instead of relabeling them", async () => {
     const builtEntry = path.resolve("dist", "cli.js");
+    let retainedManifest:
+      | {
+          observations: Array<{
+            candidateId: string | null;
+            outcome: string;
+            attributed: boolean;
+          }>;
+          candidates: Array<{ status: string; killedTargetIds: string[] }>;
+        }
+      | undefined;
     const inconclusive = await runFixtureDemo(builtEntry, true, {
       transformRequest(value) {
         const request = structuredClone(value) as {
@@ -1125,10 +1135,35 @@ describe("developer entry points", () => {
         candidate.files = [{ ...file, content: "while (true) {}\n" }];
         return request;
       },
+      async verifyCampaign(request) {
+        const manifest = await executeCampaign(request);
+        retainedManifest = manifest as typeof retainedManifest;
+        return manifest;
+      },
     });
     assert.equal(inconclusive.status, "INCONCLUSIVE");
     assert.deepEqual(inconclusive.selectedCandidateIds, []);
     assert.deepEqual(inconclusive.reasonCodes, ["CANDIDATE_EVIDENCE_INCONCLUSIVE"]);
+    assert(retainedManifest);
+    const candidateObservations = retainedManifest.observations.filter(
+      (observation) => observation.candidateId !== null,
+    );
+    const controlObservations = retainedManifest.observations.filter(
+      (observation) => observation.candidateId === null,
+    );
+    assert.ok(
+      candidateObservations.some(
+        (observation) => observation.outcome === "TIMEOUT" && observation.attributed === false,
+      ),
+    );
+    assert.ok(controlObservations.length > 0);
+    assert.ok(controlObservations.every((observation) => observation.outcome === "PASS"));
+    assert.ok(
+      retainedManifest.candidates.every(
+        (candidate) =>
+          candidate.status === "INCONCLUSIVE" && candidate.killedTargetIds.length === 0,
+      ),
+    );
 
     const engineError = await runFixtureDemo(builtEntry, true, {
       async verifyCampaign(request) {
