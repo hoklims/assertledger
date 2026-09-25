@@ -27,7 +27,7 @@ import {
 } from "../src/engine/connection.js";
 import { runFixtureDemo } from "../src/engine/demo.js";
 import { verifyCampaign as executeCampaign, initializeRepository } from "../src/engine/index.js";
-import { setupRepository } from "../src/engine/setup.js";
+import { type RepositorySetupResult, setupRepository } from "../src/engine/setup.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const packageMetadata = JSON.parse(
@@ -283,7 +283,7 @@ describe("developer entry points", () => {
           setupRoot,
           {},
           {
-            async writeTemporary(temporary) {
+            async openTemporary(temporary) {
               temporaryPath = temporary;
               await writeFile(temporary, otherInvocationBytes, { flag: "wx" });
               const collision = new Error("FAULT_INIT_TEMP_COLLISION") as NodeJS.ErrnoException;
@@ -295,8 +295,15 @@ describe("developer entry points", () => {
     });
 
     assert.equal(result.status, "PARTIAL_FAILURE");
-    assert.deepEqual(result.rollback, { status: "COMPLETE", removed: [], unresolved: [] });
-    assert.equal(result.artifacts.length, 4);
+    const temporaryRelative = path
+      .relative(await realpath(root), temporaryPath)
+      .replaceAll("\\", "/");
+    assert.deepEqual(result.rollback, {
+      status: "PARTIAL",
+      removed: [],
+      unresolved: [temporaryRelative],
+    });
+    assert.equal(result.artifacts.at(-1)?.state, "PARTIAL");
     assert.equal(await readFile(temporaryPath, "utf8"), otherInvocationBytes);
   });
 
@@ -317,7 +324,7 @@ describe("developer entry points", () => {
           setupRoot,
           {},
           {
-            async writeTemporary(temporary) {
+            async openTemporary(temporary) {
               temporaryPath = temporary;
               const failure = new Error("FAULT_INIT_TEMP_PRE_CREATE") as NodeJS.ErrnoException;
               failure.code = "EACCES";
@@ -331,6 +338,51 @@ describe("developer entry points", () => {
     assert.deepEqual(result.rollback, { status: "COMPLETE", removed: [], unresolved: [] });
     assert.equal(result.artifacts.length, 4);
     await assert.rejects(lstat(temporaryPath), /ENOENT/u);
+  });
+
+  it("preserves a foreign init temporary that arrives during a failed reservation", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-temp-foreign-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const planned = await initializeRepository(root, { dryRun: true });
+    const config = planned.files.find((file) => file.path === "assertledger.config.json");
+    assert(config);
+    let temporaryPath = "";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyInit: (setupRoot) =>
+        initializeRepository(
+          setupRoot,
+          {},
+          {
+            async openTemporary(temporary) {
+              temporaryPath = temporary;
+              await writeFile(temporary, config.content, { flag: "wx" });
+              const failure = new Error(
+                "FAULT_INIT_FOREIGN_AFTER_RESERVATION_FAILURE",
+              ) as NodeJS.ErrnoException;
+              failure.code = "EIO";
+              throw failure;
+            },
+          },
+        ),
+    });
+
+    const temporaryRelative = path
+      .relative(await realpath(root), temporaryPath)
+      .replaceAll("\\", "/");
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "PARTIAL",
+      removed: [],
+      unresolved: [temporaryRelative],
+    });
+    assert.equal(await readFile(temporaryPath, "utf8"), config.content);
   });
 
   it("reports partial temporary bytes when this invocation writes then fails", async () => {
@@ -351,9 +403,9 @@ describe("developer entry points", () => {
           setupRoot,
           {},
           {
-            async writeTemporary(temporary) {
+            async writeTemporary(temporary, _content, handle) {
               temporaryPath = temporary;
-              await writeFile(temporary, partialBytes, { flag: "wx" });
+              await handle.writeFile(partialBytes);
               const failure = new Error("FAULT_INIT_PARTIAL_WRITE") as NodeJS.ErrnoException;
               failure.code = "EIO";
               throw failure;
@@ -393,13 +445,13 @@ describe("developer entry points", () => {
     const result = await setupRepository(root, builtEntry, "codex", true, {
       applyConnection: () =>
         connectClient(root, builtEntry, "codex", true, {
-          async writeArtifact(artifact) {
+          async writeArtifact(artifact, handle) {
             assert(artifact.path);
             if (artifact.kind === "configuration") {
-              await writeFile(artifact.path, artifact.content, { flag: "wx" });
+              await handle.writeFile(artifact.content);
               return;
             }
-            await writeFile(artifact.path, partialSkill, { flag: "wx" });
+            await handle.writeFile(partialSkill);
             throw new Error("FAULT_PARTIAL_CONNECTION_WRITE");
           },
           async removeArtifact(artifact) {
@@ -438,7 +490,7 @@ describe("developer entry points", () => {
     const result = await setupRepository(root, builtEntry, "codex", true, {
       applyConnection: () =>
         connectClient(root, builtEntry, "codex", true, {
-          async writeArtifact() {
+          async openArtifact() {
             throw new Error("FAULT_CONNECTION_WRITE_BEFORE_CREATE");
           },
         }),
@@ -458,6 +510,89 @@ describe("developer entry points", () => {
     await assert.rejects(
       readFile(path.join(root, ".agents", "skills", "assertledger", "SKILL.md"), "utf8"),
       /ENOENT/u,
+    );
+  });
+
+  it("preserves a foreign same-byte connection artifact after a failed reservation", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-foreign-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    let foreignPath = "";
+    let foreignBytes = "";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyConnection: () =>
+        connectClient(root, builtEntry, "codex", true, {
+          async openArtifact(artifact) {
+            assert(artifact.path);
+            foreignPath = artifact.path;
+            foreignBytes = artifact.content;
+            await writeFile(artifact.path, artifact.content, { flag: "wx" });
+            const failure = new Error(
+              "FAULT_CONNECTION_FOREIGN_AFTER_RESERVATION_FAILURE",
+            ) as NodeJS.ErrnoException;
+            failure.code = "EIO";
+            throw failure;
+          },
+        }),
+    });
+
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "PARTIAL",
+      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      unresolved: [".codex/config.toml"],
+    });
+    assert.equal(await readFile(foreignPath, "utf8"), foreignBytes);
+    assert.equal(
+      result.artifacts.find((artifact) => artifact.path === foreignPath)?.state,
+      "PARTIAL",
+    );
+  });
+
+  it("returns a typed partial failure for an unexpected connection apply error", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-error-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+
+    const capture = captureIo(root);
+    const exitCode = await runCli(
+      ["setup", root, "--client", "codex", "--write", "--json"],
+      capture.io,
+      {
+        setupEntry: builtEntry,
+        setupRepository: (setupRoot, cliEntry, client, write) =>
+          setupRepository(setupRoot, cliEntry, client, write, {
+            async applyConnection() {
+              throw new Error("FAULT_UNEXPECTED_CONNECTION_APPLY");
+            },
+          }),
+      },
+    );
+    const result = JSON.parse(capture.stdout()) as RepositorySetupResult;
+
+    assert.equal(exitCode, 5);
+    assert.equal(capture.stderr(), "");
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.equal(result.mode, "write");
+    assert.deepEqual(result.rollback, {
+      status: "COMPLETE",
+      removed: ["assertledger.config.json", "assertledger.lock.json"],
+      unresolved: [],
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.state),
+      ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE"],
     );
   });
 

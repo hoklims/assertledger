@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   cp,
+  type FileHandle,
   link,
   lstat,
   mkdir,
@@ -113,7 +114,8 @@ export interface RepositoryInitOptions {
 }
 
 export interface RepositoryInitWriteDependencies {
-  writeTemporary?(temporaryPath: string, content: string): Promise<void>;
+  openTemporary?(temporaryPath: string): Promise<FileHandle>;
+  writeTemporary?(temporaryPath: string, content: string, handle: FileHandle): Promise<void>;
   linkTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
   renameTemporary?(temporaryPath: string, targetPath: string): Promise<void>;
   removeTemporary?(temporaryPath: string): Promise<void>;
@@ -847,19 +849,30 @@ async function atomicInitWrite(
 ): Promise<void> {
   const target = path.join(root, relative);
   const temporary = path.join(root, `.${relative}.${process.pid}.${Date.now()}.tmp`);
+  const openTemporary =
+    dependencies.openTemporary ?? ((temporaryPath: string) => open(temporaryPath, "wx"));
   const writeTemporary =
     dependencies.writeTemporary ??
-    ((temporaryPath: string, temporaryContent: string) =>
-      writeFile(temporaryPath, temporaryContent, { flag: "wx" }));
+    ((_temporaryPath: string, temporaryContent: string, handle: FileHandle) =>
+      handle.writeFile(temporaryContent));
   const renameTemporary = dependencies.renameTemporary ?? rename;
   const linkTemporary = dependencies.linkTemporary ?? link;
   const removeTemporary =
     dependencies.removeTemporary ?? ((temporaryPath: string) => rm(temporaryPath, { force: true }));
   let temporaryOwned = false;
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryHandleClosed = true;
   let targetInstalled = false;
   try {
-    await writeTemporary(temporary, content);
+    temporaryHandle = await openTemporary(temporary);
     temporaryOwned = true;
+    temporaryHandleClosed = false;
+    try {
+      await writeTemporary(temporary, content, temporaryHandle);
+    } finally {
+      await temporaryHandle.close();
+      temporaryHandleClosed = true;
+    }
     if (action === "CREATE") {
       await linkTemporary(temporary, target);
       targetInstalled = true;
@@ -870,18 +883,22 @@ async function atomicInitWrite(
     }
   } catch (error) {
     let temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED" = "NOT_OWNED";
-    if (!temporaryOwned && (error as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (!temporaryOwned) {
       try {
-        const temporaryStatus = await lstat(temporary);
-        if (temporaryStatus.isFile() && !temporaryStatus.isSymbolicLink()) {
-          temporaryOwned = true;
-        } else {
-          temporaryCleanup = "UNRESOLVED";
-        }
+        await lstat(temporary);
+        temporaryCleanup = "UNRESOLVED";
       } catch (inspectionError) {
         if ((inspectionError as NodeJS.ErrnoException).code !== "ENOENT") {
           temporaryCleanup = "UNRESOLVED";
         }
+      }
+    }
+    if (temporaryOwned && !temporaryHandleClosed && temporaryHandle !== undefined) {
+      try {
+        await temporaryHandle.close();
+        temporaryHandleClosed = true;
+      } catch {
+        temporaryCleanup = "UNRESOLVED";
       }
     }
     if (temporaryOwned) {

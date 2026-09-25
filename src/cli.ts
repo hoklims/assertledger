@@ -31,6 +31,11 @@ export interface CliIo {
   writeStderr(text: string): void;
 }
 
+export interface CliDependencies {
+  setupEntry?: string;
+  setupRepository?: typeof setupRepository;
+}
+
 const USAGE = `Usage: assertledger <command> [arguments] [--json]
        (legacy alias: testforge <command> [arguments] [--json])
 
@@ -586,7 +591,11 @@ function classifyError(error: unknown): number {
   return 5;
 }
 
-export async function runCli(argv: string[], io: CliIo): Promise<number> {
+export async function runCli(
+  argv: string[],
+  io: CliIo,
+  dependencies: CliDependencies = {},
+): Promise<number> {
   const ledger = new AssertLedger();
   const positional = argv.filter((argument) => !argument.startsWith("--"));
   const command = ["--help", "-h", "--version", "-v"].includes(argv[0] ?? "")
@@ -711,7 +720,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr(USAGE);
           return 64;
         }
-        const currentEntry = fileURLToPath(import.meta.url);
+        const currentEntry = dependencies.setupEntry ?? fileURLToPath(import.meta.url);
         if (
           path.basename(currentEntry) !== "cli.js" ||
           path.basename(path.dirname(currentEntry)) !== "dist"
@@ -719,7 +728,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.writeStderr("SETUP_BUILD_REQUIRED: run `pnpm build` and invoke dist/cli.js.\n");
           return 3;
         }
-        const result = await setupRepository(
+        const result = await (dependencies.setupRepository ?? setupRepository)(
           parsed.root,
           currentEntry,
           parsed.client,

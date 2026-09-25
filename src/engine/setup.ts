@@ -276,7 +276,6 @@ export async function setupRepository(
         .map((action) => path.join(root, action.path)),
     );
     if (!(error instanceof ClientConnectionApplyError)) {
-      if (initRollback.status === "COMPLETE") throw error;
       return {
         status: "PARTIAL_FAILURE",
         ...base,

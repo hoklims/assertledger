@@ -1,4 +1,14 @@
-import { lstat, mkdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  type FileHandle,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 const CONFIG_DIRECTORY = ".codex";
@@ -56,7 +66,8 @@ export class ClientConnectionApplyError extends Error {
 }
 
 export interface ConnectClientDependencies {
-  writeArtifact?(artifact: ClientConnectionArtifact): Promise<void>;
+  openArtifact?(artifact: ClientConnectionArtifact): Promise<FileHandle>;
+  writeArtifact?(artifact: ClientConnectionArtifact, handle: FileHandle): Promise<void>;
   removeArtifact?(artifact: ClientConnectionArtifact): Promise<void>;
 }
 
@@ -375,13 +386,18 @@ export async function connectClient(
     return { client, status: "UNCHANGED", artifacts };
   }
 
-  const attempted: ClientConnectionArtifact[] = [];
-  const writeArtifact =
-    dependencies.writeArtifact ??
+  const created: ClientConnectionArtifact[] = [];
+  let pending: ClientConnectionArtifact | undefined;
+  const openArtifact =
+    dependencies.openArtifact ??
     ((artifact: ClientConnectionArtifact) => {
       if (artifact.path === null) throw new Error("CONNECT_PLAN_INCONSISTENT");
-      return writeFile(artifact.path, artifact.content, { encoding: "utf8", flag: "wx" });
+      return open(artifact.path, "wx");
     });
+  const writeArtifact =
+    dependencies.writeArtifact ??
+    ((artifact: ClientConnectionArtifact, handle: FileHandle) =>
+      handle.writeFile(artifact.content, { encoding: "utf8" }));
   const removeArtifact =
     dependencies.removeArtifact ??
     ((artifact: ClientConnectionArtifact) => {
@@ -395,14 +411,26 @@ export async function connectClient(
     }
     for (const [index, artifact] of artifacts.entries()) {
       if (artifact.path === null || states[index] === "UNCHANGED") continue;
-      attempted.push(artifact);
-      await writeArtifact(artifact);
+      pending = artifact;
+      const handle = await openArtifact(artifact);
+      created.push(artifact);
+      try {
+        await writeArtifact(artifact, handle);
+      } finally {
+        await handle.close();
+      }
+      pending = undefined;
     }
   } catch (error) {
-    const raced = (error as NodeJS.ErrnoException).code === "EEXIST" ? attempted.pop() : undefined;
-    const rollback = await rollbackCreated(attempted, removeArtifact);
-    if (raced?.path !== null && raced?.path !== undefined) {
-      rollback.unresolved.push(raced.path);
+    const rollback = await rollbackCreated(created, removeArtifact);
+    if (pending?.path !== null && pending?.path !== undefined && !created.includes(pending)) {
+      try {
+        if ((await inspectArtifact(pending, "CONNECT_CONFIG_PATH_UNSAFE")) !== "ABSENT") {
+          rollback.unresolved.push(pending.path);
+        }
+      } catch {
+        rollback.unresolved.push(pending.path);
+      }
       rollback.unresolved.sort((left, right) => left.localeCompare(right));
     }
     throw new ClientConnectionApplyError(error, rollback);
