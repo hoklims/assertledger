@@ -869,6 +869,9 @@ async function atomicInitWrite(
       targetInstalled = true;
     }
   } catch (error) {
+    if (!temporaryOwned && (error as NodeJS.ErrnoException).code !== "EEXIST") {
+      temporaryOwned = true;
+    }
     let temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED" = "NOT_OWNED";
     if (temporaryOwned) {
       temporaryCleanup = "REMOVED";

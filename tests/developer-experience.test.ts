@@ -300,6 +300,52 @@ describe("developer entry points", () => {
     assert.equal(await readFile(temporaryPath, "utf8"), otherInvocationBytes);
   });
 
+  it("reports partial temporary bytes when this invocation writes then fails", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-temp-partial-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const partialBytes = "partial bytes from this invocation\n";
+    let temporaryPath = "";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyInit: (setupRoot) =>
+        initializeRepository(
+          setupRoot,
+          {},
+          {
+            async writeTemporary(temporary) {
+              temporaryPath = temporary;
+              await writeFile(temporary, partialBytes, { flag: "wx" });
+              const failure = new Error("FAULT_INIT_PARTIAL_WRITE") as NodeJS.ErrnoException;
+              failure.code = "EIO";
+              throw failure;
+            },
+            async removeTemporary(temporary) {
+              assert.equal(temporary, temporaryPath);
+              throw new Error("FAULT_INIT_PARTIAL_CLEANUP");
+            },
+          },
+        ),
+    });
+
+    const temporaryRelative = path
+      .relative(await realpath(root), temporaryPath)
+      .replaceAll("\\", "/");
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, {
+      status: "PARTIAL",
+      removed: [],
+      unresolved: [temporaryRelative],
+    });
+    assert.equal(result.artifacts.at(-1)?.state, "PARTIAL");
+    assert.equal(await readFile(temporaryPath, "utf8"), partialBytes);
+  });
+
   it("reports partial connection bytes and cleanup failures without deleting either file", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-write-"));

@@ -13,6 +13,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -126,6 +127,14 @@ function parseCodexSetupConfiguration(content: string): CodexSetupConfiguration 
   assert.equal(typeof cwd, "string");
   return { command: command as string, args: args as string[], cwd: cwd as string };
 }
+function assertSameFileIdentity(leftPath: string, rightPath: string, errorCode: string): void {
+  const left = statSync(leftPath, { bigint: true });
+  const right = statSync(rightPath, { bigint: true });
+  assert.equal(left.dev, right.dev, errorCode);
+  assert.equal(left.ino, right.ino, errorCode);
+  assert.equal(left.isFile(), right.isFile(), errorCode);
+  assert.equal(left.isDirectory(), right.isDirectory(), errorCode);
+}
 function assertInstalledCodexSetup(
   configuration: CodexSetupConfiguration,
   installedRoot: string,
@@ -133,12 +142,25 @@ function assertInstalledCodexSetup(
   repository: string,
 ): void {
   assert.equal(configuration.command, process.execPath);
-  assert.deepEqual(configuration.args.slice(1), ["mcp", "--root", realpathSync(repository)]);
-  assert.equal(realpathSync(configuration.cwd), realpathSync(repository));
-  const configuredCli = realpathSync(configuration.args[0] ?? "");
-  assert.ok(!within(ROOT, configuredCli), "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT");
-  assert.ok(within(installedRoot, configuredCli), "SETUP_CONFIG_CLI_ESCAPES_PACKAGE");
-  assert.equal(configuredCli, installedCli);
+  assert.deepEqual(configuration.args.slice(1, 3), ["mcp", "--root"]);
+  assert.equal(configuration.args.length, 4);
+  assertSameFileIdentity(
+    configuration.args[3] ?? "",
+    repository,
+    "SETUP_CONFIG_ROOT_IDENTITY_MISMATCH",
+  );
+  assertSameFileIdentity(configuration.cwd, repository, "SETUP_CONFIG_CWD_IDENTITY_MISMATCH");
+  const configuredCliPath = configuration.args[0] ?? "";
+  const configuredCli = realpathSync.native(configuredCliPath);
+  assert.ok(
+    !within(realpathSync.native(ROOT), configuredCli),
+    "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT",
+  );
+  assert.ok(
+    within(realpathSync.native(installedRoot), configuredCli),
+    "SETUP_CONFIG_CLI_ESCAPES_PACKAGE",
+  );
+  assertSameFileIdentity(configuredCliPath, installedCli, "SETUP_CONFIG_CLI_IDENTITY_MISMATCH");
 }
 function jsonFile(target: string, value: unknown): void {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
