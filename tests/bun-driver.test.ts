@@ -247,6 +247,14 @@ describe("Bun instrumented structured-command driver", () => {
     assert.equal(observation.result.attributed, false);
   });
 
+  it("rejects a helper error replayed by another parameterized row", async () => {
+    const observation = await execute(
+      'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; test.each([0, 1])("row %i", (row) => { if (row === 0) { try { assertSame(1, 2); } catch (error) { saved = error; } return; } throw saved; });\n',
+    );
+    assert.equal(observation.result.outcome, "PROCESS_CRASH", observation.stderr);
+    assert.equal(observation.result.attributed, false);
+  });
+
   it("rejects a saved helper error injected through a changed Reflect.apply", async () => {
     const observation = await execute(
       'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; try { assertSame(1, 2); } catch (error) { saved = error; } test("reflect", () => { const original = Reflect.apply; Reflect.apply = () => { throw saved; }; try { assertSame(1, 1); } finally { Reflect.apply = original; } throw new Error("generic"); });\n',

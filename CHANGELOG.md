@@ -17,7 +17,8 @@ never decide whether a failure is an assertion.
   and timeouts cannot kill a target.
 - Carry assertion ownership from the preload through a signed process pipe and emit the final
   report from the driver. Candidate-written files cannot forge either evidence channel. Ownership
-  is scoped to the test callback that invoked `assertSame`, so a saved error cannot be replayed.
+  is scoped to each test callback execution, including each parameterized row, so a saved error
+  cannot be replayed.
 - Package the `assertledger/bun` helper and validate its JavaScript and TypeScript exports in a
   fresh package consumer. See [verification v3 migration](docs/migration-verification-v3.md).
 - Let static `doctor` select `--framework bun:test` in mixed repositories, including through SDK

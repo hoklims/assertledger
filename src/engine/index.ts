@@ -3408,6 +3408,13 @@ async function runBunTestRuntimePreflight(
       attributed: false,
     },
     {
+      name: "replayed-row",
+      source:
+        'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; let saved; test.each([0, 1])("row %i", (row) => { if (row === 0) { try { assertSame(1, 2); } catch (error) { saved = error; } return; } throw saved; });\n',
+      outcome: "PROCESS_CRASH",
+      attributed: false,
+    },
+    {
       name: "operand-throw",
       source:
         'import { test } from "bun:test"; import { assertSame } from "assertledger/bun"; test("operand", () => assertSame((() => { throw new Error("operand"); })(), 1));\n',
@@ -3454,8 +3461,10 @@ async function runBunTestRuntimePreflight(
         if (
           report?.outcome !== probe.outcome ||
           report.attributed !== probe.attributed ||
-          report.testsDiscovered !== (probe.name === "hook-failure" ? 0 : 2) ||
-          report.candidateTestsDiscovered !== (probe.name === "hook-failure" ? 0 : 1)
+          report.testsDiscovered !==
+            (probe.name === "hook-failure" ? 0 : probe.name === "replayed-row" ? 3 : 2) ||
+          report.candidateTestsDiscovered !==
+            (probe.name === "hook-failure" ? 0 : probe.name === "replayed-row" ? 2 : 1)
         ) {
           throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED");
         }

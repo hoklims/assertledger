@@ -79,10 +79,11 @@ function wrapRegistration(native, cache) {
         return typeof result === "function" ? wrapRegistration(result, cache) : result;
       }
       const callback = arguments_[callbackIndex];
-      const id = randomUUID();
-      record({ kind: "found", id, file: registrationFile() });
+      const file = registrationFile();
       const wrappedArguments = [...arguments_];
       wrappedArguments[callbackIndex] = function (...callbackArguments) {
+        const id = randomUUID();
+        record({ kind: "found", id, file });
         const previousActiveTestId = activeTestId;
         activeTestId = id;
         const passed = (value) => {

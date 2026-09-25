@@ -101,7 +101,8 @@ describe("instrumented Bun test evidence classification", () => {
       basePass,
       foundCandidate,
       { kind: "end", id: "candidate", status: "pass", owned: false },
-      candidateFail,
+      { kind: "found", id: "candidate-row-2", file: "candidate.test.ts" },
+      { ...candidateFail, id: "candidate-row-2" },
     ] satisfies BunTestEvent[];
     const result = classifyBunInstrumentedEvidence(
       rows,
@@ -113,5 +114,24 @@ describe("instrumented Bun test evidence classification", () => {
     assert.equal(result.outcome, "ASSERTION_FAILURE");
     assert.equal(result.testsDiscovered, 3);
     assert.equal(result.candidateTestsDiscovered, 2);
+  });
+
+  it("rejects two callback completions that reuse one execution identity", () => {
+    const replayedIdentity = [
+      foundBase,
+      basePass,
+      foundCandidate,
+      { kind: "end", id: "candidate", status: "pass", owned: false },
+      candidateFail,
+    ] satisfies BunTestEvent[];
+    const result = classifyBunInstrumentedEvidence(
+      replayedIdentity,
+      { tests: 3, failures: 1, skipped: 0 },
+      base,
+      candidates,
+      1,
+    );
+    assert.equal(result.outcome, "INFRA_ERROR");
+    assert.equal(result.attributed, false);
   });
 });

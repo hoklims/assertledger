@@ -165,12 +165,11 @@ export function classifyBunInstrumentedEvidence(
       found.set(event.id, event.file);
     } else {
       if (!found.has(event.id)) return infrastructureFailure("UNMATCHED_TEST_END");
-      const completions = ended.get(event.id) ?? [];
-      completions.push(event);
-      ended.set(event.id, completions);
+      if (ended.has(event.id)) return infrastructureFailure("DUPLICATE_TEST_END");
+      ended.set(event.id, event);
     }
   }
-  const completed = [...ended.values()].flat();
+  const completed = [...ended.values()];
   if (found.size === 0 || found.size !== ended.size || completed.length !== junit.tests) {
     return infrastructureFailure("TEST_COUNT_MISMATCH");
   }
