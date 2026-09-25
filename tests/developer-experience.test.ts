@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -255,6 +265,41 @@ describe("developer entry points", () => {
     await assert.rejects(readFile(temporaryPath, "utf8"), /ENOENT/u);
   });
 
+  it("never removes a colliding init temporary file that this invocation did not create", async () => {
+    const root = await fixtureRepository();
+    const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-temp-collision-"));
+    temporaryDirectories.push(builtRoot);
+    const builtEntry = path.join(builtRoot, "dist", "cli.js");
+    await mkdir(path.dirname(builtEntry), { recursive: true });
+    await mkdir(path.join(builtRoot, "integrations", "skill"), { recursive: true });
+    await writeFile(builtEntry, "// fixture built entry\n");
+    await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
+    const otherInvocationBytes = "other invocation temporary bytes\n";
+    let temporaryPath = "";
+
+    const result = await setupRepository(root, builtEntry, "codex", true, {
+      applyInit: (setupRoot) =>
+        initializeRepository(
+          setupRoot,
+          {},
+          {
+            async writeTemporary(temporary) {
+              temporaryPath = temporary;
+              await writeFile(temporary, otherInvocationBytes, { flag: "wx" });
+              const collision = new Error("FAULT_INIT_TEMP_COLLISION") as NodeJS.ErrnoException;
+              collision.code = "EEXIST";
+              throw collision;
+            },
+          },
+        ),
+    });
+
+    assert.equal(result.status, "PARTIAL_FAILURE");
+    assert.deepEqual(result.rollback, { status: "COMPLETE", removed: [], unresolved: [] });
+    assert.equal(result.artifacts.length, 4);
+    assert.equal(await readFile(temporaryPath, "utf8"), otherInvocationBytes);
+  });
+
   it("reports partial connection bytes and cleanup failures without deleting either file", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-connect-write-"));
@@ -378,6 +423,36 @@ describe("developer entry points", () => {
         return true;
       },
     );
+  });
+
+  it("returns a structured JSON conflict for an unsafe setup connection target", async () => {
+    const root = await fixtureRepository();
+    await mkdir(path.join(root, ".codex", "config.toml"), { recursive: true });
+    const cli = path.resolve("dist", "cli.js");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [cli, "setup", root, "--client", "codex", "--dry-run", "--json"],
+        { cwd: process.cwd(), timeout: 5_000, maxBuffer: 64 * 1024, windowsHide: true },
+      ),
+      (error: NodeJS.ErrnoException & { stdout?: string; stderr?: string }) => {
+        assert.equal(error.code, 4);
+        assert.equal(error.stderr, "");
+        const result = JSON.parse(error.stdout ?? "null");
+        assert.equal(result.status, "CONFLICT");
+        assert.equal(result.connection.status, "CONFLICT");
+        assert.equal(result.connection.artifacts.length, 2);
+        assert.equal(result.artifacts[2]?.state, "CONFLICT");
+        assert.deepEqual(result.rollback, {
+          status: "NOT_REQUIRED",
+          removed: [],
+          unresolved: [],
+        });
+        return true;
+      },
+    );
+    assert.equal((await lstat(path.join(root, ".codex", "config.toml"))).isDirectory(), true);
   });
 
   it("runs the shipped demonstration only with explicit unsafe authorization and limits its claim", async () => {
@@ -671,10 +746,8 @@ describe("developer entry points", () => {
     await writeFile(builtEntry, "// fixture built entry\n");
     await writeFile(path.join(builtRoot, "integrations", "skill", "SKILL.md"), "# Fixture\n");
 
-    await assert.rejects(
-      connectClient(root, builtEntry, "codex", true),
-      /CONNECT_CONFIG_PATH_UNSAFE/u,
-    );
+    const conflict = await connectClient(root, builtEntry, "codex", true);
+    assert.equal(conflict.status, "CONFLICT");
     await assert.rejects(readFile(path.join(root, ".codex", "config.toml"), "utf8"), /ENOENT/u);
     await assert.rejects(
       readFile(path.join(outside, "skills", "assertledger", "SKILL.md"), "utf8"),

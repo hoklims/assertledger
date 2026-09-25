@@ -202,7 +202,7 @@ export async function setupRepository(
     const ownedPaths = error instanceof RepositoryInitWriteError ? error.installedPaths : [];
     const initRollback = await rollbackCreatedInitFiles(root, initPlan, ownedPaths);
     const temporaryArtifact =
-      error instanceof RepositoryInitWriteError
+      error instanceof RepositoryInitWriteError && error.temporaryCleanup !== "NOT_OWNED"
         ? {
             relative: path.relative(root, error.temporaryPath).split(path.sep).join("/"),
             absolute: error.temporaryPath,

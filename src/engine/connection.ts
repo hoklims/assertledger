@@ -434,8 +434,13 @@ export async function planClientConnection(
   const states: ClientConnectionArtifactState[] = [];
   for (const artifact of artifacts) {
     if (artifact.path === null) continue;
-    await validateParentPath(root, artifact.path, "CONNECT_CONFIG_PATH_UNSAFE");
-    states.push(await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE"));
+    try {
+      await validateParentPath(root, artifact.path, "CONNECT_CONFIG_PATH_UNSAFE");
+      states.push(await inspectArtifact(artifact, "CONNECT_CONFIG_PATH_UNSAFE"));
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "CONNECT_CONFIG_PATH_UNSAFE") throw error;
+      states.push("CONFLICT");
+    }
   }
   return {
     result: {

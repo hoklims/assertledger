@@ -122,14 +122,14 @@ export interface RepositoryInitWriteDependencies {
 export class RepositoryInitWriteError extends Error {
   readonly targetPath: string;
   readonly temporaryPath: string;
-  readonly temporaryCleanup: "REMOVED" | "UNRESOLVED";
+  readonly temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED";
   readonly installedPaths: string[];
 
   constructor(
     cause: unknown,
     targetPath: string,
     temporaryPath: string,
-    temporaryCleanup: "REMOVED" | "UNRESOLVED",
+    temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED",
     installedPaths: string[],
   ) {
     super("INIT_WRITE_FAILED", { cause });
@@ -855,9 +855,11 @@ async function atomicInitWrite(
   const linkTemporary = dependencies.linkTemporary ?? link;
   const removeTemporary =
     dependencies.removeTemporary ?? ((temporaryPath: string) => rm(temporaryPath, { force: true }));
+  let temporaryOwned = false;
   let targetInstalled = false;
   try {
     await writeTemporary(temporary, content);
+    temporaryOwned = true;
     if (action === "CREATE") {
       await linkTemporary(temporary, target);
       targetInstalled = true;
@@ -867,11 +869,14 @@ async function atomicInitWrite(
       targetInstalled = true;
     }
   } catch (error) {
-    let temporaryCleanup: "REMOVED" | "UNRESOLVED" = "REMOVED";
-    try {
-      await removeTemporary(temporary);
-    } catch {
-      temporaryCleanup = "UNRESOLVED";
+    let temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED" = "NOT_OWNED";
+    if (temporaryOwned) {
+      temporaryCleanup = "REMOVED";
+      try {
+        await removeTemporary(temporary);
+      } catch {
+        temporaryCleanup = "UNRESOLVED";
+      }
     }
     throw new RepositoryInitWriteError(error, target, temporary, temporaryCleanup, [
       ...installedPaths,

@@ -80,6 +80,11 @@ interface CommandResult {
   stdout: string;
   stderr: string;
 }
+interface CodexSetupConfiguration {
+  command: string;
+  args: string[];
+  cwd: string;
+}
 const commands: CommandResult[] = [];
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 function inside(root: string, target: string): boolean {
@@ -100,6 +105,40 @@ function assertInstalledPath(packageRoot: string, filename: string): string {
   assert.ok(!within(ROOT, resolved), `INSTALLED_FILE_RESOLVES_TO_CHECKOUT: ${filename}`);
   assert.ok(within(installedRoot, resolved), `INSTALLED_FILE_ESCAPE: ${filename}`);
   return resolved;
+}
+function parseCodexSetupConfiguration(content: string): CodexSetupConfiguration {
+  const lines = content.trim().split(/\r?\n/u);
+  assert.equal(lines.shift(), "[mcp_servers.assertledger]");
+  assert.equal(lines.length, 3, "SETUP_CONFIG_FIELD_COUNT_MISMATCH");
+  const values = new Map(
+    lines.map((line) => {
+      const separator = line.indexOf(" = ");
+      assert.ok(separator > 0, `SETUP_CONFIG_FIELD_INVALID: ${line}`);
+      return [line.slice(0, separator), JSON.parse(line.slice(separator + 3))] as const;
+    }),
+  );
+  assert.deepEqual([...values.keys()].sort(), ["args", "command", "cwd"]);
+  const command = values.get("command");
+  const args = values.get("args");
+  const cwd = values.get("cwd");
+  assert.equal(typeof command, "string");
+  assert.ok(Array.isArray(args) && args.every((argument) => typeof argument === "string"));
+  assert.equal(typeof cwd, "string");
+  return { command: command as string, args: args as string[], cwd: cwd as string };
+}
+function assertInstalledCodexSetup(
+  configuration: CodexSetupConfiguration,
+  installedRoot: string,
+  installedCli: string,
+  repository: string,
+): void {
+  assert.equal(configuration.command, process.execPath);
+  assert.deepEqual(configuration.args.slice(1), ["mcp", "--root", realpathSync(repository)]);
+  assert.equal(realpathSync(configuration.cwd), realpathSync(repository));
+  const configuredCli = realpathSync(configuration.args[0] ?? "");
+  assert.ok(!within(ROOT, configuredCli), "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT");
+  assert.ok(within(installedRoot, configuredCli), "SETUP_CONFIG_CLI_ESCAPES_PACKAGE");
+  assert.equal(configuredCli, installedCli);
 }
 function jsonFile(target: string, value: unknown): void {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
@@ -423,7 +462,27 @@ function main(): void {
           : path.join(setupFixture, ".mcp.json");
       const configuration = readFileSync(configurationPath, "utf8");
       if (client === "codex") {
-        assert.ok(configuration.includes(JSON.stringify(installedCli)));
+        const parsedConfiguration = parseCodexSetupConfiguration(configuration);
+        assertInstalledCodexSetup(parsedConfiguration, installedRoot, installedCli, setupFixture);
+        const checkoutEscape = {
+          ...parsedConfiguration,
+          args: [path.join(ROOT, "dist", "cli.js"), ...parsedConfiguration.args.slice(1)],
+        };
+        let observedFailure = "";
+        assert.throws(
+          () =>
+            assertInstalledCodexSetup(checkoutEscape, installedRoot, installedCli, setupFixture),
+          (error: unknown) => {
+            observedFailure = error instanceof Error ? error.message : String(error);
+            return /SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT/u.test(observedFailure);
+          },
+        );
+        jsonFile(path.join(artifacts, "setup-config-checkout-escape-witness.json"), {
+          platform: process.platform,
+          fault: "generated Codex MCP config resolves CLI into source checkout",
+          expectedFailure: "SETUP_CONFIG_CLI_RESOLVES_TO_CHECKOUT",
+          observedFailure,
+        });
       } else {
         const document = JSON.parse(configuration);
         assert.equal(document.mcpServers.assertledger.args[0], installedCli);
