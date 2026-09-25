@@ -73,7 +73,7 @@ describe("Bun Inspector event classification", () => {
 
   it("refuses attribution when an expected base file never starts", () => {
     const candidateOnly = [
-      found[1],
+      found[1]!,
       { method: "TestReporter.start", params: { id: 2 } },
       {
         method: "LifecycleReporter.error",
