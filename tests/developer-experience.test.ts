@@ -770,11 +770,18 @@ describe("developer entry points", () => {
     const conflictPath = path.join(root, ".agents", "skills", "assertledger", "SKILL.md");
     await mkdir(path.dirname(conflictPath), { recursive: true });
     await writeFile(conflictPath, "operator-owned\n");
+    const canonicalConflictPath = path.join(
+      await realpath(root),
+      ".agents",
+      "skills",
+      "assertledger",
+      "SKILL.md",
+    );
 
     const conflict = await setupRepository(root, builtEntry, "codex", true);
     assert.equal(conflict.status, "CONFLICT");
     assert.deepEqual(conflict.reasonCodes, ["CONNECTION_CONTENT_CONFLICT"]);
-    assert.deepEqual(conflict.diagnosticPaths, [conflictPath]);
+    assert.deepEqual(conflict.diagnosticPaths, [canonicalConflictPath]);
     assert.deepEqual(conflict.nextActions, [
       "Inspect and resolve conflicting client artifact contents, then rerun setup.",
     ]);
@@ -796,7 +803,7 @@ describe("developer entry points", () => {
     );
     assert.equal(plainConflict.stderr(), "");
     assert.match(plainConflict.stdout(), /^Reason code: CONNECTION_CONTENT_CONFLICT$/mu);
-    assert.ok(plainConflict.stdout().includes(`Diagnostic path: ${conflictPath}\n`));
+    assert.ok(plainConflict.stdout().includes(`Diagnostic path: ${canonicalConflictPath}\n`));
     assert.match(
       plainConflict.stdout(),
       /^Next action: Inspect and resolve conflicting client artifact contents, then rerun setup\.$/mu,
