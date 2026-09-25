@@ -50,13 +50,15 @@ référence, un monde neutre rouge, une observation instable ou une attribution 
 
 Le socle local comprend les contrats versionnés, le noyau déterministe, les digests, le replay
 sémantique, le moteur d’exécution, les façades CLI/SDK/MCP, l’audit statique et l’initialisation.
-Le registre contient 38 schémas JSON : les 34 figés par le verrou de conformance v1 et les 4
-schémas d’export d’évidence, verrouillés par une extension additive qui ne modifie pas le bundle v1.
+Le registre contient 45 schémas JSON : les 34 figés par le verrou de conformance v1 et 11
+extensions, verrouillées sans modifier le bundle v1.
 L’ancien décompte de 30 dans la roadmap était périmé.
 
-L’adaptateur officiel intégré est `node:test`. Le protocole `testforge-command` permet d’intégrer
-un autre framework avec un adaptateur fourni par l’opérateur. Détecter Vitest, Jest, Bun ou pytest
-pendant `init` ne fournit pas leur adaptateur officiel.
+Les adaptateurs officiels intégrés sont `node:test` et `bun:test`. Ce dernier est limité à Bun 1.4.2
+et aux assertions explicites du helper `assertSame` ; les échecs natifs de `expect` ne deviennent pas
+des preuves d’assertion. Le protocole `testforge-command` permet d’intégrer un autre framework avec
+un adaptateur fourni par l’opérateur. Détecter Vitest, Jest ou pytest pendant `init` ne fournit pas
+leur adaptateur officiel.
 
 Les profils v1 et v2, les artefacts de benchmark, les contrats de provenance et le protocole
 expérimental H3 sont présents. Le benchmark par phases refuse encore l’adaptateur `node:test` :

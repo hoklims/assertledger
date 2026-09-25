@@ -317,14 +317,14 @@ enabling unsafe execution does not change doctor behavior. Dynamic runtime and c
 remain outside this static readiness result.
 
 `doctor_runtime` accepts only the strict root input and returns the separate
-[runtime diagnostic contract](runtime-doctor.md). `check` accepts the
+[runtime diagnostic contract](runtime-doctor.md), v2 for a generated Bun configuration. `check` accepts the
 [high-level Git options](git-regression.md), without a permission field, and returns the existing
 evidence manifest. The operator's capability is required for both tools.
 
 ## Continuous integration
 
 Run `pnpm check` on every change. The included GitHub Actions workflow runs this gate on Node.js 22
-and 24 on Ubuntu, Windows and macOS. A separate matrix installs and exercises the packed artifact
+and 24 with Bun 1.4.2 on Ubuntu, Windows and macOS. A separate matrix installs and exercises the packed artifact
 on Ubuntu and Windows with Node.js 22.15.0 and 24. On Ubuntu, the gate also runs the real-daemon
 [container isolation](container-isolation.md) suite. A CI job that executes campaigns must
 also treat `trusted-local` as `UNSANDBOXED`: use an isolated runner without secrets or host

@@ -54,6 +54,9 @@ const required = [
   "conformance/schema-extensions.json",
   "dist/build-info.json",
   "integrations/skill/SKILL.md",
+  "integrations/bun/assertions.mjs",
+  "integrations/bun/assertions.d.mts",
+  "integrations/bun/driver.mjs",
   "benchmarks/agentic-profile/public/README.md",
   ...readdirSync(path.join(ROOT, "schemas"))
     .filter((name) => name.endsWith(".json"))
@@ -312,13 +315,16 @@ function main(): void {
       'import { fileURLToPath } from "node:url";',
       'import { AssertLedger, TestForge } from "assertledger";',
       'import { canonicalize } from "assertledger/core";',
+      'import { assertSame } from "assertledger/bun";',
       `const root = realpathSync(${JSON.stringify(installed)});`,
-      'for (const specifier of ["assertledger", "assertledger/core"]) {',
+      'for (const specifier of ["assertledger", "assertledger/core", "assertledger/bun"]) {',
       "  const relative = path.relative(root, realpathSync(fileURLToPath(import.meta.resolve(specifier))));",
       '  assert.ok(relative && relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative));',
       "}",
       "assert.ok(TestForge.prototype instanceof AssertLedger);",
       'assert.equal(canonicalize({ b: 2, a: 1 }), \'{"a":1,"b":2}\');',
+      "assert.doesNotThrow(() => assertSame(1, 1));",
+      'assert.throws(() => assertSame(1, 2), { name: "AssertLedgerBunAssertionError" });',
       "const sdk = new AssertLedger(); const legacy = new TestForge();",
       'assert.deepEqual(sdk.schema("replay-result"), legacy.schema("replay-result"));',
       "for (const instance of [sdk, legacy]) {",
@@ -328,7 +334,7 @@ function main(): void {
       `  const audit = await instance.audit(${JSON.stringify(fixture)}, { noGit: true });`,
       '  assert.equal(audit.schemaVersion, "1.0.0"); assert.equal(audit.fileCount, 2);',
       "}",
-      'console.log(JSON.stringify({ status: "PASS", exports: ["assertledger", "assertledger/core"], aliases: ["AssertLedger", "TestForge"] }));',
+      'console.log(JSON.stringify({ status: "PASS", exports: ["assertledger", "assertledger/core", "assertledger/bun"], aliases: ["AssertLedger", "TestForge"] }));',
       "",
     ].join("\n");
     writeFileSync(sdkScript, sdkSource);
@@ -340,6 +346,7 @@ function main(): void {
       [
         'import { AssertLedger, TestForge, type AgenticProfileReplayResult, type AgenticProfileReport, type EvidenceManifestContract, type ReplayResult } from "assertledger";',
         'import { canonicalize, replayEvidenceManifest } from "assertledger/core";',
+        'import { assertSame } from "assertledger/bun";',
         "const sdk: AssertLedger = new TestForge();",
         "const manifest: EvidenceManifestContract = await sdk.verify({});",
         "const replay: ReplayResult = sdk.replay(manifest);",
@@ -347,6 +354,7 @@ function main(): void {
         "const profileReplay: AgenticProfileReplayResult = sdk.replayProfile(profile);",
         "const valid: boolean = replayEvidenceManifest(manifest).valid && replay.valid && profileReplay.valid;",
         "const text: string = canonicalize({ valid });",
+        "assertSame(text, text);",
         "void text;",
         "",
       ].join("\n"),

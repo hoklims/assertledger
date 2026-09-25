@@ -1,6 +1,6 @@
 {
   "name": "assertledger",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Verify that regression tests detect a declared bug, with deterministic verdicts and replayable evidence.",
   "type": "module",
   "private": false,
@@ -31,6 +31,10 @@
     "./core": {
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
+    },
+    "./bun": {
+      "types": "./integrations/bun/assertions.d.mts",
+      "import": "./integrations/bun/assertions.mjs"
     }
   },
   "files": [

@@ -10,8 +10,8 @@ The smoke exercises both installed command aliases (`assertledger`, `testforge`)
 both SDK class aliases, the public root and core exports, static init and audit,
 and the bundled trusted `node:test` example. The strong test must be selected,
 the weak test must be rejected as `WEAK_ORACLE`, and every replay rail must pass.
-It also checks the advertised schemas, conformance bundle, integration skill and
-runtime files in the tarball and installed package.
+It also checks the advertised schemas, conformance bundle, integration skill, Bun assertion
+helper and Inspector driver, and runtime files in the tarball and installed package.
 It also compiles a TypeScript consumer against the installed root/core exports
 using the checkout's pinned compiler and Node type definitions. Consumer imports
 resolve from the temporary project; no source-package alias is configured.
@@ -27,6 +27,9 @@ Temporary consumers are removed after the run. The retained manifest is replayab
 its original execution paths refer to the removed consumer.
 
 CI runs this smoke on Windows and Linux with Node 22.15.0 and 24 alongside `pnpm check`.
+The verification matrix installs Bun 1.4.2 on Windows, Linux, and macOS and executes the
+real Inspector campaign and its negative witnesses. The package smoke verifies the installed
+`assertledger/bun` export and types; it does not itself execute a Bun campaign.
 A successful local smoke proves that local tarball on the reported Node version
 and operating system. It does not establish npm publication, cross-platform CI
 success, hostile-code isolation, or adoption by external users. The example uses

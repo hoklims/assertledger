@@ -78,6 +78,52 @@ these deterministic facts without a timestamp under
 File-based runtime attribution is stronger than source scanning, but it is not authenticated. The
 Node.js runner, reporter events, candidate code, dependencies, and host remain trusted inputs.
 
+## Built-in `bun:test` adapter (verification v3)
+
+The official Bun profile accepts a verification request with:
+
+```json
+{
+  "kind": "bun-test",
+  "executable": "bun",
+  "baseTestFiles": ["tests/base.test.ts"]
+}
+```
+
+It is qualified for Bun `1.4.2` revision `744846f844374847c902b5e7fd59b4342a51ef99`
+using loopback WebSocket Inspector transport on explicitly unsandboxed `trusted-local` execution.
+The container backend is refused. The engine resolves and hashes the Bun executable, checks its
+version and revision twice, hashes its bundled driver and assertion helper, and records all of
+these identities with a fresh five-case runtime preflight in the v3 manifest. The preflight
+separates an owned assertion from a generic throw, a caught assertion followed by a generic
+throw, an operand error, and a native Bun `expect` failure. Every Bun process uses argv with
+`shell: false` and `--max-concurrency=1`.
+
+Candidate tests that need assertion evidence import the packaged helper:
+
+```ts
+import { test } from "bun:test";
+import { assertSame } from "assertledger/bun";
+
+test("result", () => assertSame(compute(), expected));
+```
+
+`assertSame` evaluates its arguments before entering the helper, compares them with `Object.is`,
+and throws a fixed, AssertLedger-owned error when they differ. The engine installs the exact
+bundled helper into each disposable workspace because repository snapshots omit `node_modules`.
+The driver consumes only Bun Inspector `TestReporter` and `LifecycleReporter` events. It associates
+an error with a candidate only when exactly one test ID is active, `TestReporter.found` supplies
+that candidate's exact URL, and the error has the owned name, message, and helper source URL.
+Every failed test must finish with a coherent nonzero process exit. Other errors, failed controls,
+ambiguous event order, malformed transport, and incomplete failing runs cannot kill a target.
+JUnit is not read.
+
+Native `bun:test` `expect` failures are deliberately non-attributed: Bun Inspector 1.4.2 reports
+them as generic `Error` without an assertion category. On a zero exit, Bun can omit a final
+`TestReporter.end`; a started candidate with no Inspector error may still be recorded as `PASS`
+from the runner exit. An incomplete nonzero run is `INFRA_ERROR` and never assertion evidence.
+The adapter does not authenticate candidate code or provide hostile-code containment.
+
 ## Structured command adapter protocol v1
 
 The legacy wire identifier `testforge-command` lets any framework participate without moving gate logic into the

@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-09-25
+
+An explicitly authored `bun:test` regression candidate can now produce attributed AssertLedger
+evidence on the qualified Bun 1.4.2 runtime. The built-in v3 adapter uses Bun Inspector for test
+and file attribution and the packaged `assertSame` helper for an assertion signal. Native Bun
+`expect` failures stay non-attributed, and JUnit is never an assertion authority.
+
+- Add verification request/evidence manifest v3, Bun initialization v2, and Bun runtime doctor v2.
+  Historical v1/v2 schema bytes and replay remain unchanged; the new schemas extend the additive
+  schema lock. The manifest binds Bun executable, protocol, driver, helper, and preflight identity.
+- Pin Bun 1.4.2 on the Windows, Linux, and macOS verification matrix. The adapter uses serialized
+  loopback Inspector transport in explicitly unsandboxed trusted-local execution; container Bun
+  requests are refused. Missing or ambiguous failure events, ordinary errors, and timeouts cannot
+  kill a target.
+- Package the `assertledger/bun` helper and validate its JavaScript and TypeScript exports in a
+  fresh package consumer. See [verification v3 migration](docs/migration-verification-v3.md).
+- Let static `doctor` select `--framework bun:test` in mixed repositories, including through SDK
+  and MCP, without executing repository code.
+
+Compatibility: existing Node and structured-command requests keep their v1/v2 contracts and
+decisions. Bun campaigns require v3 requests and new candidate tests that import `assertSame`;
+old Bun `expect` tests can remain base controls but their failures do not count as target evidence.
+The v1 evidence provider/export surface does not project Bun v3 evidence.
 
 A repository that keeps a local-only symbolic link, such as an agent's skill directory, can now be
 diagnosed and initialized without weakening the link refusal.
