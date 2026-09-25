@@ -746,6 +746,15 @@ export async function runCli(
               io.writeStdout(`Unresolved managed file: ${unresolved}\n`);
             }
           }
+          for (const reasonCode of result.reasonCodes ?? result.init.reasonCodes) {
+            io.writeStdout(`Reason code: ${reasonCode}\n`);
+          }
+          for (const diagnosticPath of result.diagnosticPaths ?? []) {
+            io.writeStdout(`Diagnostic path: ${diagnosticPath}\n`);
+          }
+          for (const nextAction of result.nextActions ?? []) {
+            io.writeStdout(`Next action: ${nextAction}\n`);
+          }
           for (const limitation of result.limitations) io.writeStdout(`Limit: ${limitation}\n`);
           if (!parsed.write && result.status === "WOULD_CREATE") {
             io.writeStdout("No files changed. Re-run with --write to apply this plan.\n");

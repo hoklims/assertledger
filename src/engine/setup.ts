@@ -1,6 +1,6 @@
 import { lstat, readFile, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
-import type { RepositoryInitResult } from "../contracts/index.js";
+import { parseRepositoryInitResult, type RepositoryInitResult } from "../contracts/index.js";
 import {
   ClientConnectionApplyError,
   type ClientConnectionPlan,
@@ -53,6 +53,7 @@ export interface RepositorySetupResult {
 }
 
 export interface SetupRepositoryDependencies {
+  planInit?(root: string): Promise<RepositoryInitResult>;
   afterInitApplied?(): Promise<void>;
   applyInit?(root: string): Promise<RepositoryInitResult>;
   applyConnection?(): Promise<ClientConnectionResult>;
@@ -68,6 +69,26 @@ const SETUP_LIMITATIONS = [
   "It does not authorize UNSANDBOXED execution, reload the client, or prove repository behavior.",
   "Setup has no cross-process filesystem lock. Concurrent edits can be overwritten during lock regeneration or removed between a rollback byte check and unlink; run only while the trusted repository tree is stable.",
 ];
+
+function failedInitPreflight(): RepositoryInitResult {
+  return parseRepositoryInitResult({
+    schemaVersion: "1.0.0",
+    status: "CONFLICT",
+    reasonCodes: ["INIT_PREFLIGHT_FAILED"],
+    detections: {
+      packageManager: null,
+      framework: null,
+      testCommand: null,
+      ciProviders: [],
+      adapterRecommendation: "unavailable",
+      reasonCodes: ["INIT_PREFLIGHT_FAILED"],
+    },
+    actions: [],
+    files: [],
+    requiredOperatorInputs: ["worlds", "candidates"],
+    nextCommands: [{ executable: "assertledger", arguments: ["audit", ".", "--json"] }],
+  });
+}
 
 function connectionPreflightDiagnostic(
   error: unknown,
@@ -193,7 +214,26 @@ export async function setupRepository(
   write: boolean,
   dependencies: SetupRepositoryDependencies = {},
 ): Promise<RepositorySetupResult> {
-  const initPlan = await initializeRepository(root, { dryRun: true });
+  const requestedRoot = path.resolve(root);
+  let initPlan: RepositoryInitResult;
+  try {
+    initPlan = await (dependencies.planInit?.(root) ??
+      initializeRepository(root, { dryRun: true }));
+  } catch {
+    return {
+      status: "CONFLICT",
+      client,
+      mode: write ? "write" : "dry-run",
+      init: failedInitPreflight(),
+      connection: { client, status: "CONFLICT", artifacts: [] },
+      artifacts: [],
+      rollback: { status: "NOT_REQUIRED", removed: [], unresolved: [] },
+      limitations: [...SETUP_LIMITATIONS],
+      reasonCodes: ["INIT_PREFLIGHT_FAILED"],
+      nextActions: ["Inspect repository readability and permissions, then rerun setup."],
+      diagnosticPaths: [requestedRoot],
+    };
+  }
   if (initPlan.status === "CONFLICT" && initPlan.reasonCodes.includes("REPOSITORY_ROOT_INVALID")) {
     return {
       status: "CONFLICT",
@@ -204,9 +244,28 @@ export async function setupRepository(
       artifacts: [],
       rollback: { status: "NOT_REQUIRED", removed: [], unresolved: [] },
       limitations: [...SETUP_LIMITATIONS],
+      reasonCodes: [...initPlan.reasonCodes],
+      nextActions: ["Provide an existing readable repository directory, then rerun setup."],
+      diagnosticPaths: [requestedRoot],
     };
   }
-  root = await realpath(root);
+  try {
+    root = await realpath(root);
+  } catch {
+    return {
+      status: "CONFLICT",
+      client,
+      mode: write ? "write" : "dry-run",
+      init: initPlan,
+      connection: { client, status: "CONFLICT", artifacts: [] },
+      artifacts: [],
+      rollback: { status: "NOT_REQUIRED", removed: [], unresolved: [] },
+      limitations: [...SETUP_LIMITATIONS],
+      reasonCodes: ["SETUP_ROOT_RESOLUTION_FAILED"],
+      nextActions: ["Restore the repository directory, then rerun setup."],
+      diagnosticPaths: [requestedRoot],
+    };
+  }
   const initArtifacts: RepositorySetupArtifact[] = initPlan.files.map((file) => ({
     owner: "init",
     path: path.join(root, file.path),
@@ -248,6 +307,21 @@ export async function setupRepository(
   );
   const artifacts = [...initArtifacts, ...connectionArtifacts];
   const connectionPlanReasonCodes = connectionPlan.reasonCodes;
+  const initPlanReasonCodes =
+    initPlan.status === "CONFLICT" || initPlan.status === "BLOCKED" ? initPlan.reasonCodes : [];
+  const reasonCodes = [...new Set([...initPlanReasonCodes, ...(connectionPlanReasonCodes ?? [])])];
+  const nextActions = [
+    ...(initPlanReasonCodes.length === 0
+      ? []
+      : ["Resolve the repository initialization reason codes, then rerun setup."]),
+    ...(connectionPlanReasonCodes === undefined
+      ? []
+      : ["Replace unsafe client target paths with regular local paths, then rerun setup."]),
+  ];
+  const diagnosticPaths = [
+    ...(initPlanReasonCodes.length === 0 ? [] : [root]),
+    ...(connectionPlan.diagnosticPaths ?? []),
+  ];
   const base = {
     client,
     mode: write ? ("write" as const) : ("dry-run" as const),
@@ -256,14 +330,12 @@ export async function setupRepository(
     artifacts,
     rollback: { status: "NOT_REQUIRED" as const, removed: [], unresolved: [] },
     limitations: [...SETUP_LIMITATIONS],
-    ...(connectionPlanReasonCodes === undefined
+    ...(reasonCodes.length === 0
       ? {}
       : {
-          reasonCodes: connectionPlanReasonCodes,
-          nextActions: [
-            "Replace unsafe client target paths with regular local paths, then rerun setup.",
-          ],
-          diagnosticPaths: connectionPlan.diagnosticPaths ?? [],
+          reasonCodes,
+          nextActions,
+          diagnosticPaths,
         }),
   };
   if (initPlan.status === "CONFLICT" || connectionPlan.result.status === "CONFLICT") {
@@ -328,6 +400,11 @@ export async function setupRepository(
             : rollbackArtifactState(root, artifact, rollback),
       })),
       rollback,
+      reasonCodes: [
+        error instanceof RepositoryInitWriteError ? "INIT_APPLY_WRITE_FAILED" : "INIT_APPLY_FAILED",
+      ],
+      nextActions: ["Inspect rollback details, resolve unresolved paths, then rerun setup."],
+      diagnosticPaths: rollback.unresolved.map((relative) => path.join(root, relative)),
     };
   }
   if (appliedInit.status === "CONFLICT" || appliedInit.status === "BLOCKED") {
@@ -363,6 +440,9 @@ export async function setupRepository(
           state: rollbackArtifactState(root, artifact, initRollback),
         })),
         rollback: initRollback,
+        reasonCodes: ["CONNECTION_APPLY_FAILED"],
+        nextActions: ["Inspect rollback details, resolve unresolved paths, then rerun setup."],
+        diagnosticPaths: initRollback.unresolved.map((relative) => path.join(root, relative)),
       };
     }
     const rollback = mergeRollback(root, initRollback, error.rollback);
@@ -375,6 +455,9 @@ export async function setupRepository(
         state: rollbackArtifactState(root, artifact, rollback),
       })),
       rollback,
+      reasonCodes: ["CONNECTION_APPLY_FAILED"],
+      nextActions: ["Inspect rollback details, resolve unresolved paths, then rerun setup."],
+      diagnosticPaths: rollback.unresolved.map((relative) => path.join(root, relative)),
     };
   }
   if (appliedConnection.status === "CONFLICT") {

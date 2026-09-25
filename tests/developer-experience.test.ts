@@ -638,6 +638,11 @@ describe("developer entry points", () => {
       removed: ["assertledger.config.json", "assertledger.lock.json"],
       unresolved: [],
     });
+    assert.deepEqual(result.reasonCodes, ["CONNECTION_APPLY_FAILED"]);
+    assert.deepEqual(result.nextActions, [
+      "Inspect rollback details, resolve unresolved paths, then rerun setup.",
+    ]);
+    assert.deepEqual(result.diagnosticPaths, []);
     assert.deepEqual(
       result.artifacts.map((artifact) => artifact.state),
       ["ROLLED_BACK", "ROLLED_BACK", "WOULD_CREATE", "WOULD_CREATE"],
@@ -676,6 +681,37 @@ describe("developer entry points", () => {
     );
     await assert.rejects(readFile(path.join(root, "assertledger.config.json")), /ENOENT/u);
     await assert.rejects(readFile(path.join(root, "assertledger.lock.json")), /ENOENT/u);
+  });
+
+  it("returns opaque typed JSON when init preflight throws", async () => {
+    const root = await fixtureRepository();
+    const builtEntry = path.resolve("dist", "cli.js");
+    const capture = captureIo(root);
+    const exitCode = await runCli(
+      ["setup", root, "--client", "codex", "--write", "--json"],
+      capture.io,
+      {
+        setupEntry: builtEntry,
+        setupRepository: (setupRoot, cliEntry, client, write) =>
+          setupRepository(setupRoot, cliEntry, client, write, {
+            async planInit() {
+              throw new Error("SENSITIVE_INIT_IO_DETAIL");
+            },
+          }),
+      },
+    );
+    const result = JSON.parse(capture.stdout()) as RepositorySetupResult;
+
+    assert.equal(exitCode, 4);
+    assert.equal(capture.stderr(), "");
+    assert.equal(result.status, "CONFLICT");
+    assert.equal(result.rollback.status, "NOT_REQUIRED");
+    assert.deepEqual(result.reasonCodes, ["INIT_PREFLIGHT_FAILED"]);
+    assert.deepEqual(result.diagnosticPaths, [path.resolve(root)]);
+    assert.deepEqual(result.nextActions, [
+      "Inspect repository readability and permissions, then rerun setup.",
+    ]);
+    assert.doesNotMatch(capture.stdout(), /SENSITIVE_INIT_IO_DETAIL/u);
   });
 
   it("maps packaged skill preflight failures without exposing raw errors", async () => {
@@ -764,6 +800,30 @@ describe("developer entry points", () => {
     const created = await setupRepository(root, builtEntry, "codex", true);
     assert.equal(created.status, "CREATED");
     assert.equal((await setupRepository(root, builtEntry, "codex", true)).status, "UNCHANGED");
+  });
+
+  it("prints typed setup conflict diagnostics in plain output", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-plain-conflict-"));
+    temporaryDirectories.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "fixture", scripts: { test: "node --test" } }),
+    );
+    const capture = captureIo(root);
+
+    const exitCode = await runCli(["setup", root, "--client", "codex", "--dry-run"], capture.io, {
+      setupEntry: path.resolve("dist", "cli.js"),
+    });
+
+    assert.equal(exitCode, 4);
+    assert.equal(capture.stderr(), "");
+    assert.match(capture.stdout(), /^Setup status: CONFLICT$/mu);
+    assert.match(capture.stdout(), /^Reason code: PACKAGE_MANAGER_UNDETECTED$/mu);
+    assert.match(capture.stdout(), /^Diagnostic path: .+$/mu);
+    assert.match(
+      capture.stdout(),
+      /^Next action: Resolve the repository initialization reason codes, then rerun setup\.$/mu,
+    );
   });
 
   it("returns a structured JSON conflict for an invalid setup repository root", async () => {
