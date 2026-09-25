@@ -16,7 +16,10 @@ window.
 ## Preferred path: a committed regression
 
 1. Run `assertledger doctor <repo> --json` for static readiness. Runtime probes require the separate
-   `doctor --runtime --allow-unsafe-execution` command and prior operator authorization.
+   `doctor --runtime --allow-unsafe-execution` command and prior operator authorization. A
+   `UNSUPPORTED_REPOSITORY_SYMLINK` conflict stays a refusal: only the operator may declare the
+   local-only entry that holds the link with `--exclude NAME`. Never add names to
+   `repository.exclude` yourself; the configured list never removes files from campaign evidence.
 2. Ask the operator or harness for the buggy, corrected and neutral revisions, the neutral reason,
    candidate path and unchanged base tests. Do not invent a neutral control's meaning.
 3. For committed dependency-free JavaScript `node:test`, use `assertledger check` or the MCP

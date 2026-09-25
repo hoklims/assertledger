@@ -27,6 +27,7 @@ import {
   type AgenticBenchmarkAcquisitionResult,
   type AgenticBenchmarkRun,
   type ContainerIsolation,
+  isRepositoryExcludeName,
   parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
   parseEvidenceManifest,
@@ -101,6 +102,8 @@ type InitFramework = (typeof INIT_FRAMEWORKS)[number];
 
 export interface RepositoryInitOptions {
   dryRun?: boolean;
+  /** Entry names excluded beside the defaults; when absent, a valid configuration's list is kept. */
+  exclude?: readonly string[];
   adapterConfigPath?: string;
   packageManager?: string;
   framework?: string;
@@ -501,6 +504,19 @@ function registerPortablePath(spellings: Map<string, string>, relative: string):
   spellings.set(key, relative);
 }
 
+/** The declared list of a valid configuration; anything unreadable falls back to the defaults,
+ * which only widens the inventory and so keeps every link check. */
+async function configuredRepositoryExcludes(root: string): Promise<readonly string[]> {
+  try {
+    const configPath = path.join(root, INIT_CONFIG_FILE);
+    if (!(await lstat(configPath)).isFile()) return [];
+    const value = JSON.parse(await readFile(configPath, "utf8")) as unknown;
+    return parseRepositoryInitConfig(value).repository.exclude;
+  } catch {
+    return [];
+  }
+}
+
 async function walkFiles(
   root: string,
   excludes: ReadonlySet<string>,
@@ -845,6 +861,18 @@ export async function initializeRepository(
     ]);
   }
 
+  const declaredExcludes = options.exclude ?? (await configuredRepositoryExcludes(root));
+  const repositoryExclude = [...new Set([...DEFAULT_EXCLUDES, ...declaredExcludes])].sort();
+  if (
+    repositoryExclude.length > 1_000 ||
+    options.exclude?.some((entry) => !isRepositoryExcludeName(entry))
+  ) {
+    return initTerminalResult("CONFLICT", initEmptyDetections(["INVALID_REPOSITORY_EXCLUDE"]), [
+      "INVALID_REPOSITORY_EXCLUDE",
+    ]);
+  }
+  const inventoryExcludes = effectiveExcludes([...INIT_MANAGED_FILES, ...repositoryExclude]);
+
   const candidateRoots = ["tests/candidates"] as const;
   const outsideCandidateRoots = (file: string): boolean =>
     !candidateRoots.some((candidateRoot) => {
@@ -852,7 +880,16 @@ export async function initializeRepository(
       const fileKey = portablePathKey(file);
       return fileKey === rootKey || fileKey.startsWith(`${rootKey}/`);
     });
-  const inventory = await walkFiles(root, effectiveExcludes([...INIT_MANAGED_FILES]));
+  let inventory: RepositoryInventory;
+  try {
+    inventory = await walkFiles(root, inventoryExcludes);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== "UNSUPPORTED_REPOSITORY_SYMLINK")
+      throw error;
+    return initTerminalResult("CONFLICT", initEmptyDetections(["UNSUPPORTED_REPOSITORY_SYMLINK"]), [
+      "UNSUPPORTED_REPOSITORY_SYMLINK",
+    ]);
+  }
   const inScopeFiles = inventory.files.filter(outsideCandidateRoots);
   const contents = new Map<string, string>();
   const evidenceBytes = new Map<string, Uint8Array>();
@@ -1103,7 +1140,7 @@ export async function initializeRepository(
 
   const config = parseRepositoryInitConfig({
     schemaVersion: "1.0.0",
-    repository: { root: ".", exclude: [".git", ".testforge", "node_modules"] },
+    repository: { root: ".", exclude: repositoryExclude },
     packageManager,
     framework,
     testCommand,
@@ -1148,7 +1185,7 @@ export async function initializeRepository(
 
   let finalInScopeFiles: string[];
   try {
-    const finalInventory = await walkFiles(root, effectiveExcludes([...INIT_MANAGED_FILES]));
+    const finalInventory = await walkFiles(root, inventoryExcludes);
     finalInScopeFiles = finalInventory.files.filter(outsideCandidateRoots);
   } catch {
     finalInScopeFiles = [];
@@ -1655,9 +1692,19 @@ async function resolveRepositoryRoot(rootInput: unknown): Promise<string> {
   }
 }
 
-export async function analyzeRepository(rootInput: string): Promise<unknown> {
+export interface RepositoryAnalysisOptions {
+  /** Also skip a valid configuration's names; campaign and audit inventories never pass this. */
+  configuredExcludes?: boolean;
+}
+
+export async function analyzeRepository(
+  rootInput: string,
+  options: RepositoryAnalysisOptions = {},
+): Promise<unknown> {
   const root = await resolveRepositoryRoot(rootInput);
-  const { files } = await walkFiles(root, effectiveExcludes([]));
+  const declaredExcludes =
+    options.configuredExcludes === true ? await configuredRepositoryExcludes(root) : [];
+  const { files } = await walkFiles(root, effectiveExcludes(declaredExcludes));
   const digest = createHash("sha256");
   const languageCounts = new Map<string, number>();
   const frameworks = new Set<string>();

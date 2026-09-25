@@ -22,6 +22,35 @@ plausible test frameworks, composite shell scripts, contradictory overrides, and
 adapter configurations return `CONFLICT`. Multiple CI providers are only sorted evidence and do not
 block initialization.
 
+The static inventory walks the filesystem, not the Git index, and never follows or copies a
+symbolic link: a link inside it returns `CONFLICT` with `UNSUPPORTED_REPOSITORY_SYMLINK` and writes
+nothing. It always skips entries named `.git`, `.testforge`, and `node_modules`, at any depth.
+When a local-only entry holds a link that no campaign needs, the operator can declare its name:
+
+```sh
+assertledger doctor . --exclude .claude --exclude .omx --json
+assertledger init . --exclude .claude --exclude .omx --json
+```
+
+Each `--exclude` value is one portable entry name without separators; every file or directory with
+that name is skipped at any depth. Anything else returns `CONFLICT` with
+`INVALID_REPOSITORY_EXCLUDE`. The declared names are written to `repository.exclude` beside the
+defaults. `init` and `doctor` without `--exclude`, `analyze` and runtime doctor's configuration check
+then reuse that list from a valid `assertledger.config.json`; an unreadable or invalid file leaves
+only the defaults, which widens the inventory. A configured entry that contains a separator matches
+nothing, as in a verification request. An explicit list, including an empty MCP `exclude` array,
+replaces the configured one, so a different declaration never silently widens or narrows the
+inventory: it fails closed, for example with `CONFIG_CONFLICT`, or with
+`UNSUPPORTED_REPOSITORY_SYMLINK` when a narrower list exposes a link again. Links outside the declared names stay fail-closed.
+
+The configured list governs only these static diagnostics and the evidence digests of
+`assertledger.lock.json`; it produces no campaign evidence. `audit`, a campaign's repository copy and
+its manifest `repositoryDigest` keep their own exclusions: the defaults, plus the verification
+request's `repository.exclude` for a campaign. `audit` therefore still refuses a linked local-only
+entry, and a request must declare the same names to leave it out of its copy; a committed
+configuration can never remove files from campaign evidence. Declaring a name is an operator decision
+recorded in a reviewable file, not a sandbox.
+
 Files at or below the managed `candidateRoots` are deliberately excluded from framework inference,
 evidence, built-in control tests, and repository-change comparison. Candidate generation therefore
 cannot silently redefine initialization facts or invalidate an otherwise unchanged lock.

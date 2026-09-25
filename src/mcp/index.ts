@@ -110,11 +110,15 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
   server.registerTool("testforge_analyze", analyzeConfig, analyzeHandler);
 
   const doctorInputSchema = z.strictObject({ root: z.string().min(1) });
+  const staticDoctorInputSchema = z.strictObject({
+    root: z.string().min(1),
+    exclude: z.array(z.string()).max(1_000).optional(),
+  });
   const doctorConfig = {
     title: "Inspect repository readiness",
     description:
-      "Return a static AssertLedger initialization plan without writing files or executing repository code.",
-    inputSchema: doctorInputSchema,
+      "Return a static AssertLedger initialization plan without writing files or executing repository code. Optional exclude names entries to leave out of the inventory at any depth; without it, a valid configuration's list applies.",
+    inputSchema: staticDoctorInputSchema,
     outputSchema: RepositoryInitResultSchema,
     annotations: {
       destructiveHint: false,
@@ -123,8 +127,13 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       readOnlyHint: true,
     },
   };
-  const doctorHandler = async ({ root }: z.infer<typeof doctorInputSchema>) =>
-    jsonResult(await assertLedger.doctor(await confinedRepositoryRoot(root)));
+  const doctorHandler = async ({ root, exclude }: z.infer<typeof staticDoctorInputSchema>) =>
+    jsonResult(
+      await assertLedger.doctor(
+        await confinedRepositoryRoot(root),
+        exclude === undefined ? {} : { exclude },
+      ),
+    );
   server.registerTool("assertledger_doctor", doctorConfig, doctorHandler);
   server.registerTool("testforge_doctor", doctorConfig, doctorHandler);
 

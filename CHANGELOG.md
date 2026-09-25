@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+A repository that keeps a local-only symbolic link, such as an agent's skill directory, can now be
+diagnosed and initialized without weakening the link refusal.
+
+- `doctor` and `init` accept `--exclude NAME`, repeatable, and the MCP `assertledger_doctor` tool an
+  optional `exclude` array. Each value is one portable entry name, skipped at any depth like the
+  defaults; anything else is a `CONFLICT` with `INVALID_REPOSITORY_EXCLUDE`. The names are written to
+  `repository.exclude`, and a valid configuration's list then applies to `init` and `doctor` without
+  flags, `analyze` and runtime doctor's configuration check. A different explicit list fails closed,
+  for example with `CONFIG_CONFLICT`, or with `UNSUPPORTED_REPOSITORY_SYMLINK` when it exposes a
+  link again.
+- `audit`, campaign copies and manifest digests ignore the configured list: they keep the defaults
+  and, for a campaign, the verification request's `repository.exclude`. `audit` therefore still
+  refuses a repository whose linked entry is only declared in the configuration.
+- A link inside the inventory still fails closed. `init` and every static doctor now report it as a
+  `CONFLICT` result with `UNSUPPORTED_REPOSITORY_SYMLINK` instead of throwing, so the CLI keeps exit
+  code 4 and the MCP tool returns the result instead of an error. `analyze` still throws. Runtime
+  doctor therefore reports such a repository as `RUNTIME_CONFIGURATION_BLOCKED` instead of
+  `RUNTIME_CONFIGURATION_UNAVAILABLE`.
+- `explain UNSUPPORTED_REPOSITORY_SYMLINK` now has a catalogue entry, and the
+  `INVALID_REPOSITORY_EXCLUDE` guidance describes entry names.
+- `isRepositoryExcludeName` is exported beside the configuration parser, and `analyzeRepository`
+  takes an optional `{ configuredExcludes: true }`; without it, the engine function is unchanged.
+
+Compatibility: schema, policy, profile, benchmark and conformance versions, manifest, audit and
+benchmark digest projections are unchanged. The public `analyze` result, whose digest is not
+evidence, now omits configured names, so its `files` and `repositoryDigest` can differ from an audit
+of the same tree. A configuration written by 1.1.1 plans the same bytes. A configuration
+whose `repository.exclude` was edited by hand used to return `CONFIG_CONFLICT`; its names now apply
+to the static inventory. SDK callers that caught the `UNSUPPORTED_REPOSITORY_SYMLINK` rejection from
+`init` or `doctor` now receive a `CONFLICT` result.
+
 ## 1.1.1 — 2026-09-23
 
 A candidate whose runs hang or fail in the infrastructure is no longer reported as an invalid test.

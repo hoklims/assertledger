@@ -10,8 +10,12 @@ export { DiagnosticCodesSchema, DiagnosticReportSchema };
 type Entry = readonly [explanation: string, nextAction: string, severity?: "info" | "limitation"];
 const CATALOGUE: Readonly<Record<string, Entry>> = {
   INVALID_REPOSITORY_EXCLUDE: [
-    "A repository exclusion is not a safe relative path.",
-    "Use explicit portable relative paths and retain every source and base test required by the declared campaign.",
+    "A repository exclusion is malformed.",
+    "For init and doctor, declare bare file or directory names without separators, at most 1,000 including the defaults; a verification request needs an array of strings. Every entry with an excluded name is skipped at any depth. Retain every source and base test required by the declared campaign.",
+  ],
+  UNSUPPORTED_REPOSITORY_SYMLINK: [
+    "The analyzed repository set contains a symbolic link; AssertLedger neither follows nor copies links.",
+    "Replace the link with a regular file or directory, or declare the name of the entry that contains it with --exclude when no campaign needs it; never exclude sources or tests the campaign requires.",
   ],
   EXECUTION_BUDGET_EXCEEDED: [
     "The complete declared campaign exceeds the execution budget.",

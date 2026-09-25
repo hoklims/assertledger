@@ -2514,6 +2514,11 @@ function initPortablePath(value: string): boolean {
   });
 }
 
+/** A declared exclusion names one entry and removes it at any depth, as inventories match names. */
+export function isRepositoryExcludeName(value: string): boolean {
+  return value.length <= 512 && !value.includes("/") && initPortablePath(value);
+}
+
 function sortedUnique(values: readonly string[]): boolean {
   return values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
 }
