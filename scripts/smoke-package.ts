@@ -432,6 +432,17 @@ function main(): void {
     assert.equal(setup.mode, "dry-run");
     assert.match(setup.limitations.join("\n"), /UNSANDBOXED/u);
     assert.ok(!existsSync(path.join(fixture, ".codex", "config.toml")));
+    const demoRefusal = runBin("assertledger", ["demo", "--json"]);
+    assert.equal(demoRefusal.status, 4, demoRefusal.stderr);
+    assert.equal(demoRefusal.stderr, "");
+    assert.deepEqual(JSON.parse(demoRefusal.stdout), {
+      schemaVersion: "1.0.0",
+      status: "REFUSED",
+      reasonCodes: ["UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED"],
+      scope: "SHIPPED_FIXTURE_ONLY",
+      requiredFlag: "--allow-unsafe-execution",
+      execution: "UNSANDBOXED",
+    });
     const demo = parse(runBin("assertledger", ["demo", "--allow-unsafe-execution", "--json"]));
     assert.equal(demo.status, "VERIFIED");
     assert.equal(demo.scope, "SHIPPED_FIXTURE_ONLY");

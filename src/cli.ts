@@ -13,6 +13,7 @@ import {
   type GitRegressionV2Options,
   renderGitRegressionSummary,
 } from "./engine/git-regression.js";
+import { type SetupClient, setupRepository } from "./engine/setup.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -21,7 +22,6 @@ import {
 } from "./evaluation/agentic-corpus.js";
 import { createAssertLedgerServer } from "./mcp/index.js";
 import { AssertLedger } from "./sdk/index.js";
-import { type SetupClient, setupRepository } from "./engine/setup.js";
 import { ASSERTLEDGER_VERSION } from "./version.js";
 
 export interface CliIo {
@@ -757,9 +757,20 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           return 64;
         }
         if (!argv.includes("--allow-unsafe-execution")) {
-          io.writeStderr(
-            "Refusing UNSANDBOXED fixture execution without --allow-unsafe-execution.\n",
-          );
+          if (argv.includes("--json")) {
+            writeJson(io, {
+              schemaVersion: "1.0.0",
+              status: "REFUSED",
+              reasonCodes: ["UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED"],
+              scope: "SHIPPED_FIXTURE_ONLY",
+              requiredFlag: "--allow-unsafe-execution",
+              execution: "UNSANDBOXED",
+            });
+          } else {
+            io.writeStderr(
+              "Refusing UNSANDBOXED fixture execution without --allow-unsafe-execution.\n",
+            );
+          }
           return 4;
         }
         const currentEntry = fileURLToPath(import.meta.url);

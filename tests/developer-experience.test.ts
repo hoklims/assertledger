@@ -616,7 +616,17 @@ describe("developer entry points", () => {
     await assert.rejects(
       execFileAsync(process.execPath, [cli, "demo", "--json"], { cwd: root }),
       (error: unknown) => {
-        assert.match((error as { stderr: string }).stderr, /--allow-unsafe-execution/u);
+        const refusal = error as { code: number; stderr: string; stdout: string };
+        assert.equal(refusal.code, 4);
+        assert.equal(refusal.stderr, "");
+        assert.deepEqual(JSON.parse(refusal.stdout), {
+          schemaVersion: "1.0.0",
+          status: "REFUSED",
+          reasonCodes: ["UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED"],
+          scope: "SHIPPED_FIXTURE_ONLY",
+          requiredFlag: "--allow-unsafe-execution",
+          execution: "UNSANDBOXED",
+        });
         return true;
       },
     );
