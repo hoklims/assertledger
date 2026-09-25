@@ -74,6 +74,23 @@ function captureIo(cwd: string): { io: CliIo; stdout(): string; stderr(): string
 }
 
 describe("developer entry points", () => {
+  it("keeps 1.2.0 release metadata aligned without rewriting historical campaign provenance", async () => {
+    assert.equal(packageMetadata.version, "1.2.0");
+    const [readme, readmeFr, changelog, site] = await Promise.all([
+      readFile(new URL("../README.md", import.meta.url), "utf8"),
+      readFile(new URL("../README.fr.md", import.meta.url), "utf8"),
+      readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
+      readFile(new URL("../site/index.html", import.meta.url), "utf8"),
+    ]);
+    assert.match(readme, /assertledger@1\.2\.0/u);
+    assert.match(readme, /--branch v1\.2\.0/u);
+    assert.match(readmeFr, /assertledger@1\.2\.0/u);
+    assert.match(readmeFr, /--branch v1\.2\.0/u);
+    assert.match(changelog, /^## 1\.2\.0 — 2026-09-25$/mu);
+    assert.equal(site.match(/data-version>1\.2\.0/gmu)?.length, 2);
+    assert.equal(site.match(/recorded with\s+assertledger 1\.1\.1/giu)?.length, 2);
+  });
+
   it("rolls back only byte-identical init files when a connection conflict appears after init", async () => {
     const root = await fixtureRepository();
     const builtRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-setup-race-entry-"));

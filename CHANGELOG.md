@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-09-25
+
+AssertLedger now offers one conflict-checked onboarding command for static repository initialization
+and project-local agent connection, plus a bounded demonstration of the installed engine.
+
+- `setup [repository] --client codex|claude-code` previews initialization and client artifacts as
+  one JSON plan. `--write` applies it only after both preflights succeed; a second run is unchanged.
+- A connection conflict discovered after initialization rolls back only regular init files created
+  by that setup call whose bytes still match the applied plan. Changed or regenerated files are
+  preserved and reported as `PARTIAL_FAILURE` with exit code 5 and explicit unresolved paths.
+- `demo --allow-unsafe-execution` copies the packaged `node:test` example to a disposable temporary
+  directory, executes it there and removes it. Its result is scoped to `SHIPPED_FIXTURE_ONLY`, keeps
+  the exact `VERIFIED`, `REJECTED`, `INCONCLUSIVE` or `ENGINE_ERROR` decision and uses the same exit
+  codes as `verify`.
 
 A repository that keeps a local-only symbolic link, such as an agent's skill directory, can now be
 diagnosed and initialized without weakening the link refusal.
@@ -26,12 +39,13 @@ diagnosed and initialized without weakening the link refusal.
   takes an optional `{ configuredExcludes: true }`; without it, the engine function is unchanged.
 
 Compatibility: schema, policy, profile, benchmark and conformance versions, manifest, audit and
-benchmark digest projections are unchanged. The public `analyze` result, whose digest is not
-evidence, now omits configured names, so its `files` and `repositoryDigest` can differ from an audit
-of the same tree. A configuration written by 1.1.1 plans the same bytes. A configuration
-whose `repository.exclude` was edited by hand used to return `CONFIG_CONFLICT`; its names now apply
-to the static inventory. SDK callers that caught the `UNSUPPORTED_REPOSITORY_SYMLINK` rejection from
-`init` or `doctor` now receive a `CONFLICT` result.
+benchmark digest projections are unchanged. `setup` and `demo` are additive CLI surfaces; existing
+`init`, `connect`, SDK and MCP contracts remain available. The public `analyze` result, whose digest
+is not evidence, now omits configured names, so its `files` and `repositoryDigest` can differ from an
+audit of the same tree. A configuration written by 1.1.1 plans the same bytes. A configuration whose
+`repository.exclude` was edited by hand used to return `CONFIG_CONFLICT`; its names now apply to the
+static inventory. SDK callers that caught the `UNSUPPORTED_REPOSITORY_SYMLINK` rejection from `init`
+or `doctor` now receive a `CONFLICT` result.
 
 ## 1.1.1 — 2026-09-23
 
