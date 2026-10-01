@@ -340,6 +340,39 @@ describe("repository init v1", () => {
     assert.deepEqual((await ledger.doctor(root)).reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
   });
 
+  it("names the refused link and the way out when analyze meets a repository link", async (context) => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+      ".local-tools/readme.txt": "local only\n",
+    });
+    const linked = await linkOrSkip(
+      context,
+      path.join(root, "test", "base.test.js"),
+      path.join(root, ".local-tools", "linked.test.js"),
+    );
+    if (!linked) return;
+
+    const refused = capture(root);
+    assert.equal(await runCli(["analyze", "."], refused.io), 4);
+    assert.equal(refused.stdout(), "");
+    const lines = refused.stderr().split("\n");
+    assert.equal(lines[0], "UNSUPPORTED_REPOSITORY_SYMLINK");
+    assert.equal(lines[1], 'Link detail: ".local-tools/linked.test.js"');
+    assert.match(refused.stderr(), /UNSUPPORTED_REPOSITORY_SYMLINK: The analyzed repository set/u);
+    assert.match(refused.stderr(), /Next action: .*init/u);
+    assert.doesNotMatch(refused.stderr(), /no explanation in the installed catalogue/u);
+
+    const declared = capture(root);
+    assert.equal(
+      await runCli(["init", ".", "--exclude", ".local-tools", "--json"], declared.io),
+      0,
+    );
+    const analyzed = capture(root);
+    assert.equal(await runCli(["analyze", "."], analyzed.io), 0);
+    assert.equal(analyzed.stderr(), "");
+  });
+
   it("refuses declared exclusions that are not one portable entry name", async () => {
     const root = await fixture(nodePackage, {
       "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",

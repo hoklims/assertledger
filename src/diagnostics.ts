@@ -15,7 +15,7 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
   ],
   UNSUPPORTED_REPOSITORY_SYMLINK: [
     "The analyzed repository set contains a symbolic link; AssertLedger neither follows nor copies links.",
-    "Replace the link with a regular file or directory, or declare the name of the entry that contains it with --exclude when no campaign needs it; never exclude sources or tests the campaign requires.",
+    "Replace the link with a regular file or directory, or declare the name of the entry that contains it when no campaign needs it: pass --exclude to doctor or init, and init records it in assertledger.config.json for analyze to honor. Never exclude sources or tests the campaign requires.",
   ],
   EXECUTION_BUDGET_EXCEEDED: [
     "The complete declared campaign exceeds the execution budget.",
@@ -316,6 +316,32 @@ export function explainReasonCodes(codes: readonly string[]): DiagnosticReport {
       };
     }),
   });
+}
+
+const LINK_REFUSAL_CODE = "UNSUPPORTED_REPOSITORY_SYMLINK";
+const MAXIMUM_QUOTED_ENTRY_LENGTH = 200;
+
+/** Quotes a repository entry name for a refusal message. A file name is repository content, so it
+ * is untrusted: every character outside printable ASCII is escaped, and a long name is cut. */
+export function quoteRepositoryEntry(entry: string): string {
+  const quoted = JSON.stringify(entry.slice(0, MAXIMUM_QUOTED_ENTRY_LENGTH)).replace(
+    /[^\x20-\x7e]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+  return entry.length > MAXIMUM_QUOTED_ENTRY_LENGTH ? `${quoted} (truncated)` : quoted;
+}
+
+/** The lines that follow the stable code when a repository link refuses an analysis: the link
+ * itself, then the catalogue guidance. Undefined for any other error, or when no link is named. */
+export function renderRepositoryLinkRefusal(error: unknown): string | undefined {
+  if (
+    !(error instanceof Error) ||
+    error.message !== LINK_REFUSAL_CODE ||
+    typeof error.cause !== "string"
+  ) {
+    return undefined;
+  }
+  return `Link detail: ${quoteRepositoryEntry(error.cause)}\n${renderDiagnostics([error.message])}`;
 }
 
 export function renderDiagnostics(codes: readonly string[]): string {

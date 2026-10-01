@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- A refused repository link is now named. After the unchanged `UNSUPPORTED_REPOSITORY_SYMLINK`
+  line, `analyze` on the CLI prints `Link detail: "<path>"` and the catalogue guidance, and
+  `assertledger_analyze` returns the same lines in its error. The path is the first link found,
+  quoted as a JSON string with every non-printable-ASCII character escaped and long names
+  truncated, because a file name is repository content. The error message, exit code 4, schemas and
+  digests are unchanged; `doctor` still reports the code only.
+- The `UNSUPPORTED_REPOSITORY_SYMLINK` guidance no longer suggests that `analyze` takes
+  `--exclude`: it belongs to `doctor` and `init`, and `init` records it in `assertledger.config.json`
+  for `analyze` to honor.
+
 ## 1.3.0 — 2026-09-25
 
 AssertLedger now offers one conflict-checked onboarding command for static repository initialization

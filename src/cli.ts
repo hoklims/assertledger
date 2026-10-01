@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
-import { renderDiagnostics } from "./diagnostics.js";
+import { renderDiagnostics, renderRepositoryLinkRefusal } from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
 import { runFixtureDemo } from "./engine/demo.js";
@@ -1438,6 +1438,8 @@ export async function runCli(
       }
       io.writeStderr(`${renderDiagnostics([error.message])}\n`);
     }
+    const linkRefusal = renderRepositoryLinkRefusal(error);
+    if (linkRefusal !== undefined) io.writeStderr(`${linkRefusal}\n`);
     return classifyError(error);
   }
 }

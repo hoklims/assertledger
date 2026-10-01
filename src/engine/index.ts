@@ -591,6 +591,14 @@ async function configuredRepositoryFramework(root: string): Promise<string | und
   }
 }
 
+/** The refusal of a repository link. The message stays the stable code, which callers match and
+ * the CLI classifies by value; the link found travels as the cause so a facade can name it. */
+function repositoryLinkError(relative: string): Error {
+  return new Error("UNSUPPORTED_REPOSITORY_SYMLINK", {
+    cause: relative.split(path.sep).join("/"),
+  });
+}
+
 async function walkFiles(
   root: string,
   excludes: ReadonlySet<string>,
@@ -606,7 +614,7 @@ async function walkFiles(
       if (excludes.has(portablePathKey(entry.name))) continue;
       const relative = path.posix.join(relativeDirectory.split(path.sep).join("/"), entry.name);
       const entryStats = await lstat(path.join(root, ...relative.split("/")));
-      if (entryStats.isSymbolicLink()) throw new Error("UNSUPPORTED_REPOSITORY_SYMLINK");
+      if (entryStats.isSymbolicLink()) throw repositoryLinkError(relative);
       registerPortablePath(spellings, relative);
       if (entryStats.isDirectory()) await visit(relative);
       else if (entryStats.isFile()) {
@@ -3334,9 +3342,7 @@ async function copyRepository(
       if (relative.split(path.sep).some((segment) => excludes.has(portablePathKey(segment)))) {
         return false;
       }
-      if ((await lstat(sourcePath)).isSymbolicLink()) {
-        throw new Error("UNSUPPORTED_REPOSITORY_SYMLINK");
-      }
+      if ((await lstat(sourcePath)).isSymbolicLink()) throw repositoryLinkError(relative);
       return true;
     },
   });
