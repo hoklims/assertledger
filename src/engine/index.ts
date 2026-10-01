@@ -3342,7 +3342,9 @@ async function copyRepository(
       if (relative.split(path.sep).some((segment) => excludes.has(portablePathKey(segment)))) {
         return false;
       }
-      if ((await lstat(sourcePath)).isSymbolicLink()) throw repositoryLinkError(relative);
+      if ((await lstat(sourcePath)).isSymbolicLink()) {
+        throw new Error("UNSUPPORTED_REPOSITORY_SYMLINK");
+      }
       return true;
     },
   });

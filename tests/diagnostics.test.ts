@@ -91,15 +91,21 @@ describe("versioned diagnostic guidance", () => {
   });
 
   it("quotes a repository entry so a hostile name never reaches a terminal or an agent raw", () => {
+    const BIDI_OVERRIDE = String.fromCharCode(0x202e);
     assert.equal(quoteRepositoryEntry(".claude/skills"), '".claude/skills"');
 
-    const hostile = quoteRepositoryEntry("a\u001b[31m‮\u0085b\n\u{1F600}é");
+    const hostile = quoteRepositoryEntry(`a\u001b[31m${BIDI_OVERRIDE}\u0085b\n\u{1F600}é`);
     assert.equal(hostile, '"a\\u001b[31m\\u202e\\u0085b\\n\\ud83d\\ude00\\u00e9"');
     assert.match(hostile, /^[\x20-\x7e]*$/u);
 
     const long = quoteRepositoryEntry("x".repeat(500));
     assert.ok(long.length < 260, `quoted entry is ${long.length} characters long`);
     assert.match(long, /\(truncated\)$/u);
+
+    const wide = quoteRepositoryEntry("é".repeat(500));
+    assert.ok(wide.length <= 1220, `quoted entry is ${wide.length} characters long`);
+    assert.match(wide, /^[\x20-\x7e]*$/u);
+    assert.match(wide, /\(truncated\)$/u);
   });
 
   it("renders the link and its guidance only for a link refusal that names an entry", () => {
@@ -108,6 +114,8 @@ describe("versioned diagnostic guidance", () => {
     assert.match(rendered, /^Link detail: ".claude\/skills"\n/u);
     assert.match(rendered, /UNSUPPORTED_REPOSITORY_SYMLINK: The analyzed repository set/u);
     assert.match(rendered, /Next action: .*init/u);
+    assert.match(rendered, /--exclude to doctor or init/u);
+    assert.doesNotMatch(rendered, /analyze[^.]*--exclude/u);
 
     assert.equal(
       renderRepositoryLinkRefusal(new Error("UNSUPPORTED_REPOSITORY_SYMLINK")),
