@@ -429,6 +429,34 @@ describe("repository analysis", () => {
     );
   });
 
+  it("names the refused repository link without changing the refusal code", async (context) => {
+    const root = await createFixtureRepository();
+    try {
+      await symlink(
+        path.join(root, "src", "is-even.js"),
+        path.join(root, "src", "linked-is-even.js"),
+        "file",
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        ["EACCES", "EPERM", "UNKNOWN"].includes(String(error.code))
+      ) {
+        context.skip(`symlink creation is unavailable: ${String(error.code)}`);
+        return;
+      }
+      throw error;
+    }
+
+    const namesTheLink = (error: unknown): boolean =>
+      error instanceof Error &&
+      error.message === "UNSUPPORTED_REPOSITORY_SYMLINK" &&
+      error.cause === "src/linked-is-even.js";
+    await assert.rejects(engine.analyzeRepository(root), namesTheLink);
+    await assert.rejects(engine.verifyCampaign(verificationRequest(root)), namesTheLink);
+  });
+
   it("normalizes missing and non-directory repository roots", async () => {
     const parent = await temporaryDirectory("testforge-invalid-root-");
     const missingRoot = path.join(parent, "missing");

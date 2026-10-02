@@ -33,7 +33,11 @@ import {
   VerificationRequestSchema,
   VerificationRequestV3Schema,
 } from "../contracts/index.js";
-import { DiagnosticCodesSchema, DiagnosticReportSchema } from "../diagnostics.js";
+import {
+  DiagnosticCodesSchema,
+  DiagnosticReportSchema,
+  renderRepositoryLinkRefusal,
+} from "../diagnostics.js";
 import { AssertLedger } from "../sdk/index.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
 
@@ -108,8 +112,15 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     inputSchema: analyzeInputSchema,
     outputSchema: RepositoryAnalysisSchema,
   };
-  const analyzeHandler = async ({ root }: z.infer<typeof analyzeInputSchema>) =>
-    jsonResult(await assertLedger.analyze(await confinedRepositoryRoot(root)));
+  const analyzeHandler = async ({ root }: z.infer<typeof analyzeInputSchema>) => {
+    try {
+      return jsonResult(await assertLedger.analyze(await confinedRepositoryRoot(root)));
+    } catch (error) {
+      const linkRefusal = renderRepositoryLinkRefusal(error);
+      if (linkRefusal === undefined) throw error;
+      throw new Error(`UNSUPPORTED_REPOSITORY_SYMLINK\n${linkRefusal}`, { cause: error });
+    }
+  };
   server.registerTool("assertledger_analyze", analyzeConfig, analyzeHandler);
   server.registerTool("testforge_analyze", analyzeConfig, analyzeHandler);
 

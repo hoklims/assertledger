@@ -276,6 +276,42 @@ describe("MCP 2026 stdio transport", () => {
     }
   });
 
+  it("names the refused repository link in the analyze error", {
+    timeout: 15_000,
+  }, async (context) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-mcp-link-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, ".local-tools"));
+    await writeFile(path.join(root, "base.test.js"), "import test from 'node:test';\n");
+    try {
+      await symlink(
+        path.join(root, "base.test.js"),
+        path.join(root, ".local-tools", "linked.test.js"),
+        "file",
+      );
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      if (!["EACCES", "EPERM", "UNKNOWN"].includes(code)) throw error;
+      context.skip(`symlink creation is unavailable: ${code}`);
+      return;
+    }
+    const { client } = await connectBuilt(root);
+
+    try {
+      const refused = await client.callTool({
+        name: "assertledger_analyze",
+        arguments: { root },
+      });
+      assert.equal(refused.isError, true);
+      const text = JSON.stringify(refused.content);
+      assert.match(text, /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+      assert.match(text, /Link detail: \\".local-tools\/linked\.test\.js\\"/u);
+      assert.match(text, /Next action: /u);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("exposes verify only in an operator-authorized child process", {
     timeout: 15_000,
   }, async () => {

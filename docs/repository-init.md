@@ -57,6 +57,14 @@ replaces the configured one, so a different declaration never silently widens or
 inventory: it fails closed, for example with `CONFIG_CONFLICT`, or with
 `UNSUPPORTED_REPOSITORY_SYMLINK` when a narrower list exposes a link again. Links outside the declared names stay fail-closed.
 
+When `analyze` refuses a link, the stable `UNSUPPORTED_REPOSITORY_SYMLINK` line stays first and the
+exit code stays 4. The CLI then prints `Link detail: "<path>"`, the first link found, followed by
+the catalogue guidance; the MCP `assertledger_analyze` error carries the same lines. The path is a
+quoted JSON string with every character outside printable ASCII escaped and long names truncated,
+because a file name is repository content. Only the first link is named, so declare its entry and
+run again to meet the next one. `analyze` itself takes no `--exclude`: the declaration goes through
+`init`, which needs a detected package manager.
+
 The configured list governs only these static diagnostics and the evidence digests of
 `assertledger.lock.json`; it produces no campaign evidence. `audit`, a campaign's repository copy and
 its manifest `repositoryDigest` keep their own exclusions: the defaults, plus the verification
