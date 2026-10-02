@@ -40,6 +40,11 @@ assertledger mcp
 
 Every command above also runs identically under the legacy `testforge` binary name.
 
+`analyze` takes the repository root and `--json` only; its output is always JSON. Any other option
+exits 64 with the usage and writes nothing to stdout. To leave an entry out of the analyzed set,
+declare it with `init --exclude NAME`: `analyze` honors the `repository.exclude` that `init` records
+in `assertledger.config.json`.
+
 `init` is static: it never executes detected commands or adapters and manages only
 `assertledger.config.json` and `assertledger.lock.json`. It requires operator-owned worlds and
 candidates rather than inventing a verification request. See
