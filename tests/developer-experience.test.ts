@@ -84,20 +84,20 @@ function captureIo(cwd: string): { io: CliIo; stdout(): string; stderr(): string
 }
 
 describe("developer entry points", () => {
-  it("keeps 1.3.1 release metadata aligned without rewriting historical campaign provenance", async () => {
-    assert.equal(packageMetadata.version, "1.3.1");
+  it("keeps 1.4.0 release metadata aligned without rewriting historical campaign provenance", async () => {
+    assert.equal(packageMetadata.version, "1.4.0");
     const [readme, readmeFr, changelog, site] = await Promise.all([
       readFile(new URL("../README.md", import.meta.url), "utf8"),
       readFile(new URL("../README.fr.md", import.meta.url), "utf8"),
       readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
       readFile(new URL("../site/index.html", import.meta.url), "utf8"),
     ]);
-    assert.match(readme, /assertledger@1\.3\.1/u);
-    assert.match(readme, /--branch v1\.3\.1/u);
-    assert.match(readmeFr, /assertledger@1\.3\.1/u);
-    assert.match(readmeFr, /--branch v1\.3\.1/u);
-    assert.match(changelog, /^## 1\.3\.1 — 2026-10-02$/mu);
-    assert.equal(site.match(/data-version>1\.3\.1/gmu)?.length, 2);
+    assert.match(readme, /assertledger@1\.4\.0/u);
+    assert.match(readme, /--branch v1\.4\.0/u);
+    assert.match(readmeFr, /assertledger@1\.4\.0/u);
+    assert.match(readmeFr, /--branch v1\.4\.0/u);
+    assert.match(changelog, /^## 1\.4\.0 — 2026-10-02$/mu);
+    assert.equal(site.match(/data-version>1\.4\.0/gmu)?.length, 2);
     assert.equal(site.match(/recorded with\s+assertledger 1\.1\.1/giu)?.length, 2);
   });
 

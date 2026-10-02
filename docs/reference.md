@@ -43,7 +43,8 @@ Every command above also runs identically under the legacy `testforge` binary na
 `analyze` takes the repository root and `--json` only; its output is always JSON. Any other option
 exits 64 with the usage and writes nothing to stdout. To leave an entry out of the analyzed set,
 declare it with `init --exclude NAME`: `analyze` honors the `repository.exclude` that `init` records
-in `assertledger.config.json`.
+in `assertledger.config.json`. An argument that starts with `-` is an option, so a repository
+directory whose name starts with `-` is passed as `./-name`.
 
 `init` is static: it never executes detected commands or adapters and manages only
 `assertledger.config.json` and `assertledger.lock.json`. It requires operator-owned worlds and

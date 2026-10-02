@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-10-02
 
 - Behavior change: `analyze` now refuses an unknown option with the usage on stderr and exit code 64,
   and writes nothing to stdout. It used to ignore the option silently, so
@@ -9,8 +9,10 @@
   `analyze <repository> --json` are unchanged, byte for byte. Exit codes are a public contract: an
   invocation that carried an ignored option and exited 0 now exits 64. Migration: drop the option;
   to leave an entry out of the analyzed set, declare it with `assertledger init --exclude NAME`,
-  which records it in `assertledger.config.json` for `analyze` to honor. No other command changes
-  with this entry; reason codes, schemas and digests are unchanged.
+  which records it in `assertledger.config.json` for `analyze` to honor. An argument that starts
+  with `-` is an option, so a repository directory whose name starts with `-` is passed as
+  `./-name`. No other command changes with this entry; reason codes, schemas and digests are
+  unchanged.
 
 ## 1.3.1 — 2026-10-02
 
