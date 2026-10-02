@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Behavior change: `analyze` now refuses an unknown option with the usage on stderr and exit code 64,
+  and writes nothing to stdout. It used to ignore the option silently, so
+  `analyze . --exclude .claude` ran on the full set while looking as if the exclusion were applied.
+  `--json` stays accepted (the output is always JSON), and `analyze`, `analyze <repository>` and
+  `analyze <repository> --json` are unchanged, byte for byte. Exit codes are a public contract: an
+  invocation that carried an ignored option and exited 0 now exits 64. Migration: drop the option;
+  to leave an entry out of the analyzed set, declare it with `assertledger init --exclude NAME`,
+  which records it in `assertledger.config.json` for `analyze` to honor. No other command changes
+  with this entry; reason codes, schemas and digests are unchanged.
+
 ## 1.3.1 — 2026-10-02
 
 - A refused repository link is now named. After the unchanged `UNSUPPORTED_REPOSITORY_SYMLINK`

@@ -373,6 +373,50 @@ describe("repository init v1", () => {
     assert.equal(analyzed.stderr(), "");
   });
 
+  it("refuses unknown analyze options with the usage and exit 64, and keeps every accepted form unchanged", async () => {
+    const root = await fixture(nodePackage, {
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "test/base.test.js": "import test from 'node:test';\n",
+    });
+
+    const baseline = capture(root);
+    assert.equal(await runCli(["analyze"], baseline.io), 0);
+    const expected = baseline.stdout();
+    assert.notEqual(expected, "");
+    assert.equal(baseline.stderr(), "");
+    // Compatibility: these forms succeeded before the change and must keep the same exit code and bytes.
+    // `--json` stays accepted because the output is always JSON and the documented and configured
+    // invocations pass it (docs/reference.md, integrations/skill/SKILL.md, the init test command).
+    for (const argv of [
+      ["analyze", "."],
+      ["analyze", ".", "--json"],
+      ["analyze", "--json", "."],
+      ["analyze", "--json"],
+      ["analyze", ".", "--json", "--json"],
+    ]) {
+      const accepted = capture(root);
+      assert.equal(await runCli(argv, accepted.io), 0, argv.join(" "));
+      assert.equal(accepted.stdout(), expected, argv.join(" "));
+      assert.equal(accepted.stderr(), "", argv.join(" "));
+    }
+
+    // Breaking change: an unknown option was silently ignored and is now refused before any analysis.
+    for (const argv of [
+      ["analyze", ".", "--unknown"],
+      ["analyze", "--unknown"],
+      ["analyze", ".", "--exclude", ".claude"],
+      ["analyze", "--exclude", ".claude", "--exclude", ".cursor", "."],
+      ["analyze", ".", "--json", "--bogus-flag"],
+      ["analyze", ".", "-x"],
+      ["analyze", "missing-directory", "--unknown"],
+    ]) {
+      const refused = capture(root);
+      assert.equal(await runCli(argv, refused.io), 64, argv.join(" "));
+      assert.equal(refused.stdout(), "", argv.join(" "));
+      assert.match(refused.stderr(), /^Usage: assertledger <command>/u, argv.join(" "));
+    }
+  });
+
   it("refuses declared exclusions that are not one portable entry name", async () => {
     const root = await fixture(nodePackage, {
       "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",

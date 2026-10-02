@@ -1026,6 +1026,11 @@ export async function runCli(
         return 0;
       }
       case "analyze": {
+        // `--json` stays accepted: the output is always JSON and the documented invocations pass it.
+        if (argv.slice(1).some((argument) => argument.startsWith("-") && argument !== "--json")) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
         const root = path.resolve(io.cwd, positional[1] ?? ".");
         writeJson(io, await ledger.analyze(root));
         return 0;
