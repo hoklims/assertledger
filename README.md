@@ -14,7 +14,7 @@ You get a verdict, the observations behind it and an evidence file you can repla
 Install in your repository with Node.js 22.15 or later:
 
 ```sh
-npm install --save-dev assertledger@1.3.0
+npm install --save-dev assertledger@1.3.1
 npx assertledger doctor .
 ```
 
@@ -59,7 +59,7 @@ flowchart LR
 You need **Git**, **Node.js 22.15+** and **pnpm 11.1.2**. The example uses the built-in `node:test` adapter.
 
 ```sh
-git clone --branch v1.3.0 https://github.com/hoklims/assertledger.git
+git clone --branch v1.3.1 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build

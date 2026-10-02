@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 — 2026-10-02
 
 - A refused repository link is now named. After the unchanged `UNSUPPORTED_REPOSITORY_SYMLINK`
   line, `analyze` on the CLI prints `Link detail: "<path>"` and the catalogue guidance, and
