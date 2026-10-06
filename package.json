@@ -72,7 +72,7 @@
     "prepack": "pnpm run build && pnpm run check:schemas"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.0",
     "typescript": "7.0.2",
     "zod": "4.4.3"
   },
