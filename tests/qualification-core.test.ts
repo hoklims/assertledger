@@ -88,6 +88,7 @@ function observations(plan: QualificationPlan): QualificationObservation[] {
         state: "COMPLETED" as const,
         facts: {
           exitCode: world.kind === "TARGET" ? 0 : 1,
+          commandOutcome: world.kind === "TARGET" ? "PASS" : "EXPECTED_FAILURE",
           testsDiscovered: 1,
           testFiles: plan.suites.flatMap((suite) => suite.files),
           attributed: true,
@@ -112,7 +113,7 @@ function receipt(plan = fixture(), records = observations(plan)): QualificationR
     observations: records,
     provenance: {
       engineVersion: "1.0.0",
-      adapterVersions: { command: "1.0.0", "node-test": "1.0.0" },
+      adapterVersions: { command: "1.0.0", turbo: "1.0.0", "node-test": "1.0.0" },
       runtime: { node: "22.15.0" },
       executionTrust: "TRUSTED_LOCAL_UNSANDBOXED",
     },
@@ -225,10 +226,125 @@ test("incomplete extraction and omitted suites remain named open obligations", (
   }
 });
 
-test("missing discriminants leave the obligation open", () => {
+test("target worlds require an assigned discriminant", () => {
   const plan = fixture();
   present(plan.worlds[1]).discriminants = [];
-  assert.equal(receipt(plan).decision, "OPEN");
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Target world requires a discriminant/u,
+  );
+});
+
+test("an additional unassigned target cannot disappear from admission", () => {
+  const plan = fixture();
+  plan.worlds.push({ id: "ignored-fault", kind: "TARGET", files: [], discriminants: [] });
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Target world requires a discriminant/u,
+  );
+});
+
+test("ordinary nonzero command results cannot qualify baseline or target evidence", () => {
+  for (const adapter of ["command", "turbo"] as const) {
+    for (const worldId of ["reference", "fault", "neutral"]) {
+      const plan = fixture();
+      present(plan.actions[0]).adapter = adapter;
+      if (worldId === "fault") present(present(plan.obligations[0]).checks[0]).expected = 0;
+      const records = observations(plan);
+      for (const record of records) {
+        if (worldId === "fault") record.facts.exitCode = record.worldId === "fault" ? 1 : 0;
+        record.facts.commandOutcome = record.facts.exitCode === 0 ? "PASS" : "EXPECTED_FAILURE";
+        if (record.worldId === worldId) delete record.facts.commandOutcome;
+      }
+      const evidence = receipt(plan, records);
+      assert.equal(
+        evidence.decision,
+        "OPEN",
+        `${adapter}/${worldId} ordinary error received credit`,
+      );
+      assert.ok(
+        present(evidence.assessments[0]).reasons.some((reason: string) =>
+          reason.startsWith("OPERATIONAL_FAILURE:"),
+        ),
+      );
+    }
+  }
+});
+
+test("a target assigned only to live CI cannot disappear from local admission", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).kind = "ci-live";
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Target discriminant requires a locally evaluated obligation/u,
+  );
+});
+
+test("contradictory command completion facts reject resealed evidence", () => {
+  for (const facts of [
+    { exitCode: 1, commandOutcome: "PASS" },
+    { exitCode: 0, commandOutcome: "EXPECTED_FAILURE" },
+    { exitCode: 1, commandOutcome: "ASSERTION_FAILURE" },
+  ]) {
+    const records = observations(fixture());
+    Object.assign(present(records[0]).facts, facts);
+    const evidence = receipt(fixture(), records);
+    assert.equal(evidence.decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(evidence).valid, false);
+  }
+});
+
+test("optional target operational failures remain open without contaminating unrelated required scope", () => {
+  const plan = fixture();
+  plan.actions.push({ ...structuredClone(present(plan.actions[0])), id: "optional-gate" });
+  plan.obligations.push({
+    ...structuredClone(present(plan.obligations[0])),
+    id: "optional",
+    required: false,
+    suiteIds: [],
+    checks: [{ id: "exit", actionId: "optional-gate", field: "exitCode", expected: 1 }],
+  });
+  plan.worlds.push({
+    id: "optional-fault",
+    kind: "TARGET",
+    files: [],
+    discriminants: [{ obligationId: "optional", checkIds: ["exit"] }],
+  });
+  const records = observations(plan);
+  for (const record of records) {
+    const assignedTarget =
+      record.worldId === (record.actionId === "gate" ? "fault" : "optional-fault");
+    record.facts.exitCode = assignedTarget ? 0 : 1;
+    record.facts.commandOutcome = assignedTarget ? "PASS" : "EXPECTED_FAILURE";
+    if (record.actionId === "optional-gate" && record.worldId === "optional-fault")
+      record.state = "COLLECTION_ERROR";
+  }
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "QUALIFIED");
+  assert.deepEqual(evidence.coveredGuaranteeIds, ["propagation"]);
+  assert.deepEqual(evidence.openGuaranteeIds, ["optional"]);
+  assert.equal(
+    present(
+      evidence.assessments.find(
+        (item: { obligationId: string }) => item.obligationId === "optional",
+      ),
+    ).status,
+    "OPEN",
+  );
+  present(plan.obligations[1]).required = true;
+  const requiredRecords = observations(plan);
+  for (const record of requiredRecords)
+    if (record.actionId === "optional-gate" && record.worldId === "optional-fault")
+      record.state = "COLLECTION_ERROR";
+  assert.equal(receipt(plan, requiredRecords).decision, "OPEN");
+});
+
+test("collector semantic completion supports an expected failure code seven", () => {
+  const plan = fixture();
+  present(present(plan.obligations[0]).checks[0]).expected = 7;
+  const records = observations(plan);
+  for (const record of records) if (record.worldId !== "fault") record.facts.exitCode = 7;
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
 });
 
 test("missing completed-process exit facts reject the evidence and invalidate replay", () => {
@@ -264,6 +380,7 @@ test("unrelated mismatch cannot count as the declared target witness", () => {
   const records = observations(plan);
   for (const record of records) {
     record.facts.exitCode = 1;
+    record.facts.commandOutcome = "EXPECTED_FAILURE";
     record.facts.selected = record.worldId === "fault" ? [] : ["leaf"];
   }
   assert.equal(receipt(plan, records).decision, "OPEN");
@@ -272,9 +389,11 @@ test("unrelated mismatch cannot count as the declared target witness", () => {
 test("every declared fault must discriminate in every repeat", () => {
   const plan = fixture();
   const records = observations(plan);
-  present(
+  const repeated = present(
     records.find((record) => record.worldId === "fault" && record.attempt === 2),
-  ).facts.exitCode = 1;
+  );
+  repeated.facts.exitCode = 1;
+  repeated.facts.commandOutcome = "EXPECTED_FAILURE";
   const result = receipt(plan, records);
   assert.equal(result.decision, "OPEN");
   assert.ok(present(result.assessments[0]).reasons.includes("UNSTABLE_OBSERVATIONS:fault"));
@@ -344,6 +463,7 @@ test("completed test assertions require candidate attribution and integral disco
 test("live CI requires trusted future admission and self-declared independence grants nothing", () => {
   const plan = fixture();
   present(plan.obligations[0]).kind = "ci-live";
+  plan.worlds = plan.worlds.filter((world) => world.kind !== "TARGET");
   const result = receipt(plan);
   result.externalCi = {
     independent: true,

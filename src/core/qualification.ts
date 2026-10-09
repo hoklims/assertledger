@@ -80,6 +80,20 @@ function observationIssues(
     }
     if (
       observation.state === "COMPLETED" &&
+      (action?.adapter === "command" || action?.adapter === "turbo") &&
+      Object.hasOwn(observation.facts, "commandOutcome")
+    ) {
+      const { commandOutcome, exitCode } = observation.facts;
+      if (
+        (commandOutcome !== "PASS" && commandOutcome !== "EXPECTED_FAILURE") ||
+        (commandOutcome === "PASS" && exitCode !== 0) ||
+        (commandOutcome === "EXPECTED_FAILURE" &&
+          (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode) || exitCode <= 0))
+      )
+        issues.push(`CONTRADICTORY_COMMAND_FACTS:${key}`);
+    }
+    if (
+      observation.state === "COMPLETED" &&
       (action?.adapter === "node-test" || action?.adapter === "bun-native")
     ) {
       const { testOutcome, exitCode, attributed, testsDiscovered } = observation.facts;
@@ -319,6 +333,9 @@ export function createQualificationReceipt(
             obligation.kind === "tests";
           if (
             observation.state !== "COMPLETED" ||
+            ((action?.adapter === "command" || action?.adapter === "turbo") &&
+              observation.facts.exitCode !== 0 &&
+              observation.facts.commandOutcome !== "EXPECTED_FAILURE") ||
             (testsRequired &&
               (typeof observation.facts.testsDiscovered !== "number" ||
                 observation.facts.testsDiscovered <= 0)) ||

@@ -257,6 +257,8 @@ export function parseQualificationPlan(value: unknown): QualificationPlan {
     );
     if (world.kind !== "TARGET" && world.discriminants.length > 0)
       throw new Error("Only target worlds declare discriminants");
+    if (world.kind === "TARGET" && world.discriminants.length === 0)
+      throw new Error("Target world requires a discriminant");
     for (const discriminant of world.discriminants) {
       unique(discriminant.checkIds, "discriminant check");
       const obligation = plan.obligations.find((item) => item.id === discriminant.obligationId);
@@ -265,6 +267,8 @@ export function parseQualificationPlan(value: unknown): QualificationPlan {
         discriminant.checkIds.some((id) => !obligation.checks.some((check) => check.id === id))
       )
         throw new Error("Unknown discriminant reference");
+      if (obligation.kind === "ci-live")
+        throw new Error("Target discriminant requires a locally evaluated obligation");
     }
   }
   return plan;
