@@ -109,6 +109,9 @@ completion, checks each child report before forwarding a nonzero exit, and emits
 on spawn errors, signals, null statuses, ordinary exceptions or compilation failures. Completion
 reports are trusted-local adapter statements, not authenticated evidence: a malicious unsandboxed
 candidate can forge them. They cannot select operator checks or establish hosted CI admission.
+The Turbo summary collector has no qualified nonzero completion protocol; a numeric Turbo
+failure remains a collection error even when its summary is present. The propagation fixture
+qualifies its terminal command separately through the leaf/wrapper completion chain.
 
 The CI configuration collector retains the complete route/step/stage/parallel ancestry, positions,
 conditions, manual/automatic triggers and parallel fail-fast settings. Commands alone do not

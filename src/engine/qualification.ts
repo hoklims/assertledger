@@ -466,11 +466,15 @@ async function executeAction(
         } else if (action.adapter === "ci-config") {
           if (processResult.exitCode !== 0) state = "COLLECTION_ERROR";
           else facts = { ...facts, ...JSON.parse(processResult.stdout.text) };
-        } else if (action.adapter === "turbo")
+        } else if (action.adapter === "turbo") {
           facts = {
             ...facts,
             ...(await turboFacts(root, Math.max(plan.maximumOutputBytes, 1024 * 1024))),
           };
+          // A task summary is not a qualified semantic failure attestation.
+          // This adapter currently supports successful Turbo completion only.
+          if (processResult.exitCode !== 0) state = "COLLECTION_ERROR";
+        }
       } catch {
         state = "COLLECTION_ERROR";
       }

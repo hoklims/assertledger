@@ -20,12 +20,12 @@ process.exit(exitCode);\n`;
 async function execute(
   reference: string,
   targets: Array<{ id: string; content: string }>,
-  adapter: "command" | "ci-config" = "command",
+  adapter: "command" | "ci-config" | "turbo" = "command",
   expected: QualificationPlan["obligations"][number]["checks"][number]["expected"] = 7,
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "qualification-command-ci-"));
   try {
-    const file = adapter === "command" ? "action.mjs" : "pipeline.yml";
+    const file = adapter === "ci-config" ? "pipeline.yml" : "action.mjs";
     await writeFile(path.join(root, file), reference);
     const bunProbe =
       adapter === "ci-config"
@@ -57,7 +57,7 @@ async function execute(
       obligations: [
         {
           id: "completion",
-          kind: adapter === "command" ? "propagation" : "ci-config",
+          kind: adapter === "ci-config" ? "ci-config" : "propagation",
           required: true,
           suiteIds: [],
           limits: [],
@@ -65,7 +65,7 @@ async function execute(
             {
               id: "semantic",
               actionId: "action",
-              field: adapter === "command" ? "exitCode" : "ciRoutes",
+              field: adapter === "ci-config" ? "ciRoutes" : "exitCode",
               expected,
             },
           ],
@@ -76,7 +76,10 @@ async function execute(
           id: "action",
           adapter,
           executable,
-          arguments: [file],
+          arguments:
+            adapter === "turbo"
+              ? [file, "--summarize", "--cache=local:rw", "--cache-dir={cache}"]
+              : [file],
           environment: {},
           prepareFiles: [],
           removePaths: [],
@@ -132,6 +135,24 @@ test("completed expected nonzero and swallowed semantic zero remain distinguisha
     receipt.observations.find((item) => item.worldId === "swallow")?.facts.commandOutcome,
     "PASS",
   );
+});
+
+test("numeric Turbo failure with a summary but no qualified completion stays operational", async () => {
+  const summary = `import {mkdirSync,writeFileSync} from 'node:fs';
+mkdirSync('.turbo/runs',{recursive:true});
+writeFileSync('.turbo/runs/run.json',JSON.stringify({tasks:[{taskId:'one',hash:'1',cache:{status:'MISS'}}]}));
+`;
+  const receipt = await execute(
+    `${summary}process.exit(0);`,
+    [{ id: "turbo-error", content: `${summary}throw new Error('ordinary Turbo task failure');` }],
+    "turbo",
+    0,
+  );
+  assert.equal(
+    receipt.observations.find((item) => item.worldId === "turbo-error")?.state,
+    "COLLECTION_ERROR",
+  );
+  assert.equal(receipt.decision, "OPEN");
 });
 
 const yaml = (extra = "", nesting = false) =>
