@@ -374,3 +374,72 @@ test("receipt and replay reject unknown fields and unsupported versions", () => 
   assert.ok(contracts.qualificationReceiptJsonSchema());
   assert.ok(contracts.qualificationReplayResultJsonSchema());
 });
+
+test("operator plans pin transitive tools with an explicit identity and structured version probe", () => {
+  const plan = fixture();
+  Object.assign(present(plan.tools[0]), {
+    identityPath: "C:/tools/pnpm/pnpm.mjs",
+    versionCommand: {
+      executable: "C:/tools/node/node.exe",
+      arguments: ["C:/tools/pnpm/pnpm.mjs", "--version"],
+    },
+  });
+  present(plan.actions[0]).environment.PATH = "C:/tools/pnpm;C:/tools/node";
+  assert.doesNotThrow(() => contracts.parseQualificationPlan(plan));
+  const parsed = contracts.parseQualificationPlan(plan);
+  assert.equal(present(parsed.tools[0]).identityPath, "C:/tools/pnpm/pnpm.mjs");
+  assert.deepEqual(present(parsed.tools[0]).versionCommand.arguments, [
+    "C:/tools/pnpm/pnpm.mjs",
+    "--version",
+  ]);
+  assert.equal(present(parsed.actions[0]).environment.PATH, "C:/tools/pnpm;C:/tools/node");
+});
+
+test("transitive tool identity requires absolute paths and structured probes remain closed", () => {
+  for (const fields of [
+    { identityPath: "relative/pnpm.mjs" },
+    { versionCommand: { executable: "node", arguments: [], shell: true } },
+  ]) {
+    const plan = fixture();
+    Object.assign(present(plan.tools[0]), fields);
+    assert.throws(() => contracts.parseQualificationPlan(plan));
+  }
+});
+
+test("execution requests and expected replay domains use strict schemas with named JSON schemas", () => {
+  assert.equal(typeof contracts.QualificationExecutionRequestSchema?.parse, "function");
+  assert.equal(typeof contracts.QualificationExpectedDomainSchema?.parse, "function");
+  const plan = fixture();
+  const { planDigest } = core.sealQualificationPlan(plan);
+  const request = {
+    root: "C:/fixture",
+    plan,
+    planDigest,
+    candidate: { files: [{ path: "candidate.test.js", content: "" }] },
+  };
+  assert.deepEqual(contracts.QualificationExecutionRequestSchema.parse(request), request);
+  assert.throws(() =>
+    contracts.QualificationExecutionRequestSchema.parse({ ...request, shell: true }),
+  );
+  const domain = {
+    planDigest,
+    candidateDigest: plan.subject.candidateDigest,
+    inputDigest: plan.subject.inputDigest,
+    commit: plan.subject.commit,
+    baseCommit: plan.subject.baseCommit,
+  };
+  assert.deepEqual(contracts.QualificationExpectedDomainSchema.parse(domain), domain);
+  assert.throws(() =>
+    contracts.QualificationExpectedDomainSchema.parse({ ...domain, unknown: true }),
+  );
+  for (const getter of [
+    contracts.qualificationPlanJsonSchema,
+    contracts.qualificationReceiptJsonSchema,
+    contracts.qualificationReplayResultJsonSchema,
+    contracts.qualificationExecutionRequestJsonSchema,
+  ]) {
+    const schema = getter();
+    assert.equal(typeof schema.$id, "string");
+    assert.equal(typeof schema.title, "string");
+  }
+});

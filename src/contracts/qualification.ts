@@ -56,7 +56,30 @@ export const QualificationPlanSchema = z.strictObject({
     inputDigest: Digest,
   }),
   tools: z
-    .array(z.strictObject({ id: Id, version: z.string().min(1).max(128), digest: Digest }))
+    .array(
+      z.strictObject({
+        id: Id,
+        version: z.string().min(1).max(128),
+        digest: Digest,
+        identityPath: z
+          .string()
+          .min(1)
+          .max(4096)
+          .refine(
+            (value) =>
+              /^(?:[A-Za-z]:[\\/]|\/|\\\\[^\\]+\\[^\\]+)/.test(value) &&
+              [...value].every((character) => character.charCodeAt(0) >= 32),
+            "Tool identity must name an absolute path",
+          )
+          .optional(),
+        versionCommand: z
+          .strictObject({
+            executable: z.string().min(1).max(4096),
+            arguments: z.array(z.string().max(8192)).max(100),
+          })
+          .optional(),
+      }),
+    )
     .min(1)
     .max(100),
   suites: z
@@ -103,7 +126,7 @@ export const QualificationPlanSchema = z.strictObject({
             .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
             .refine(
               (key) =>
-                !/^(NODE_OPTIONS|NODE_TEST_|TESTFORGE_|ASSERTLEDGER_|QUALIFICATION_|PATH$|HOME$|USERPROFILE$|COMSPEC$|SHELL$)/i.test(
+                !/^(NODE_OPTIONS|NODE_TEST_|TESTFORGE_|ASSERTLEDGER_|QUALIFICATION_|HOME$|USERPROFILE$|COMSPEC$|SHELL$)/i.test(
                   key,
                 ),
               "Reserved environment key",
@@ -144,6 +167,22 @@ export const QualificationPlanSchema = z.strictObject({
   allowedCandidatePaths: z.array(RelativePath).max(1000),
 });
 export type QualificationPlan = z.infer<typeof QualificationPlanSchema>;
+
+export const QualificationExecutionRequestSchema = z.strictObject({
+  root: z.string().min(1).max(4096),
+  plan: QualificationPlanSchema,
+  planDigest: Digest,
+  candidate: z.strictObject({ files: z.array(File).max(1000) }),
+});
+export type QualificationExecutionRequest = z.infer<typeof QualificationExecutionRequestSchema>;
+export const QualificationExpectedDomainSchema = z.strictObject({
+  planDigest: Digest,
+  candidateDigest: Digest,
+  inputDigest: Digest,
+  commit: z.string().min(1).max(128),
+  baseCommit: z.string().min(1).max(128),
+});
+export type QualificationExpectedDomain = z.infer<typeof QualificationExpectedDomainSchema>;
 
 export function parseQualificationPlan(value: unknown): QualificationPlan {
   const plan = QualificationPlanSchema.parse(value);
@@ -258,11 +297,30 @@ export const QualificationReplayResultSchema = z.strictObject({
 });
 export type QualificationReplayResult = z.infer<typeof QualificationReplayResultSchema>;
 export function qualificationPlanJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(QualificationPlanSchema);
+  return {
+    ...z.toJSONSchema(QualificationPlanSchema),
+    $id: "https://testforge.dev/schemas/qualification-plan.v1.json",
+    title: "Orchestration qualification plan v1",
+  };
 }
 export function qualificationReceiptJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(QualificationReceiptSchema);
+  return {
+    ...z.toJSONSchema(QualificationReceiptSchema),
+    $id: "https://testforge.dev/schemas/qualification-receipt.v1.json",
+    title: "Orchestration qualification receipt v1",
+  };
 }
 export function qualificationReplayResultJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(QualificationReplayResultSchema);
+  return {
+    ...z.toJSONSchema(QualificationReplayResultSchema),
+    $id: "https://testforge.dev/schemas/qualification-replay-result.v1.json",
+    title: "Orchestration qualification replay result v1",
+  };
+}
+export function qualificationExecutionRequestJsonSchema(): Record<string, unknown> {
+  return {
+    ...z.toJSONSchema(QualificationExecutionRequestSchema),
+    $id: "https://testforge.dev/schemas/qualification-execution-request.v1.json",
+    title: "Orchestration qualification execution request v1",
+  };
 }

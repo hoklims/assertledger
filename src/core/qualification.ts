@@ -7,6 +7,7 @@ import {
   type QualificationPlan,
   type QualificationReceipt,
   type QualificationReplayResult,
+  type QualificationExpectedDomain,
 } from "../contracts/qualification.js";
 import { canonicalize, sha256Canonical } from "./index.js";
 
@@ -256,13 +257,7 @@ export function createQualificationReceipt(
   });
 }
 
-export type QualificationExpectedDomain = {
-  planDigest: string;
-  candidateDigest: string;
-  inputDigest: string;
-  commit: string;
-  baseCommit: string;
-};
+export type { QualificationExpectedDomain } from "../contracts/qualification.js";
 
 export function replayQualificationReceipt(
   value: unknown,
