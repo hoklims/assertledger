@@ -5,16 +5,22 @@ import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
 import { QualificationExpectedDomainSchema } from "./contracts/qualification.js";
-import { renderDiagnostics, renderRepositoryLinkRefusal } from "./diagnostics.js";
+import {
+  quoteRepositoryEntry,
+  renderDiagnostics,
+  renderRepositoryLinkRefusal,
+} from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
 import { runFixtureDemo } from "./engine/demo.js";
+import type { RepositoryLinkAssessment } from "./engine/index.js";
 import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
   renderGitRegressionSummary,
 } from "./engine/git-regression.js";
 import { type RepositorySetupResult, type SetupClient, setupRepository } from "./engine/setup.js";
+import { DEFAULT_WITNESS_ENVIRONMENT_ALLOWLIST } from "./engine/witness-import.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -82,8 +88,13 @@ Commands:
           evidence-provider-manifest|evidence-export-request|evidence-export|
           evidence-export-replay-result>
                                                Print a JSON Schema
-  verify [request.json|-] [--container-runtime JSON_ARGV | --allow-unsafe-execution]
-                                               Execute a v2 container or trusted-local campaign
+  verify [request.json|-] [--container-runtime JSON_ARGV | --allow-unsafe-execution
+        | --allow-windows-native-execution]   Execute a v2-v4 container, trusted-local or
+                                               declared Windows-native campaign
+  import-witness [request.json|-] --out DIRECTORY
+        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
+         | --allow-unsafe-execution | --allow-windows-native-execution)
+        [--env NAME ...] [--json]              Replay a recorded red/green witness
   replay [manifest.json|-]                     Verify an evidence digest
   qualification-plan [plan.json|-]             Seal an operator-owned obligation inventory
   qualify [request.json|-] --allow-unsafe-execution
@@ -140,6 +151,11 @@ function authorizeTrustedLocalExecution(request: unknown): unknown {
       acknowledgedUnsafeExecution: true,
     },
   };
+}
+
+/** Windows-native execution has its own operator flag; the request value alone never grants it. */
+function authorizeWindowsNativeExecution(request: unknown): unknown {
+  return authorizeTrustedLocalExecution(request);
 }
 
 function authorizeBenchmarkAcquisition(request: unknown): unknown {
@@ -647,6 +663,20 @@ const VALIDATION_ERROR_CODES = new Set([
   "UNSUPPORTED_ADAPTER",
   "UNSUPPORTED_ISOLATION",
   "UNSUPPORTED_REPOSITORY_SYMLINK",
+  "REPOSITORY_LINK_IN_TEST_CLOSURE",
+  "REPOSITORY_LINK_ESCAPES_ROOT",
+  "TEST_CLOSURE_UNBOUNDED",
+  "WINDOWS_NATIVE_HOST_REQUIRED",
+  "WINDOWS_NATIVE_EXECUTION_NOT_ACKNOWLEDGED",
+  "DESIGNATED_TEST_OVERLAID",
+  "DESIGNATED_TEST_FILE_MISSING",
+  "REPOSITORY_DEPENDENCIES_EXCLUDED",
+  "WITNESS_REPOSITORY_INVALID",
+  "WITNESS_TARGET_PATH_INVALID",
+  "WITNESS_TARGET_BASE_MISMATCH",
+  "WITNESS_TARGET_UNCHANGED",
+  "WITNESS_OUTPUT_INSIDE_REPOSITORY",
+  "WITNESS_OUTPUT_EXISTS",
   "VERIFICATION_REQUEST_REPOSITORY_MISMATCH",
   "WORLD_BUDGET_EXCEEDED",
   "WORLD_OVERLAY_BYTES_EXCEEDED",
@@ -683,6 +713,23 @@ function classifyError(error: unknown): number {
     return 4;
   }
   return 5;
+}
+
+/** Names the link that refused a static diagnostic, or the computed imports that leave the closure
+ * unbounded. Repository paths are untrusted content and are quoted. */
+function renderLinkAssessment(
+  assessment: RepositoryLinkAssessment | undefined,
+): string | undefined {
+  if (assessment === undefined) return undefined;
+  if (assessment.refused !== undefined) {
+    return `Link detail: ${quoteRepositoryEntry(assessment.refused.path)} (${assessment.refused.reasonCode})`;
+  }
+  const unbounded = assessment.unbounded
+    .slice(0, 20)
+    .map((edge) => `Unbounded closure: ${quoteRepositoryEntry(edge.file)} (${edge.reason})`);
+  return [`Links outside every test closure: ${assessment.omitted.length}`, ...unbounded].join(
+    "\n",
+  );
 }
 
 export async function runCli(
@@ -795,10 +842,16 @@ export async function runCli(
           }
           return runtimeResult.status === "READY" ? 0 : 3;
         }
+        let linkAssessment: RepositoryLinkAssessment | undefined;
         const result = await ledger.doctor(root, {
           ...(exclude.length === 0 ? {} : { exclude }),
           ...(framework === undefined ? {} : { framework }),
+          onLinkAssessment: (assessment) => {
+            linkAssessment = assessment;
+          },
         });
+        const linkDetail = renderLinkAssessment(linkAssessment);
+        if (linkDetail !== undefined) io.writeStderr(`${linkDetail}\n`);
         if (argv.includes("--json")) {
           writeJson(io, result);
         } else {
@@ -1166,6 +1219,81 @@ export async function runCli(
         else io.writeStdout(renderGitRegressionSummary(result, options));
         return decisionExitCode(result);
       }
+      case "import-witness": {
+        const valueFlags = new Set(["--out", "--container-image", "--container-runtime", "--env"]);
+        const booleanFlags = new Set([
+          "--allow-unsafe-execution",
+          "--allow-windows-native-execution",
+          "--json",
+        ]);
+        let input: string | undefined;
+        for (let index = 1; index < argv.length; index += 1) {
+          const argument = argv[index] ?? "";
+          if (valueFlags.has(argument)) {
+            const value = argv[index + 1];
+            if (value === undefined || value.startsWith("--")) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            index += 1;
+          } else if (!booleanFlags.has(argument)) {
+            if (argument.startsWith("--") || input !== undefined) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            input = argument;
+          }
+        }
+        const out = optionalFlag(argv, "--out");
+        if (out === undefined) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
+        const allowWindowsNative = argv.includes("--allow-windows-native-execution");
+        const containerImage = optionalFlag(argv, "--container-image");
+        const containerRuntime = optionalFlag(argv, "--container-runtime");
+        const environment = repeatedFlagValues(argv, "--env");
+        const selected = [allowUnsafeExecution, allowWindowsNative, containerImage !== undefined];
+        if (
+          selected.filter(Boolean).length > 1 ||
+          (containerImage === undefined && containerRuntime !== undefined) ||
+          (containerImage !== undefined && environment.length > 0)
+        ) {
+          throw new TypeError("ISOLATION_MODE_CONFLICT");
+        }
+        if (!selected.some(Boolean)) {
+          io.writeStderr(
+            "Refusing to replay a witness without an authorized backend: pass --container-image, " +
+              "--allow-unsafe-execution or --allow-windows-native-execution.\n",
+          );
+          return 4;
+        }
+        const environmentAllowlist =
+          environment.length === 0 ? [...DEFAULT_WITNESS_ENVIRONMENT_ALLOWLIST] : environment;
+        const result = await ledger.importWitness(await readJsonInput(input, io), {
+          out: path.resolve(io.cwd, out),
+          isolation:
+            containerImage !== undefined
+              ? {
+                  kind: "container",
+                  image: containerImage,
+                  ...(containerRuntime === undefined
+                    ? {}
+                    : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+                }
+              : allowWindowsNative
+                ? { kind: "windows-native", environmentAllowlist }
+                : { kind: "trusted-local", environmentAllowlist },
+        });
+        if (argv.includes("--json")) writeJson(io, result);
+        else {
+          io.writeStdout(
+            `${await readFile(path.join(path.resolve(io.cwd, out), "summary.md"), "utf8")}`,
+          );
+        }
+        return decisionExitCode(result);
+      }
       case "schema": {
         const name = positional[1];
         if (
@@ -1229,24 +1357,49 @@ export async function runCli(
           io,
         );
         const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
+        const allowWindowsNative = argv.includes("--allow-windows-native-execution");
         const runtimeArgument = optionalFlag(argv, "--container-runtime");
-        const containerRequest =
-          isRecord(request) &&
-          isRecord(request.isolation) &&
-          request.isolation.kind === "container";
-        if (containerRequest ? allowUnsafeExecution : runtimeArgument !== undefined) {
+        const isolationKind =
+          isRecord(request) && isRecord(request.isolation) ? request.isolation.kind : undefined;
+        const containerRequest = isolationKind === "container";
+        const windowsNativeRequest = isolationKind === "windows-native";
+        // Each backend has exactly one authorization; another backend's flag never stands in.
+        if (
+          (containerRequest && (allowUnsafeExecution || allowWindowsNative)) ||
+          (windowsNativeRequest && (allowUnsafeExecution || runtimeArgument !== undefined)) ||
+          (!containerRequest &&
+            !windowsNativeRequest &&
+            (allowWindowsNative || runtimeArgument !== undefined))
+        ) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
         }
-        if (!containerRequest && !allowUnsafeExecution) {
+        if (windowsNativeRequest && !allowWindowsNative) {
+          io.writeStderr(
+            "Refusing WINDOWS_NATIVE_UNSANDBOXED execution without --allow-windows-native-execution.\n",
+          );
+          return 4;
+        }
+        if (!containerRequest && !windowsNativeRequest && !allowUnsafeExecution) {
           io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
           return 4;
         }
         const version2 = isRecord(request) && request.schemaVersion === "2.0.0";
         const version3 = isRecord(request) && request.schemaVersion === "3.0.0";
+        const version4 = isRecord(request) && request.schemaVersion === "4.0.0";
         const runtimeOptions =
           runtimeArgument === undefined
             ? {}
             : { containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) } };
+        if (version4) {
+          const authorized = containerRequest
+            ? request
+            : windowsNativeRequest
+              ? authorizeWindowsNativeExecution(request)
+              : authorizeTrustedLocalExecution(request);
+          const manifest = await ledger.verifyV4(authorized, runtimeOptions);
+          writeJson(io, manifest);
+          return decisionExitCode(manifest);
+        }
         const result = version3
           ? await ledger.verifyV3(
               containerRequest ? request : authorizeTrustedLocalExecution(request),

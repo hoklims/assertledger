@@ -1111,8 +1111,8 @@ describe("campaign orchestration", () => {
     await assert.rejects(engine.verifyCampaign(request), /UNSAFE_TARGET_OUTCOME/);
 
     request.policy.acceptedTargetOutcomes = ["ASSERTION_FAILURE"];
-    // V3 adds the Bun adapter; an unknown major stays refused.
-    request.schemaVersion = "4.0.0";
+    // V4 is the latest major; an unknown major stays refused.
+    request.schemaVersion = "5.0.0";
     await assert.rejects(engine.verifyCampaign(request), /SCHEMA_VERSION_UNSUPPORTED/);
   });
 

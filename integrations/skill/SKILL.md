@@ -2,7 +2,7 @@
 name: assertledger
 description: Analyze a repository, submit candidate tests, and accept only deterministic AssertLedger evidence.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # AssertLedger skill
@@ -16,10 +16,14 @@ window.
 ## Preferred path: a committed regression
 
 1. Run `assertledger doctor <repo> --json` for static readiness. Runtime probes require the separate
-   `doctor --runtime --allow-unsafe-execution` command and prior operator authorization. A
-   `UNSUPPORTED_REPOSITORY_SYMLINK` conflict stays a refusal: only the operator may declare the
-   local-only entry that holds the link with `--exclude NAME`. Never add names to
-   `repository.exclude` yourself; the configured list never removes files from campaign evidence.
+   `doctor --runtime --allow-unsafe-execution` command and prior operator authorization. Doctor
+   judges each repository link against the module closure of the tests that would run: a link
+   outside every closure is reported as `REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE`, while a link in a
+   closure (`REPOSITORY_LINK_IN_TEST_CLOSURE`) or leaving the repository
+   (`REPOSITORY_LINK_ESCAPES_ROOT`) stays a `CONFLICT` that names the path. A refusal is never
+   yours to work around: only the operator may replace the link or declare the local-only entry that
+   holds it with `--exclude NAME`. Never add names to `repository.exclude` yourself; the configured
+   list never removes files from campaign evidence.
 2. Ask the operator or harness for the buggy, corrected and neutral revisions, the neutral reason,
    candidate path and unchanged base tests. Do not invent a neutral control's meaning.
 3. For committed dependency-free JavaScript `node:test`, use `assertledger check` or the MCP
@@ -28,6 +32,22 @@ window.
    read-only `assertledger_explain` tool to understand a refusal without changing the policy.
 5. The configuration, skill and server do not grant trust. Never treat a crash, timeout, compilation
    error or missing test as detection. The returned limitations remain part of the result.
+
+## Replaying a recorded red/green witness
+
+1. When the operator supplies a witness (mutated target files with their base digests, one existing
+   designated test named by file and describe path, and its expected first failure line), write it
+   as a `witness-import-request.v1.json` document; do not change the targets, test or line.
+2. The operator chooses the backend; a witness never does. Run
+   `assertledger import-witness <witness.json> --out <new-directory> --json` with exactly one of
+   `--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]`,
+   `--allow-unsafe-execution` or `--allow-windows-native-execution`, as authorized. The resulting
+   isolation level, `CONTAINER`, `UNSANDBOXED` or `WINDOWS_NATIVE_UNSANDBOXED`, is part of the
+   result and must be reported with it.
+3. Only an assertion failure attributed to the designated test counts as red. A timeout, crash,
+   collection or compile error, or a test that is not found is never red, and diverging repeated runs
+   make the candidate `UNSTABLE`. Accept the witness only on `VERIFIED` plus `assertledger replay` with
+   `valid: true`.
 
 ## Lower-level verification requests
 

@@ -85,6 +85,9 @@ async function linkOrSkip(context: TestContext, target: string, link: string): P
   }
 }
 
+// A link a runner could discover as a test is in the closure: the refusal names that reason too.
+const LINK_IN_CLOSURE_CODES = ["REPOSITORY_LINK_IN_TEST_CLOSURE", "UNSUPPORTED_REPOSITORY_SYMLINK"];
+
 const nodePackage = {
   name: "fixture",
   packageManager: "pnpm@10.0.0",
@@ -244,7 +247,7 @@ describe("repository init v1", () => {
 
     const undeclared = await ledger.doctor(root);
     assert.equal(undeclared.status, "CONFLICT");
-    assert.deepEqual(undeclared.reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+    assert.deepEqual(undeclared.reasonCodes, LINK_IN_CLOSURE_CODES);
     assert.deepEqual(undeclared.actions, []);
     assert.deepEqual(undeclared.files, []);
     await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
@@ -273,12 +276,12 @@ describe("repository init v1", () => {
     const changed = await ledger.doctor(root, { exclude: [".local-tools", "vendor"] });
     assert.deepEqual(changed.reasonCodes, ["CONFIG_CONFLICT"]);
     const narrowed = await ledger.doctor(root, { exclude: [] });
-    assert.deepEqual(narrowed.reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+    assert.deepEqual(narrowed.reasonCodes, LINK_IN_CLOSURE_CODES);
 
     await symlink(baseTest, path.join(root, "test", "linked.test.js"), "file");
     const inside = await ledger.doctor(root);
     assert.equal(inside.status, "CONFLICT");
-    assert.deepEqual(inside.reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+    assert.deepEqual(inside.reasonCodes, LINK_IN_CLOSURE_CODES);
     await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
   });
 
@@ -327,7 +330,7 @@ describe("repository init v1", () => {
     const configPath = path.join(root, "assertledger.config.json");
     for (const content of ["{ not json", JSON.stringify(unsorted)]) {
       await writeFile(configPath, content);
-      assert.deepEqual((await ledger.doctor(root)).reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+      assert.deepEqual((await ledger.doctor(root)).reasonCodes, LINK_IN_CLOSURE_CODES);
       await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
     }
 
@@ -337,7 +340,7 @@ describe("repository init v1", () => {
     await writeFile(externalConfig, validContent);
     await rm(configPath);
     await symlink(externalConfig, configPath, "file");
-    assert.deepEqual((await ledger.doctor(root)).reasonCodes, ["UNSUPPORTED_REPOSITORY_SYMLINK"]);
+    assert.deepEqual((await ledger.doctor(root)).reasonCodes, LINK_IN_CLOSURE_CODES);
   });
 
   it("names the refused link and the way out when analyze meets a repository link", async (context) => {

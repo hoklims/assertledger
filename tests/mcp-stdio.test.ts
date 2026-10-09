@@ -242,6 +242,7 @@ describe("MCP 2026 stdio transport", () => {
       });
       assert.equal(undeclared.isError, undefined, stderr.join(""));
       assert.deepEqual(parseRepositoryInitResult(undeclared.structuredContent).reasonCodes, [
+        "REPOSITORY_LINK_IN_TEST_CLOSURE",
         "UNSUPPORTED_REPOSITORY_SYMLINK",
       ]);
       const declared = await client.callTool({
@@ -272,6 +273,7 @@ describe("MCP 2026 stdio transport", () => {
         arguments: { root, exclude: [] },
       });
       assert.deepEqual(parseRepositoryInitResult(emptied.structuredContent).reasonCodes, [
+        "REPOSITORY_LINK_IN_TEST_CLOSURE",
         "UNSUPPORTED_REPOSITORY_SYMLINK",
       ]);
     } finally {

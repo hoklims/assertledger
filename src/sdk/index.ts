@@ -41,6 +41,7 @@ import {
   type EvidenceManifestContract,
   type EvidenceManifestV2Contract,
   type EvidenceManifestV3Contract,
+  type EvidenceManifestV4Contract,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
@@ -83,6 +84,8 @@ import {
   parseVerificationRequest,
   parseVerificationRequestV2,
   parseVerificationRequestV3,
+  parseVerificationRequestV4,
+  parseEvidenceManifestV4,
   parseVersionedEvidenceManifest,
   type ReplayResult,
   type RepositoryAnalysis,
@@ -151,6 +154,7 @@ import {
   replayAgenticCorpusProvenance,
   verifyAgenticCorpusAllocationCommitmentSignatures,
 } from "../evaluation/agentic-corpus.js";
+import { importWitness, type WitnessImportOptions } from "../engine/witness-import.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
 import {
   QualificationExecutionRequestSchema,
@@ -260,7 +264,7 @@ export class AssertLedger {
 
   async doctor(
     root: string,
-    options: Pick<RepositoryInitOptions, "exclude" | "framework"> = {},
+    options: Pick<RepositoryInitOptions, "exclude" | "framework" | "onLinkAssessment"> = {},
   ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
     return this.init(root, { ...options, dryRun: true });
   }
@@ -298,6 +302,30 @@ export class AssertLedger {
     );
   }
 
+  /**
+   * Executes a v4 campaign: designated Bun tests, snapshotted dependencies, container or declared
+   * Windows-native isolation. Its manifest records the snapshot scope and the isolation level.
+   */
+  async verifyV4(
+    request: unknown,
+    options: VerifyCampaignOptions = {},
+  ): Promise<EvidenceManifestV4Contract> {
+    return parseEvidenceManifestV4(
+      await verifyCampaign(parseVerificationRequestV4(request), options),
+    );
+  }
+
+  /**
+   * Replays a recorded red/green witness: mutated targets, one designated test and its expected
+   * failure line. The operator chooses the isolation in `options`; the witness cannot.
+   */
+  async importWitness(
+    witness: unknown,
+    options: WitnessImportOptions,
+  ): Promise<EvidenceManifestV4Contract> {
+    return importWitness(witness, options);
+  }
+
   async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
     return qualifyGitRegression(options);
   }
@@ -311,7 +339,8 @@ export class AssertLedger {
     let parsedManifest:
       | EvidenceManifestContract
       | EvidenceManifestV2Contract
-      | EvidenceManifestV3Contract;
+      | EvidenceManifestV3Contract
+      | EvidenceManifestV4Contract;
     try {
       parsedManifest = parseVersionedEvidenceManifest(manifest);
     } catch {
