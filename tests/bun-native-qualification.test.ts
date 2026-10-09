@@ -14,10 +14,17 @@ test("native Bun expect qualification is available independently of the frozen h
 });
 
 const executable = "bun";
-async function collect(source: string, files = ["case.test.ts"], timeoutMs = 5000) {
+async function collect(
+  source: string,
+  files = ["case.test.ts"],
+  timeoutMs = 5000,
+  extras: Record<string, string> = {},
+) {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-native-"));
   try {
     await writeFile(path.join(cwd, "case.test.ts"), source);
+    for (const [file, content] of Object.entries(extras))
+      await writeFile(path.join(cwd, file), content);
     await writeFile(path.join(cwd, "helper.ts"), "export const actual: number = 2;");
     return await collectBunNative({
       executable,
@@ -151,4 +158,97 @@ test("an empty suite is explicitly no tests", async () => {
   assert.equal(result.state, "NO_TESTS");
   assert.equal(result.facts.testsDiscovered, 0);
   assert.equal(result.facts.attributed, false);
+});
+
+test("active getters throwing ordinary errors never issue native matcher assertions", async () => {
+  for (const matcher of ['toHaveProperty("value",1)', "toEqual({value:1})"]) {
+    const result = await collect(
+      `import {test,expect} from "bun:test"; test("getter",()=>{const obj={get value(){throw new Error("user crash");}};expect(obj).${matcher};});`,
+    );
+    assert.notEqual(result.facts.testOutcome, "ASSERTION_FAILURE");
+    assert.equal(result.facts.attributed, false);
+  }
+});
+
+test("node assertion callback rethrows cannot issue attributed AssertionError", async () => {
+  const result = await collect(
+    'import test from "node:test"; import assert from "node:assert/strict"; test("predicate",()=>{const userError=new assert.AssertionError({message:"user"});assert.throws(()=>{throw Error("input");},()=>{throw userError;});});',
+  );
+  assert.notEqual(result.facts.testOutcome, "ASSERTION_FAILURE");
+  assert.equal(result.facts.attributed, false);
+});
+
+test("each supported passive matcher has reference, target and neutral witnesses", async () => {
+  for (const expression of [
+    "expect(actual).toBe(1)",
+    "expect({value:actual}).toEqual({value:1})",
+    "expect({value:actual}).toStrictEqual({value:1})",
+    'expect({value:actual}).toHaveProperty("value",1)',
+    'expect(()=>{throw Error(String(actual));}).toThrow("1")',
+  ]) {
+    for (const [world, actual] of [
+      ["reference", 1],
+      ["target", 2],
+      ["neutral", 1],
+    ] as const) {
+      const result = await collect(
+        `import {test,expect} from "bun:test"; const actual=${actual};test("${world}",()=>{${expression};});`,
+      );
+      assert.equal(result.state, "COMPLETED", `${world} ${expression}`);
+      assert.equal(result.facts.testOutcome, world === "target" ? "ASSERTION_FAILURE" : "PASS");
+      assert.deepEqual(result.facts.testFiles, ["case.test.ts"]);
+    }
+  }
+});
+
+test("supported Node assertions have reference, target and neutral witnesses", async () => {
+  for (const expression of [
+    "assert.equal(actual,1)",
+    "assert.strictEqual(actual,1)",
+    "assert.ok(actual===1)",
+  ]) {
+    for (const [world, actual] of [
+      ["reference", 1],
+      ["target", 2],
+      ["neutral", 1],
+    ] as const) {
+      const result = await collect(
+        `import test from "node:test";import assert from "node:assert/strict";const actual=${actual};test("${world}",()=>{${expression};});`,
+      );
+      assert.equal(result.state, "COMPLETED");
+      assert.equal(result.facts.testOutcome, world === "target" ? "ASSERTION_FAILURE" : "PASS");
+    }
+  }
+});
+
+test("active shapes, custom matchers, callbacks and matcher misuse are operational failures", async () => {
+  for (const expression of [
+    'expect(new Proxy({}, {get(){throw Error("trap");}})).toEqual({})',
+    'expect({valueOf(){throw Error("coercion");}}).toBe(1)',
+    'expect({value:1}).toEqual({get value(){throw Error("expected getter");}})',
+    "expect(1).toBe()",
+    "expect(1).toBeTruthy()",
+    'expect.extend({custom(){throw Error("custom");}})',
+    'expect(()=>{throw Object.defineProperty(Error("active"),"message",{get(){throw Error("getter");}});}).toThrow("different")',
+  ]) {
+    const result = await collect(
+      `import {test,expect} from "bun:test";test("unqualified",()=>{${expression};});`,
+    );
+    assert.notEqual(result.facts.testOutcome, "ASSERTION_FAILURE", expression);
+    assert.equal(result.facts.attributed, false);
+  }
+});
+
+test("all declared files must actually start tests", async () => {
+  const source = 'import {test} from "bun:test"; test("positive",()=>{});';
+  for (const extras of [{ "other.test.ts": "export const empty=true;" }, {}]) {
+    const result = await collect(source, ["case.test.ts", "other.test.ts"], 5000, extras);
+    assert.notEqual(result.state, "COMPLETED");
+    assert.equal(result.facts.attributed, false);
+  }
+  const full = await collect(source, ["case.test.ts", "other.test.ts"], 5000, {
+    "other.test.ts": source,
+  });
+  assert.equal(full.facts.testOutcome, "PASS");
+  assert.deepEqual(full.facts.testFiles, ["case.test.ts", "other.test.ts"]);
 });

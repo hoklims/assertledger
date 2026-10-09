@@ -23,6 +23,7 @@ export interface BunNativeCollection {
     testsDiscovered: number;
     testOutcome: string;
     attributed: boolean;
+    testFiles: string[];
     stdoutDigest?: string;
     stderrDigest?: string;
   };
@@ -53,7 +54,13 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
   };
   const empty = (state: BunNativeCollection["state"]): BunNativeCollection => ({
     state,
-    facts: { exitCode: null, testsDiscovered: 0, testOutcome: state, attributed: false },
+    facts: {
+      exitCode: null,
+      testsDiscovered: 0,
+      testOutcome: state,
+      attributed: false,
+      testFiles: [],
+    },
     runtime,
   });
   try {
@@ -95,11 +102,13 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
     const row = report as Record<string, unknown>;
     if (
       Object.keys(row).sort().join(",") !==
-        "attributed,candidateTestsDiscovered,exitCode,outcome,protocolVersion,testsDiscovered" ||
+        "attributed,candidateTestsDiscovered,exitCode,outcome,protocolVersion,testFiles,testsDiscovered" ||
       row.protocolVersion !== "1.0.0" ||
       !Number.isSafeInteger(row.testsDiscovered) ||
       (row.testsDiscovered as number) < 0 ||
       typeof row.attributed !== "boolean" ||
+      !Array.isArray(row.testFiles) ||
+      row.testFiles.some((file) => typeof file !== "string") ||
       (row.exitCode !== null && !Number.isInteger(row.exitCode))
     )
       return empty("INFRA_ERROR");
@@ -119,6 +128,7 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
         testsDiscovered: row.testsDiscovered as number,
         testOutcome: row.outcome,
         attributed: row.attributed,
+        testFiles: row.testFiles as string[],
         stdoutDigest: execution.stdout.digest,
         stderrDigest: execution.stderr.digest,
       },

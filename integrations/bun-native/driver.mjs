@@ -11,13 +11,20 @@ const MAX_OUTPUT_BYTES = 64 * 1024;
 const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
 const PRELOAD_SOURCE_PATH = fileURLToPath(new URL("./preload.mjs", import.meta.url));
 
-function report(outcome, testsDiscovered = 0, candidateTestsDiscovered = 0, attributed = false) {
+function report(
+  outcome,
+  testsDiscovered = 0,
+  candidateTestsDiscovered = 0,
+  attributed = false,
+  testFiles = [],
+) {
   return {
     protocolVersion: RESULT_VERSION,
     outcome,
     testsDiscovered,
     candidateTestsDiscovered,
     attributed,
+    testFiles,
   };
 }
 
@@ -181,9 +188,12 @@ export function classifyBunInstrumentedEvidence(
     return infrastructureFailure("TEST_COUNT_MISMATCH");
   }
   const files = new Set(found.values());
+  const testFiles = [...files].sort();
   if ([...baseFiles].some((file) => !files.has(file))) {
     return infrastructureFailure("BASE_TEST_FILE_NOT_STARTED");
   }
+  if ([...candidateFiles].some((file) => !files.has(file)))
+    return infrastructureFailure("DECLARED_TEST_FILE_NOT_STARTED");
   if ([...files].some((file) => !baseFiles.has(file) && !candidateFiles.has(file))) {
     return infrastructureFailure("UNEXPECTED_TEST_FILE");
   }
@@ -197,12 +207,12 @@ export function classifyBunInstrumentedEvidence(
   if (exitCode === 0) {
     return candidateFiles.size > 0 && candidateIds.length === 0
       ? report("NO_TEST_DISCOVERED", completed.length, 0, false)
-      : report("PASS", completed.length, candidateIds.length, candidateFiles.size > 0);
+      : report("PASS", completed.length, candidateIds.length, candidateFiles.size > 0, testFiles);
   }
   const candidateFailures = failures.filter((entry) => candidateFiles.has(found.get(entry.id)));
   const baseFailures = failures.filter((entry) => baseFiles.has(found.get(entry.id)));
   if (baseFailures.length > 0 || candidateIds.length === 0) {
-    return report("PROCESS_CRASH", completed.length, candidateIds.length, false);
+    return report("PROCESS_CRASH", completed.length, candidateIds.length, false, testFiles);
   }
   const attributed =
     candidateFailures.length > 0 &&
@@ -213,6 +223,7 @@ export function classifyBunInstrumentedEvidence(
     completed.length,
     candidateIds.length,
     attributed,
+    testFiles,
   );
 }
 

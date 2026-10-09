@@ -6,12 +6,10 @@ import { closeSync, readSync, writeSync } from "node:fs";
 import path from "node:path";
 import * as nodeTest from "node:test";
 import { fileURLToPath } from "node:url";
+import { types } from "node:util";
 
 const root = process.env.ASSERTLEDGER_BUN_ROOT;
-if (!path.isAbsolute(root ?? "")) {
-  throw new Error("ASSERTLEDGER_BUN_PRELOAD_CONFIGURATION_INVALID");
-}
-
+if (!path.isAbsolute(root ?? "")) throw new Error("ASSERTLEDGER_BUN_PRELOAD_CONFIGURATION_INVALID");
 const preloadPath = fileURLToPath(import.meta.url);
 const safeApply = Reflect.apply.bind(Reflect);
 const safeGet = Reflect.get.bind(Reflect);
@@ -21,15 +19,87 @@ const issuingTest = WeakMap.prototype.get.bind(issuedDuringTest);
 const activeTestExecution = new AsyncLocalStorage();
 const currentTestId = AsyncLocalStorage.prototype.getStore.bind(activeTestExecution);
 const runInTest = AsyncLocalStorage.prototype.run.bind(activeTestExecution);
-// Attribution is issued at the native matcher, never inferred from diagnostic text.
+const supportedMatchers = new Set([
+  "toBe",
+  "toEqual",
+  "toStrictEqual",
+  "toHaveProperty",
+  "toThrow",
+]);
+const supportedNodeAssertions = new Set(["ok", "equal", "strictEqual"]);
+const isProxy = types.isProxy.bind(types);
+const descriptorsOf = Object.getOwnPropertyDescriptors.bind(Object);
+const prototypeOf = Object.getPrototypeOf.bind(Object);
+function refuse() {
+  throw new Error("ASSERTLEDGER_BUN_NATIVE_ACTIVE_OR_UNQUALIFIED_INPUT");
+}
+function passive(value, seen = new WeakSet(), depth = 0) {
+  if (typeof value === "function") refuse();
+  if (value === null || typeof value !== "object") return;
+  if (depth > 64 || isProxy(value)) refuse();
+  if (seen.has(value)) return;
+  seen.add(value);
+  const prototype = prototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== Array.prototype && prototype !== null)
+    refuse();
+  const descriptors = descriptorsOf(value);
+  for (const descriptor of Reflect.ownKeys(descriptors).map((key) => descriptors[key])) {
+    if (!("value" in descriptor)) refuse();
+    passive(descriptor.value, seen, depth + 1);
+  }
+}
+function passiveThrown(value) {
+  if (value === null || typeof value !== "object") return passive(value);
+  if (isProxy(value) || prototypeOf(value) !== Error.prototype) refuse();
+  const descriptors = descriptorsOf(value);
+  for (const descriptor of Reflect.ownKeys(descriptors).map((key) => descriptors[key])) {
+    if (!("value" in descriptor)) refuse();
+    passive(descriptor.value);
+  }
+}
+function validateMatcher(name, arguments_, operand, modifier) {
+  if (!supportedMatchers.has(name)) refuse();
+  if (name === "toThrow") {
+    if (arguments_.length > 1 || (arguments_.length === 1 && typeof arguments_[0] !== "string"))
+      refuse();
+    if (modifier !== "rejects" && (typeof operand.actual !== "function" || isProxy(operand.actual)))
+      refuse();
+    return;
+  }
+  if (name === "toHaveProperty") {
+    if (
+      arguments_.length < 1 ||
+      arguments_.length > 2 ||
+      typeof arguments_[0] !== "string" ||
+      !/^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$/u.test(arguments_[0]) ||
+      arguments_[0]
+        .split(".")
+        .some((key) => ["__proto__", "constructor", "prototype"].includes(key))
+    )
+      refuse();
+    if (arguments_.length === 2) passive(arguments_[1]);
+  } else {
+    if (arguments_.length !== 1) refuse();
+    passive(arguments_[0]);
+  }
+  if (operand.promise === undefined) passive(operand.actual);
+  else if (modifier !== "resolves" && modifier !== "rejects") refuse();
+}
 function wrapExpectation(expectation, operand, modifier) {
   return new Proxy(expectation, {
     get(target, property) {
+      if (
+        property !== "not" &&
+        property !== "resolves" &&
+        property !== "rejects" &&
+        !supportedMatchers.has(property)
+      )
+        refuse();
       const value = safeGet(target, property, target);
       if (property === "not" || property === "resolves" || property === "rejects")
         return wrapExpectation(value, operand, property === "not" ? modifier : property);
-      if (typeof value !== "function") return value;
       return (...arguments_) => {
+        validateMatcher(property, arguments_, operand, modifier);
         const id = currentTestId();
         const failed = (error) => {
           if (
@@ -38,7 +108,8 @@ function wrapExpectation(expectation, operand, modifier) {
             typeof error === "object" &&
             !(error instanceof TypeError) &&
             !(error instanceof RangeError) &&
-            !(modifier === "resolves" && operand.rejected)
+            !operand.invalidOperand &&
+            !operand.userErrors.has(error)
           )
             markIssuingTest(error, id);
           throw error;
@@ -46,6 +117,7 @@ function wrapExpectation(expectation, operand, modifier) {
         const invoke = () => {
           try {
             const result = safeApply(value, target, arguments_);
+            if (operand.invalidOperand) refuse();
             return result && typeof result.then === "function"
               ? Promise.resolve(result).catch(failed)
               : result;
@@ -53,49 +125,86 @@ function wrapExpectation(expectation, operand, modifier) {
             return failed(error);
           }
         };
-        // Rejecting the input is an operational failure, not a matcher-issued error.
-        return modifier === "resolves" && operand.promise !== undefined
-          ? operand.promise.then(invoke)
-          : invoke();
+        return operand.promise !== undefined && modifier === "resolves"
+          ? operand.promise.then((actual) => {
+              passive(actual);
+              return invoke();
+            })
+          : operand.promise !== undefined && modifier === "rejects"
+            ? operand.promise.then(
+                () => invoke(),
+                (error) => {
+                  passiveThrown(error);
+                  return invoke();
+                },
+              )
+            : invoke();
       };
     },
   });
 }
 const nativeExpect = new Proxy(bunTest.expect, {
-  get(target, property, receiver) {
-    if (property === "extend")
-      throw new Error("ASSERTLEDGER_BUN_NATIVE_CUSTOM_MATCHERS_UNQUALIFIED");
-    return safeGet(target, property, receiver);
+  get() {
+    refuse();
   },
   apply(target, thisArg, arguments_) {
-    const operand = { rejected: false, promise: undefined };
-    if (arguments_[0] instanceof Promise) {
-      operand.promise = arguments_[0];
-      arguments_[0].then(undefined, () => {
-        operand.rejected = true;
-      });
+    if (arguments_.length !== 1 || isProxy(arguments_[0])) refuse();
+    const operand = {
+      actual: arguments_[0],
+      promise: undefined,
+      userErrors: new WeakSet(),
+      invalidOperand: false,
+    };
+    if (types.isPromise(operand.actual)) {
+      if (prototypeOf(operand.actual) !== Promise.prototype) refuse();
+      operand.promise = operand.actual;
     }
-    return wrapExpectation(safeApply(target, thisArg, arguments_), operand, undefined);
+    const controlledArguments = [...arguments_];
+    if (typeof operand.actual === "function") {
+      controlledArguments[0] = (...callbackArguments) => {
+        try {
+          const result = safeApply(operand.actual, undefined, callbackArguments);
+          try {
+            passive(result);
+          } catch (error) {
+            operand.invalidOperand = true;
+            throw error;
+          }
+          return result;
+        } catch (error) {
+          if (error !== null && typeof error === "object") operand.userErrors.add(error);
+          try {
+            passiveThrown(error);
+          } catch (failure) {
+            operand.invalidOperand = true;
+            throw failure;
+          }
+          throw error;
+        }
+      };
+    }
+    return wrapExpectation(safeApply(target, thisArg, controlledArguments), operand, undefined);
   },
 });
 const AssertionError = nodeAssert.AssertionError;
 const assertionCache = new WeakMap();
-function wrapNodeAssertion(native) {
+function wrapNodeAssertion(native, name = "ok") {
   if (assertionCache.has(native)) return assertionCache.get(native);
   const wrapper = new Proxy(native, {
     apply(target, thisArg, arguments_) {
+      if (!supportedNodeAssertions.has(name)) refuse();
+      if (
+        arguments_.length < (name === "ok" ? 1 : 2) ||
+        arguments_.length > (name === "ok" ? 2 : 3)
+      )
+        refuse();
+      for (const argument of arguments_) passive(argument);
       const id = currentTestId();
-      const failed = (error) => {
+      try {
+        return safeApply(target, thisArg, arguments_);
+      } catch (error) {
         if (id !== undefined && error instanceof AssertionError) markIssuingTest(error, id);
         throw error;
-      };
-      try {
-        const result = safeApply(target, thisArg, arguments_);
-        return result && typeof result.then === "function"
-          ? Promise.resolve(result).catch(failed)
-          : result;
-      } catch (error) {
-        return failed(error);
       }
     },
     get(target, property, receiver) {
@@ -103,7 +212,7 @@ function wrapNodeAssertion(native) {
       return typeof value === "function" &&
         property !== "AssertionError" &&
         property !== "constructor"
-        ? wrapNodeAssertion(value)
+        ? wrapNodeAssertion(value, property === "strict" ? "ok" : property)
         : value;
     },
   });
@@ -256,7 +365,9 @@ bunTest.mock.module("node:assert/strict", () => ({
   ...Object.fromEntries(
     Object.entries(nodeAssert).map(([name, value]) => [
       name,
-      typeof value === "function" && name !== "AssertionError" ? wrapNodeAssertion(value) : value,
+      typeof value === "function" && name !== "AssertionError"
+        ? wrapNodeAssertion(value, name)
+        : value,
     ]),
   ),
   default: controlledNodeAssert,
