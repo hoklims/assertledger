@@ -23,6 +23,93 @@ const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
 const rawDigest = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 const cases = [
   {
+    id: "unassigned-fault-world",
+    target: "src/contracts/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        /if \(world\.kind === "TARGET" && world\.discriminants\.length === 0\)\s*throw new Error\("Target world requires a discriminant"\);/u,
+        "",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "an additional unassigned target cannot disappear from admission",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "numeric-command-failure-admission",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace('observation.facts.commandOutcome !== "EXPECTED_FAILURE"', "false"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "ordinary nonzero command results cannot qualify baseline or target evidence",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "contradictory-command-facts",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace('Object.hasOwn(observation.facts, "commandOutcome")', "false"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "contradictory command completion facts reject resealed evidence",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "command-completion-collection",
+    target: "src/engine/qualification.ts",
+    change: (source: string) =>
+      source.replace(/\|\|\s*\(action\.adapter === "command" && facts\.exitCode !== 0\)/u, ""),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "nonzero ordinary-error|nonzero compilation|nonzero nested-missing",
+      "tests/qualification-command-ci.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "turbo-operational-failure",
+    target: "src/engine/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        /(\/\/ This adapter currently supports successful Turbo completion only\.\s*)if \(processResult\.exitCode !== 0\) state = "COLLECTION_ERROR";/u,
+        "$1",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "numeric Turbo failure with a summary but no qualified completion stays operational",
+      "tests/qualification-command-ci.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "ci-execution-conditions",
+    target: "src/engine/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        '{ ...rest, condition: value.condition ?? null, trigger: value.trigger ?? "automatic" }',
+        '{ ...rest, condition: null, trigger: "automatic" }',
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "real CI parser detects conditional and manual gates",
+      "tests/qualification-command-ci.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "operational-and-suite-admission",
     target: "src/core/qualification.ts",
     change: (source: string) =>
