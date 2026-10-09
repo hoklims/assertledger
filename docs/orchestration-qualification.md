@@ -68,12 +68,12 @@ not admission. Receipts list `coveredGuaranteeIds`, `openGuaranteeIds`, reasons 
 | Native Bun tests | Pinned runtime, signed event pipe, JUnit concordance, actual files | Matcher-issued error belongs to the same test | Changed native assertion value; getter/crash refusals |
 | Selection | Real Turbo summary, selected IDs and dependency closure | Exact required task IDs | Required dependency removed; actual empty filter |
 | Cache | Cold/warm/invalidation; fresh external execution traces; deleted/restored output bytes | Required executions and hashes equal expected values | Forgotten input; incomplete restoration; wrongly cached disabled task |
-| Propagation and wrappers | Actual leaf → Turbo → wrappers → terminal exit and required-stage traces | Exact expected nonzero exit and mandatory trace | Absorbed exit, omitted stage, empty filter, later success, stale success |
-| CI configuration | Bun YAML parser outside the mutated candidate route; anchors resolved | Required route/step/command relationships | Pull-request gate disconnected |
+| Propagation and wrappers | Actual leaf → Turbo → wrappers → terminal exit, fresh semantic completion report and required-stage traces | Exact expected nonzero exit, matching attestation and mandatory trace | Absorbed exit, omitted stage, empty filter, later success, stale success; ordinary throws/compile/spawn errors stay operational |
+| CI configuration | Bun YAML parser outside the mutated candidate route; anchors resolved; step/stage/parallel ancestry, conditions and triggers retained | Required route/step/command/execution-policy relationships | Pull-request gate disconnected, conditional gate, manual gate |
 | Hosted CI | Independently signed external observation | Pinned observer, exact commit/base/plan/input, executed steps and terminal success | Bad signature, wrong domain, missing/skipped step, failed terminal |
 | Receipt/replay | Strict parsing, recomputed bindings, decisions, digests and external domain | Complete evidence matches its actual validity domain | Tamper, resealed summary forgery, duplicate/missing/rebound report, changed mechanism |
 
-The public campaign executes twelve fault worlds, reference and neutral twice. Cache directories
+The public campaign executes fourteen fault worlds, reference and neutral twice. Cache directories
 are distinct for each world/attempt and reused only between that attempt's ordered phases. Task
 traces use a fresh nonce and a file outside the cache on every action. A cached log is never an
 execution observation. Configurations, tool binaries, environments and source inputs are sealed;
@@ -99,6 +99,23 @@ JSON plus a newline to `ASSERTLEDGER_QUALIFICATION_RESULT_FILE`, with exactly `p
 `nonce` and `facts`. The nonce is `ASSERTLEDGER_QUALIFICATION_NONCE`. These facts remain in the
 `report` namespace and never override engine-measured process facts. Missing, incomplete, stale or
 noncanonical reports become collection failures. Such reports are adapter-reported observations.
+
+For the `command` adapter, a normal zero exit supplies `commandOutcome: PASS`. A numeric nonzero
+exit is operational unless the fresh canonical report additionally attests
+`facts.commandOutcome: EXPECTED_FAILURE` and `facts.exitCode` equal to the engine-measured exit.
+The collector exposes that admitted semantic outcome separately from `report`; report fields never
+replace the measured exit. The public fixture writes the report only after normal leaf/wrapper
+completion, checks each child report before forwarding a nonzero exit, and emits no completion
+on spawn errors, signals, null statuses, ordinary exceptions or compilation failures. Completion
+reports are trusted-local adapter statements, not authenticated evidence: a malicious unsandboxed
+candidate can forge them. They cannot select operator checks or establish hosted CI admission.
+
+The CI configuration collector retains the complete route/step/stage/parallel ancestry, positions,
+conditions, manual/automatic triggers and parallel fail-fast settings. Commands alone do not
+establish an unconditional gate. This narrow local profile supports only the documented execution
+fields; other step/group fields and pipeline kinds are refused as collection failures rather than
+silently projected away. Preserved conditions are configuration facts, not a claim that a hosted
+runner evaluated or executed them.
 
 ## Independent hosted CI admission
 

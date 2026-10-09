@@ -33,10 +33,13 @@ needs registry access; fixture setup runs offline with lifecycle scripts disable
 Workspace links and normalized lockfiles are prepared before cold cache actions.
 
 The operator's manifest declares seven obligations before execution. Reference and
-documentation-only neutral worlds must pass. Twelve declared fault worlds must mismatch
+documentation-only neutral worlds must pass. Fourteen declared fault worlds must mismatch
 their named discriminants in two independent attempts. The leaf, Turbo and both wrapper
 layers must return 7, as observed on this pinned profile. The expected nonzero reference result is not classified as a regression
 assertion or a successful target kill.
+Each layer validates the fresh nonce-bound semantic completion of its failed child, then emits
+its own report with the observed exit. Ordinary errors, compilation failures and missing child
+executables cannot supply that report. The trusted-local fixture reports are not authenticated.
 
 Turbo build actions select the application and its leaf dependency. Each attempt has an
 independent local cache, reused only across cold, warm and input-invalidation actions.
@@ -48,9 +51,11 @@ not establish execution. The `check` task has caching disabled and must execute 
 The cache worlds omit the verdict input, omit a restored output, or wrongly cache the
 uncached task. Propagation worlds absorb an exit code, omit a mandatory stage, select no
 work, overwrite failure with a later successful command, or reuse a seeded success.
-The selected-task world removes the required dependency from the task graph. The CI world
-disconnects the pull-request gate from the YAML route. The configuration parser is an
-engine-owned asset outside the route it observes.
+The selected-task world removes the required dependency from the task graph. The CI worlds
+disconnect the pull-request gate, add an unfulfilled changeset condition or make the gate manual
+while preserving its command. The parser retains execution policy and full stage/parallel/step
+ancestry, and refuses unsupported execution fields. It is an engine-owned asset outside the route
+it observes. Configuration observation does not establish hosted execution.
 
 Outputs are `manifest.json`, `receipt.json`, `replay.json`, `matrix.json` and
 `incident-reproduction.json`. The builder exits nonzero if the profile is not QUALIFIED,

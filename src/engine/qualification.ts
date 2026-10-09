@@ -155,8 +155,8 @@ function completedState(result: ProcessResult): State {
   if (result.timedOut) return "TIMEOUT";
   if (result.error !== undefined) return "INFRA_ERROR";
   if (result.signal !== null || result.exitCode === null) return "CRASH";
-  // The old test process taxonomy calls any nonzero exit a crash. These are raw command facts:
-  // a completed command with exit 7 can satisfy a propagation oracle expecting exactly 7.
+  // Numeric termination alone is only a process fact. Nonzero command completion is
+  // admitted below only with a fresh structured semantic attestation.
   return "COMPLETED";
 }
 
@@ -231,22 +231,54 @@ import { readFile } from "node:fs/promises";
 const value = Bun.YAML.parse(await readFile(process.argv[2], "utf8"));
 if (!value || typeof value !== "object" || !value.pipelines) throw new Error("CI_PIPELINES_MISSING");
 const routes = {};
-function steps(items, route) {
+function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+function keys(value, allowed) {
+  if (!object(value) || Object.keys(value).some(key => !allowed.includes(key))) throw new Error("CI_EXECUTION_FIELD_UNSUPPORTED");
+}
+keys(value, ["definitions", "pipelines"]);
+function configuration(value, allowed) {
+  keys(value, allowed);
+  if (value.trigger !== undefined && !["automatic", "manual"].includes(value.trigger)) throw new Error("CI_TRIGGER_UNSUPPORTED");
+  if (value.condition !== undefined && !object(value.condition)) throw new Error("CI_CONDITION_INVALID");
+  const { script, steps, ...rest } = value;
+  return { ...rest, condition: value.condition ?? null, trigger: value.trigger ?? "automatic" };
+}
+function steps(items, ancestry) {
   if (!Array.isArray(items)) throw new Error("CI_ROUTE_INVALID");
   const result = [];
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
+    keys(item, ["step", "parallel", "stage"]);
+    if (Object.keys(item).length !== 1) throw new Error("CI_STEP_AMBIGUOUS");
     if (item.step) {
       if (!Array.isArray(item.step.script) || !item.step.script.every(x => typeof x === "string")) throw new Error("CI_STEP_INVALID");
-      result.push({ name: item.step.name ?? "", commands: item.step.script });
-    } else if (item.parallel) result.push(...steps(Array.isArray(item.parallel) ? item.parallel : item.parallel.steps, route));
-    else if (item.stage) result.push(...steps(item.stage.steps, route));
+      const config = configuration(item.step, ["name", "script", "condition", "trigger"]);
+      result.push({ name: item.step.name ?? "", commands: item.step.script, ancestry: [...ancestry, {kind: "step", index, configuration: config}] });
+    } else if (item.parallel) {
+      const group = Array.isArray(item.parallel) ? { steps: item.parallel } : item.parallel;
+      const config = configuration(group, ["steps", "fail-fast", "condition", "trigger"]);
+      result.push(...steps(group.steps, [...ancestry, {kind: "parallel", index, configuration: config}]));
+    } else if (item.stage) {
+      const config = configuration(item.stage, ["name", "steps", "condition", "trigger"]);
+      result.push(...steps(item.stage.steps, [...ancestry, {kind: "stage", index, configuration: config}]));
+    }
     else throw new Error("CI_STEP_UNSUPPORTED");
   }
   return result;
 }
 for (const [kind, entries] of Object.entries(value.pipelines)) {
-  if (Array.isArray(entries)) routes[kind] = steps(entries, kind);
-  else for (const [selector, items] of Object.entries(entries)) routes[kind + ":" + selector] = steps(items, kind);
+  if (!["default", "branches", "pull-requests", "tags", "custom"].includes(kind)) throw new Error("CI_PIPELINE_KIND_UNSUPPORTED");
+  if (Array.isArray(entries)) {
+    if (kind !== "default") throw new Error("CI_ROUTE_KIND_INVALID");
+    routes[kind] = steps(entries, [{kind: "route", route: kind}]);
+  }
+  else {
+    if (kind === "default") throw new Error("CI_ROUTE_KIND_INVALID");
+    if (!object(entries)) throw new Error("CI_ROUTE_INVALID");
+    for (const [selector, items] of Object.entries(entries)) {
+      const route = kind + ":" + selector;
+      routes[route] = steps(items, [{kind: "route", route}]);
+    }
+  }
 }
 console.log(JSON.stringify({ ciRoutes: routes }));
 `;
@@ -382,6 +414,8 @@ async function executeAction(
       stdoutDigest: processResult.stdout.digest,
       stderrDigest: processResult.stderr.digest,
     };
+    if (action.adapter === "command" && state === "COMPLETED" && processResult.exitCode === 0)
+      facts.commandOutcome = "PASS";
     if (processResult.stdout.truncated || processResult.stderr.truncated)
       state = "COLLECTION_ERROR";
     if (state === "COMPLETED") {
@@ -444,7 +478,10 @@ async function executeAction(
   }
   if (state === "COMPLETED") {
     try {
-      if (action.observe.report !== null) {
+      if (
+        action.observe.report !== null ||
+        (action.adapter === "command" && facts.exitCode !== 0)
+      ) {
         const raw = await boundedFile(structuredResult, plan.maximumOutputBytes);
         const document = JSON.parse(raw) as Record<string, unknown>;
         if (
@@ -461,6 +498,15 @@ async function executeAction(
         facts.report = document.facts as Json;
         facts.reportDigest = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
         facts.reportProvenance = "STRUCTURED_ADAPTER_REPORTED";
+        if (action.adapter === "command" && facts.exitCode !== 0) {
+          const completion = document.facts as Record<string, unknown>;
+          if (
+            completion.commandOutcome !== "EXPECTED_FAILURE" ||
+            completion.exitCode !== facts.exitCode
+          )
+            throw new Error("QUALIFICATION_COMMAND_COMPLETION_INVALID");
+          facts.commandOutcome = "EXPECTED_FAILURE";
+        }
       }
       if (action.observe.trace)
         facts = { ...facts, ...(await readTrace(trace, nonce, plan.maximumOutputBytes)) };

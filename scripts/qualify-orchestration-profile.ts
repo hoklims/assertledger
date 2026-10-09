@@ -223,7 +223,24 @@ const obligations = [
   ]),
   obligation("ci-routing", "ci-config", [
     check("required-route", "ci-route", "ciRoutes", {
-      "pull-requests:**": [{ name: "Public qualification gate", commands: ["bun wrapper.mjs"] }],
+      "pull-requests:**": [
+        {
+          name: "Public qualification gate",
+          commands: ["bun wrapper.mjs"],
+          ancestry: [
+            { kind: "route", route: "pull-requests:**" },
+            {
+              kind: "step",
+              index: 0,
+              configuration: {
+                name: "Public qualification gate",
+                condition: null,
+                trigger: "automatic",
+              },
+            },
+          ],
+        },
+      ],
     }),
   ]),
 ];
@@ -298,6 +315,7 @@ const worlds: World[] = [
         value.tasks.build.inputs = [
           "$TURBO_DEFAULT$",
           "$TURBO_ROOT$/task.mjs",
+          "$TURBO_ROOT$/completion.mjs",
           "!dist/**",
           "!.turbo/**",
           "!node_modules/**",
@@ -344,6 +362,27 @@ const worlds: World[] = [
     ],
     "ci-routing",
     ["required-route"],
+  ),
+  ...(
+    [
+      [
+        "ci-gate-conditional",
+        "          condition:\n            changesets:\n              includePaths: ['never/**']\n",
+      ],
+      ["ci-gate-manual", "          trigger: manual\n"],
+    ] as const
+  ).map(([id, execution]) =>
+    fault(
+      id,
+      [
+        {
+          path: "bitbucket-pipelines.yml",
+          content: `pipelines:\n  pull-requests:\n    '**':\n      - step:\n          name: Public qualification gate\n${execution}          script:\n            - bun wrapper.mjs\n`,
+        },
+      ],
+      "ci-routing",
+      ["required-route"],
+    ),
   ),
 ];
 const tools: QualificationPlan["tools"] = await Promise.all(

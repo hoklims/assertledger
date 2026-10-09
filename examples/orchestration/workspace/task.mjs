@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { complete } from "./completion.mjs";
 const kind = process.argv[2];
 const name = JSON.parse(readFileSync("package.json", "utf8")).name;
 const task = `${name}#${kind}`;
@@ -10,6 +11,7 @@ const emit = (event) =>
 emit("start");
 if (kind === "fail" && name === "@public/leaf") {
   emit("fail");
+  complete(7);
   process.exit(7);
 }
 if (kind === "build") {

@@ -24,3 +24,15 @@ versions outside the new profile's measured forms require new witnesses.
 New schema locks are additive and independently checked. Do not regenerate or reseal old artifacts
 under a new subject or proof mechanism. Preserve original receipts and execute/admit new evidence
 when validity conditions change.
+
+Nonzero command observations now require a fresh canonical nonce-bound completion report with
+`facts.commandOutcome: EXPECTED_FAILURE` and `facts.exitCode` matching the actual process exit.
+Unattested numeric failures remain operational. Zero command exits retain compatibility without
+a report. Adapters must emit completion only after normal end-to-end semantic completion and
+refuse child spawn/signal/null-status failures. These trusted-local reports are not authenticated.
+
+Local CI route facts now include full step/stage/parallel ancestry, execution conditions and
+manual/automatic triggers. Update externally sealed CI check expectations to that projection and
+rerun the campaign; do not reseal earlier receipts. Unsupported execution fields fail collection.
+The qualification wire schema major version and existing frozen verification projections remain
+unchanged; this collector change invalidates the previous mechanism domain.

@@ -1,5 +1,5 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { complete, execute } from "./completion.mjs";
 const faults = JSON.parse(readFileSync("faults.json", "utf8"));
 const emit = (task, event) =>
   appendFileSync(
@@ -19,7 +19,7 @@ if (layer === "orchestrator") {
   else {
     emit("mandatory-stage", "start");
     emit("mandatory-stage", "finish");
-    status = spawnSync(
+    status = execute(
       process.env.PUBLIC_TURBO_EXECUTABLE,
       [
         "run",
@@ -29,23 +29,20 @@ if (layer === "orchestrator") {
         `--cache-dir=${process.env.ASSERTLEDGER_QUALIFICATION_CACHE}`,
         "--summarize",
       ],
-      {
-        stdio: "inherit",
-      },
-    ).status;
+      "leaf",
+    );
     if (faults.swallow) status = 0;
     if (faults.trailingMask) {
       // A subsequent successful command replaces the failing command's status.
-      status = spawnSync(process.execPath, ["-e", "process.exit(0)"], { stdio: "inherit" }).status;
+      status = execute(process.execPath, ["-e", "process.exit(0)"], "trailing");
     }
   }
 } else if (faults.staleResult) {
   // A prior success is deliberately seeded by a separate, ordered action.
   status = JSON.parse(readFileSync("success-receipt.json", "utf8")).exitCode;
 } else {
-  status = spawnSync(process.execPath, [import.meta.filename, "orchestrator"], {
-    stdio: "inherit",
-  }).status;
+  status = execute(process.execPath, [import.meta.filename, "orchestrator"], "orchestrator");
 }
 emit(layer, status === 0 ? "finish" : "fail");
-process.exit(status ?? 99);
+complete(status);
+process.exit(status);

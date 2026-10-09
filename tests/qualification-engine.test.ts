@@ -22,7 +22,10 @@ test("qualification keeps expected nonzero exits as command facts and executes i
   const engine = await capability();
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-qualification-"));
   try {
-    await writeFile(path.join(root, "leaf.mjs"), "process.exit(7);\n");
+    const completedLeaf = `import {writeFileSync} from 'node:fs';
+writeFileSync(process.env.ASSERTLEDGER_QUALIFICATION_RESULT_FILE, JSON.stringify({facts:{commandOutcome:'EXPECTED_FAILURE',exitCode:7},nonce:process.env.ASSERTLEDGER_QUALIFICATION_NONCE,protocolVersion:'1.0.0'})+'\\n');
+process.exit(7);\n`;
+    await writeFile(path.join(root, "leaf.mjs"), completedLeaf);
     const inputDigest = await engine.qualificationRepositoryDigest(root);
     const candidateDigest = sha256Canonical([]);
     const nodeDigest = await engine.qualificationFileDigest(process.execPath);
@@ -71,7 +74,7 @@ test("qualification keeps expected nonzero exits as command facts and executes i
         {
           id: "neutral",
           kind: "NEUTRAL",
-          files: [{ path: "leaf.mjs", content: "// harmless\nprocess.exit(7);\n" }],
+          files: [{ path: "leaf.mjs", content: `// harmless\n${completedLeaf}` }],
           discriminants: [],
         },
       ],
@@ -129,7 +132,7 @@ test("qualification keeps expected nonzero exits as command facts and executes i
         /TURBO_CACHE_NOT_CONTROLLED/u,
       );
     }
-    assert.equal(await readFile(path.join(root, "leaf.mjs"), "utf8"), "process.exit(7);\n");
+    assert.equal(await readFile(path.join(root, "leaf.mjs"), "utf8"), completedLeaf);
     await assert.rejects(
       engine.qualifyOrchestration({
         root,
