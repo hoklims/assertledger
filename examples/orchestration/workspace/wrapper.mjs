@@ -24,7 +24,7 @@ if (layer === "orchestrator") {
       [
         "run",
         "fail",
-        faults.emptySelection ? "--filter=@public/missing..." : "--filter=@public/app...",
+        faults.emptySelection ? "--filter=!@public/*" : "--filter=@public/app...",
         "--cache=local:rw",
         `--cache-dir=${process.env.ASSERTLEDGER_QUALIFICATION_CACHE}`,
         "--summarize",
