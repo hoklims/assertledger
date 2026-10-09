@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { canonicalize, sha256Canonical } from "../src/core/index.js";
+import { test } from "node:test";
 import type {
-  QualificationPlan,
   QualificationObservation,
+  QualificationPlan,
   QualificationReceipt,
 } from "../src/contracts/qualification.js";
+import { canonicalize, sha256Canonical } from "../src/core/index.js";
 
 const corePath = "../src/core/qualification.js";
 const contractsPath = "../src/contracts/qualification.js";
@@ -225,14 +225,32 @@ test("incomplete extraction and omitted suites remain named open obligations", (
   }
 });
 
-test("missing discriminants and unobserved fields cannot qualify", () => {
+test("missing discriminants leave the obligation open", () => {
   const plan = fixture();
   present(plan.worlds[1]).discriminants = [];
   assert.equal(receipt(plan).decision, "OPEN");
-  const second = fixture();
-  const records = observations(second);
+});
+
+test("missing completed-process exit facts reject the evidence and invalidate replay", () => {
+  const plan = fixture();
+  const records = observations(plan);
   for (const record of records) if (record.worldId === "fault") delete record.facts.exitCode;
-  assert.equal(receipt(second, records).decision, "OPEN");
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "REJECTED");
+  assert.equal(core.replayQualificationReceipt(evidence).valid, false);
+});
+
+test("unobserved non-process facts leave the obligation open", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).checks.push({
+    id: "selected",
+    actionId: "gate",
+    field: "selected",
+    expected: ["leaf"],
+  });
+  const evidence = receipt(plan);
+  assert.equal(evidence.decision, "OPEN");
+  assert.deepEqual(evidence.coveredGuaranteeIds, []);
 });
 
 test("unrelated mismatch cannot count as the declared target witness", () => {
