@@ -343,15 +343,28 @@ async function executeAction(
       args = [parser, ...args];
     } else if (action.adapter === "turbo") {
       await rm(path.join(root, ".turbo", "runs"), { recursive: true, force: true });
-      const declared = action.arguments;
+      const separator = action.arguments.indexOf("--");
+      const declared = separator < 0 ? action.arguments : action.arguments.slice(0, separator);
+      const directoryFlags = declared.filter(
+        (value) => value === "--cache-dir" || value.startsWith("--cache-dir="),
+      );
+      const cacheFlags = declared.filter(
+        (value) => value === "--cache" || value.startsWith("--cache="),
+      );
+      const summaryFlags = declared.filter(
+        (value) => value === "--summarize" || value.startsWith("--summarize="),
+      );
       const directoryIndex = declared.indexOf("--cache-dir");
       const controlledDirectory =
         declared.includes("--cache-dir={cache}") ||
         (directoryIndex >= 0 && declared[directoryIndex + 1] === "{cache}");
       if (
-        !args.includes("--summarize") ||
+        summaryFlags.length !== 1 ||
+        summaryFlags[0] !== "--summarize" ||
+        directoryFlags.length !== 1 ||
+        cacheFlags.length !== 1 ||
         !controlledDirectory ||
-        !args.includes("--cache=local:rw")
+        cacheFlags[0] !== "--cache=local:rw"
       )
         throw new Error("QUALIFICATION_TURBO_CACHE_NOT_CONTROLLED");
     }

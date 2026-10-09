@@ -108,6 +108,27 @@ test("qualification keeps expected nonzero exits as command facts and executes i
     });
     assert.equal(cliCode, 0, cliOutput);
     assert.equal(JSON.parse(cliOutput).decision, "QUALIFIED");
+    for (const arguments_ of [
+      ["leaf.mjs", "--summarize", "--cache=local:rw", "--cache-dir={cache}", "--cache-dir=/shared"],
+      ["leaf.mjs", "--summarize", "--cache=local:rw", "--cache-dir={cache}", "--cache=remote:rw"],
+      ["leaf.mjs", "--", "--summarize", "--cache=local:rw", "--cache-dir={cache}"],
+    ]) {
+      const malformed = structuredClone(plan);
+      malformed.actions[0]!.adapter = "turbo";
+      malformed.actions[0]!.arguments = arguments_;
+      await assert.rejects(
+        engine.qualifyOrchestration(
+          {
+            root,
+            plan: malformed,
+            planDigest: sha256Canonical(malformed),
+            candidate: { files: [] },
+          },
+          { allowUnsafeExecution: true },
+        ),
+        /TURBO_CACHE_NOT_CONTROLLED/u,
+      );
+    }
     assert.equal(await readFile(path.join(root, "leaf.mjs"), "utf8"), "process.exit(7);\n");
     await assert.rejects(
       engine.qualifyOrchestration({
