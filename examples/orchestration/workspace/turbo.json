@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["PATH"],
+  "globalPassThroughEnv": [
+    "ASSERTLEDGER_QUALIFICATION_TRACE",
+    "ASSERTLEDGER_QUALIFICATION_NONCE",
+    "ASSERTLEDGER_QUALIFICATION_CACHE"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!dist/**", "!.turbo/**", "!node_modules/**", "verdict.txt"],
+      "outputs": ["dist/**"]
+    },
+    "check": {
+      "cache": false,
+      "inputs": ["$TURBO_DEFAULT$", "!dist/**", "!.turbo/**", "!node_modules/**"],
+      "outputs": []
+    },
+    "fail": { "dependsOn": ["^fail"], "cache": false, "outputs": [] }
+  }
+}
