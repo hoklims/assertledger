@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { runProcess } from "../src/engine/index.js";
@@ -74,11 +74,10 @@ for (const witness of cases) {
   const copy = path.join(copies, witness.id);
   await mkdir(copy, { recursive: true });
   const excluded = new Set([".git", ".testforge", ".omx", "node_modules", "dist", "coverage"]);
-  await cp(root, copy, {
-    recursive: true,
-    filter: (source) =>
-      source === root || !excluded.has(path.relative(root, source).split(path.sep)[0] ?? ""),
-  });
+  for (const entry of await readdir(root)) {
+    if (excluded.has(entry)) continue;
+    await cp(path.join(root, entry), path.join(copy, entry), { recursive: true });
+  }
   const target = path.join(copy, witness.target);
   const before = await readFile(target, "utf8");
   const after = witness.change(before);
