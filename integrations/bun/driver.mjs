@@ -83,10 +83,13 @@ function parseJunitSummary(xml) {
   ) {
     return undefined;
   }
-  return { tests, failures, skipped };
+  // Bun reports a per-test timeout as a TimeoutError failure, even when the callback threw later.
+  const timeouts = [...xml.matchAll(/<failure\b[^>]*\btype="TimeoutError"/gu)].length;
+  if (timeouts > failures) return undefined;
+  return { tests, failures, skipped, timeouts };
 }
 
-function parseEvents(content, root, allowedFiles, evidenceKey) {
+function parseEvents(content, root, allowedFiles, evidenceKey, designated = false) {
   if (!content.endsWith("\n")) return undefined;
   const lines = content.trimEnd().split("\n");
   if (lines.length === 1 && lines[0] === "") return [];
@@ -120,14 +123,26 @@ function parseEvents(content, root, allowedFiles, evidenceKey) {
       events.push({ kind: "hook-error" });
       continue;
     }
+    if (value.kind === "registered") {
+      if (!designated || Object.keys(value).sort().join(",") !== "designated,file,kind") {
+        return undefined;
+      }
+      const file = normalizeAbsoluteFile(value.file, root);
+      if (file === undefined || !allowedFiles.has(file) || !Number.isSafeInteger(value.designated))
+        return undefined;
+      events.push({ kind: "registered", file, designated: value.designated });
+      continue;
+    }
     if (typeof value.id !== "string" || !/^[0-9a-f-]{36}$/u.test(value.id)) {
       return undefined;
     }
     if (value.kind === "found") {
-      if (Object.keys(value).sort().join(",") !== "file,id,kind") return undefined;
+      const expectedKeys = designated ? "designated,file,id,kind" : "file,id,kind";
+      if (Object.keys(value).sort().join(",") !== expectedKeys) return undefined;
+      if (designated && typeof value.designated !== "boolean") return undefined;
       const file = normalizeAbsoluteFile(value.file, root);
       if (file === undefined || !allowedFiles.has(file)) return undefined;
-      events.push({ kind: "found", id: value.id, file });
+      events.push({ kind: "found", id: value.id, file, designated: value.designated === true });
     } else if (value.kind === "end") {
       if (value.status !== "pass" && value.status !== "fail") return undefined;
       const expectedKeys = value.status === "pass" ? "id,kind,status" : "id,kind,owned,status";
@@ -157,6 +172,8 @@ export function classifyBunInstrumentedEvidence(
   ) {
     return infrastructureFailure("INCOMPLETE_CONTROLLED_REPORT");
   }
+  // A test Bun timed out is never assertion evidence, whatever its callback threw afterwards.
+  if (junit.timeouts > 0) return infrastructureFailure("BUN_TEST_TIMEOUT");
   const found = new Map();
   const ended = new Map();
   for (const event of events) {
@@ -209,6 +226,131 @@ export function classifyBunInstrumentedEvidence(
   );
 }
 
+/**
+ * Loads designated files without registering a test. Success proves that each file and every module
+ * it imports evaluate in this world and that each designated test is registered exactly once.
+ */
+export function classifyBunDesignatedLoad(
+  events,
+  junit,
+  designatedCount,
+  exitCode,
+  operationalError,
+) {
+  if (
+    events === undefined ||
+    exitCode !== 0 ||
+    operationalError ||
+    (junit !== undefined && junit.tests !== 0) ||
+    events.some((event) => event.kind !== "registered")
+  ) {
+    return infrastructureFailure("DESIGNATED_LOAD_INCOMPLETE");
+  }
+  for (let index = 0; index < designatedCount; index += 1) {
+    const matches = events.filter((event) => event.designated === index).length;
+    if (matches === 0) return report("NO_TEST_DISCOVERED", events.length, 0, false);
+    if (matches > 1) return infrastructureFailure("DESIGNATED_TEST_AMBIGUOUS");
+  }
+  if (events.some((event) => event.designated < -1 || event.designated >= designatedCount)) {
+    return infrastructureFailure("DESIGNATED_TEST_INDEX_INVALID");
+  }
+  return report("PASS", events.length, 0, false);
+}
+
+/**
+ * Runs exactly one designated test. Only its owned assertion failure, with the expected first line
+ * when one is declared, is an assertion; no matching test is never a failure.
+ */
+export function classifyBunDesignatedRun(events, junit, exitCode, operationalError) {
+  if (
+    events === undefined ||
+    junit === undefined ||
+    exitCode === null ||
+    operationalError ||
+    events.some((event) => event.kind === "hook-error" || event.kind === "registered")
+  ) {
+    return infrastructureFailure("INCOMPLETE_CONTROLLED_REPORT");
+  }
+  // A test Bun timed out is never assertion evidence, whatever its callback threw afterwards.
+  if (junit.timeouts > 0) return infrastructureFailure("BUN_TEST_TIMEOUT");
+  const found = new Map();
+  const ended = new Map();
+  for (const event of events) {
+    if (event.kind === "found") {
+      if (found.has(event.id)) return infrastructureFailure("DUPLICATE_TEST_ID");
+      found.set(event.id, event);
+    } else {
+      if (!found.has(event.id)) return infrastructureFailure("UNMATCHED_TEST_END");
+      if (ended.has(event.id)) return infrastructureFailure("DUPLICATE_TEST_END");
+      ended.set(event.id, event);
+    }
+  }
+  if (found.size !== ended.size || found.size !== junit.tests - junit.skipped) {
+    return infrastructureFailure("TEST_COUNT_MISMATCH");
+  }
+  if (found.size === 0) {
+    return junit.failures === 0 && exitCode !== 0
+      ? report("NO_TEST_DISCOVERED", 0, 0, false)
+      : infrastructureFailure("BUN_STATUS_MISMATCH");
+  }
+  if ([...found.values()].some((event) => !event.designated)) {
+    return infrastructureFailure("UNEXPECTED_TEST");
+  }
+  if (found.size !== 1) return infrastructureFailure("DESIGNATED_TEST_AMBIGUOUS");
+  const [end] = ended.values();
+  const failed = end.status === "fail";
+  if (junit.failures !== (failed ? 1 : 0) || (exitCode === 0) === failed) {
+    return infrastructureFailure("BUN_STATUS_MISMATCH");
+  }
+  if (!failed) return report("PASS", 1, 1, true);
+  return end.owned ? report("ASSERTION_FAILURE", 1, 1, true) : report("PROCESS_CRASH", 1, 1, false);
+}
+
+function escapeRegularExpression(value) {
+  return value.replace(/[\\^$.*+?()[\]{}|/-]/gu, "\\$&");
+}
+
+/** Validates a designated selection against the files the driver was asked to load or run. */
+function parseDesignatedSelection(value, files) {
+  if (value === undefined) return undefined;
+  const selection = JSON.parse(value);
+  const validTest = (test) =>
+    typeof test === "object" &&
+    test !== null &&
+    Object.keys(test).sort().join(",") === "file,path" &&
+    normalizeRelativeFile(test.file) !== undefined &&
+    Array.isArray(test.path) &&
+    test.path.length > 0 &&
+    test.path.every((name) => typeof name === "string" && name.length > 0);
+  const fileSet = (tests) => [...new Set(tests.map((test) => normalizeRelativeFile(test.file)))];
+  const sameFiles = (tests) =>
+    JSON.stringify(fileSet(tests).sort()) === JSON.stringify([...files].sort());
+  if (
+    selection?.mode === "run" &&
+    Object.keys(selection).sort().join(",") === "expectedFailure,mode,test,testTimeoutMs" &&
+    validTest(selection.test) &&
+    (selection.expectedFailure === null || typeof selection.expectedFailure === "string") &&
+    (selection.testTimeoutMs === null ||
+      (Number.isSafeInteger(selection.testTimeoutMs) &&
+        selection.testTimeoutMs >= 1 &&
+        selection.testTimeoutMs <= 3_600_000)) &&
+    sameFiles([selection.test])
+  ) {
+    return selection;
+  }
+  if (
+    selection?.mode === "load" &&
+    Object.keys(selection).sort().join(",") === "mode,tests" &&
+    Array.isArray(selection.tests) &&
+    selection.tests.length > 0 &&
+    selection.tests.every(validTest) &&
+    sameFiles(selection.tests)
+  ) {
+    return selection;
+  }
+  throw new Error("INVALID_DESIGNATED_SELECTION");
+}
+
 async function readBoundedRegularFile(file, root) {
   const details = await lstat(file);
   if (!details.isFile() || details.size > MAX_REPORT_BYTES) throw new Error("INVALID_REPORT_FILE");
@@ -241,12 +383,13 @@ async function installHelper(helperSource, root) {
   );
 }
 
-async function runBun(executable, files, junitFile, root, evidenceKey) {
+async function runBun(executable, files, junitFile, root, evidenceKey, extraArguments = []) {
   const exactPath = (file) => `./${file.replaceAll(path.sep, "/")}`;
   const childEnvironment = { ...process.env };
   delete childEnvironment.TESTFORGE_RESULT_FILE;
   delete childEnvironment.TESTFORGE_CANDIDATE_FILES;
   delete childEnvironment.ASSERTLEDGER_BUN_EVENTS_FILE;
+  delete childEnvironment.ASSERTLEDGER_BUN_RESULT_FILE;
   childEnvironment.ASSERTLEDGER_BUN_ROOT = root;
   const child = spawn(
     executable,
@@ -258,6 +401,7 @@ async function runBun(executable, files, junitFile, root, evidenceKey) {
       "./node_modules/assertledger/preload.mjs",
       "--reporter=junit",
       `--reporter-outfile=${junitFile}`,
+      ...extraArguments,
       ...files.map(exactPath),
     ],
     {
@@ -343,9 +487,17 @@ async function main() {
   }
   const files = [...normalizedBase, ...normalizedCandidates];
   if (new Set(files).size !== files.length) throw new Error("DUPLICATE_TEST_FILE");
+  const selection = parseDesignatedSelection(process.env.ASSERTLEDGER_BUN_DESIGNATED, files);
+  if (selection !== undefined && normalizedCandidates.length > 0) {
+    throw new Error("INVALID_DESIGNATED_SELECTION");
+  }
   await installHelper(await readFile(helperSourcePath, "utf8"), root);
   const junitFile = path.join(root, `__assertledger_bun_junit_${randomUUID()}.xml`);
   const evidenceKey = randomBytes(32);
+  if (selection !== undefined) {
+    await runDesignated(executable, baseTests, files, selection, junitFile, root, evidenceKey);
+    return;
+  }
   const execution = await runBun(
     executable,
     [...baseTests, ...candidates],
@@ -370,7 +522,64 @@ async function main() {
   } catch {
     outcome = infrastructureFailure("MISSING_OR_INVALID_REPORT");
   }
-  process.stdout.write(`${JSON.stringify(outcome)}\n`);
+  await emit(outcome);
+}
+
+async function runDesignated(
+  executable,
+  testFiles,
+  files,
+  selection,
+  junitFile,
+  root,
+  evidenceKey,
+) {
+  const pattern =
+    selection.mode === "run"
+      ? [
+          `--test-name-pattern=^${escapeRegularExpression(selection.test.path.join(" "))}$`,
+          ...(selection.testTimeoutMs === null ? [] : [`--timeout=${selection.testTimeoutMs}`]),
+        ]
+      : [];
+  const execution = await runBun(executable, testFiles, junitFile, root, evidenceKey, pattern);
+  let outcome;
+  try {
+    let junit;
+    try {
+      junit = parseJunitSummary(await readBoundedRegularFile(junitFile, root));
+    } catch (error) {
+      // A load registers no test, so Bun writes no report; a run must always have one.
+      if (selection.mode === "run" || error?.code !== "ENOENT") throw error;
+    }
+    // No registration or no matching test leaves the signed channel empty.
+    const events =
+      execution.eventContent === undefined
+        ? undefined
+        : execution.eventContent === ""
+          ? []
+          : parseEvents(execution.eventContent, root, new Set(files), evidenceKey, true);
+    outcome =
+      selection.mode === "run"
+        ? classifyBunDesignatedRun(events, junit, execution.exitCode, execution.operationalError)
+        : classifyBunDesignatedLoad(
+            events,
+            junit,
+            selection.tests.length,
+            execution.exitCode,
+            execution.operationalError,
+          );
+  } catch {
+    outcome = infrastructureFailure("MISSING_OR_INVALID_REPORT");
+  }
+  await emit(outcome);
+}
+
+/** Prints the report and, inside a container, also writes it where the engine reads it back. */
+async function emit(outcome) {
+  const body = `${JSON.stringify(outcome)}\n`;
+  const resultFile = process.env.ASSERTLEDGER_BUN_RESULT_FILE;
+  if (resultFile !== undefined) await writeFile(resultFile, body, { flag: "wx" });
+  process.stdout.write(body);
   process.exitCode = outcome.outcome === "PASS" ? 0 : 1;
 }
 

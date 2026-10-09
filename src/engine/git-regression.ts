@@ -37,6 +37,13 @@ type QualificationManifest =
   | EvidenceManifestV2Contract
   | EvidenceManifestV3Contract;
 
+/** The mode fixes a v1 or v2 request, so any other manifest version is an engine fault. */
+function parseQualificationManifest(value: unknown): QualificationManifest {
+  const manifest = parseVersionedEvidenceManifest(value);
+  if (manifest.schemaVersion === "4.0.0") throw new Error("GIT_REGRESSION_MANIFEST_UNEXPECTED");
+  return manifest;
+}
+
 const GIT_PROCESS_LIMIT = 32;
 const GIT_PROCESS_TIMEOUT_MS = 5_000;
 const GIT_AGGREGATE_TIMEOUT_MS = 30_000;
@@ -1066,7 +1073,7 @@ async function qualify(
         },
       ],
     };
-    const sourceManifest = parseVersionedEvidenceManifest(
+    const sourceManifest = parseQualificationManifest(
       await verifyCampaign(
         request,
         container?.runtimeCommand === undefined
@@ -1084,7 +1091,7 @@ async function qualify(
         : "The operator supplied the neutral revision and reason; AssertLedger does not infer its independence.",
       "Manifest integrity binds recorded Git provenance but replay does not independently authenticate Git objects or execution.",
     ];
-    const manifest = parseVersionedEvidenceManifest(
+    const manifest = parseQualificationManifest(
       sealManifestArtifact({ ...sourceManifest, limitations }),
     );
     await rm(temporaryRoot, CLEANUP_OPTIONS);

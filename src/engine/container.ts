@@ -20,6 +20,8 @@ export const CONTAINER_ROOT = "/assertledger";
 export const CONTAINER_WORKSPACE = `${CONTAINER_ROOT}/repository`;
 export const CONTAINER_RESULT_FILE = `${CONTAINER_ROOT}/out/result.json`;
 export const CONTAINER_REPORTER_FILE = `${CONTAINER_ROOT}/reporter/node-test-reporter.mjs`;
+/** Read-only adapter files, such as the Bun driver, are placed beside the reporter. */
+export const CONTAINER_ASSET_DIRECTORY = `${CONTAINER_ROOT}/reporter`;
 export const CONTAINER_LIMITATIONS = [
   "Container isolation relies on the operator-administered container runtime and the shared host kernel; it is not a virtual machine boundary.",
   "The writable workspace volume has no size limit enforced by AssertLedger; container storage limits remain operator-administered.",
@@ -58,6 +60,8 @@ export interface ContainerBackend {
 export interface ContainerExecution {
   workspace: string;
   reporterSource?: string;
+  /** Engine-owned files with plain names, written read-only to CONTAINER_ASSET_DIRECTORY. */
+  assets?: ReadonlyArray<{ name: string; content: string }>;
   executable: string;
   args: string[];
   environment: Record<string, string>;
@@ -372,14 +376,30 @@ async function* workspaceEntries(directory: string, archivePath: string): AsyncG
   }
 }
 
-async function* uploadArchive(workspace: string, reporterSource?: string): AsyncGenerator<Buffer> {
+async function* uploadArchive(
+  workspace: string,
+  reporterSource?: string,
+  assets: ReadonlyArray<{ name: string; content: string }> = [],
+): AsyncGenerator<Buffer> {
   yield* entryHeaders("out/", "5", 0, 0o755, SANDBOX_ID);
-  if (reporterSource !== undefined) {
-    const reporter = Buffer.from(reporterSource, "utf8");
-    yield* entryHeaders("reporter/", "5", 0, 0o555, 0);
-    yield* entryHeaders("reporter/node-test-reporter.mjs", "0", reporter.length, 0o444, 0);
-    yield reporter;
-    yield padding(reporter.length);
+  const files = [
+    ...(reporterSource === undefined
+      ? []
+      : [{ name: "node-test-reporter.mjs", content: reporterSource }]),
+    ...assets,
+  ];
+  if (files.some((file) => !/^[a-z0-9][a-z0-9.-]{0,63}$/u.test(file.name))) {
+    throw new Error("CONTAINER_ASSET_NAME_INVALID");
+  }
+  if (new Set(files.map((file) => file.name)).size !== files.length) {
+    throw new Error("CONTAINER_ASSET_NAME_INVALID");
+  }
+  if (files.length > 0) yield* entryHeaders("reporter/", "5", 0, 0o555, 0);
+  for (const file of files) {
+    const bytes = Buffer.from(file.content, "utf8");
+    yield* entryHeaders(`reporter/${file.name}`, "0", bytes.length, 0o444, 0);
+    yield bytes;
+    yield padding(bytes.length);
   }
   yield* entryHeaders("repository/", "5", 0, 0o755, SANDBOX_ID);
   yield* workspaceEntries(workspace, "repository");
@@ -565,7 +585,7 @@ export async function runContainerExecution(
         ["cp", "--archive", "-", `${name}:${CONTAINER_ROOT}`],
         UPLOAD_TIMEOUT_MS,
         CONTROL_OUTPUT_BYTES,
-        uploadArchive(execution.workspace, execution.reporterSource),
+        uploadArchive(execution.workspace, execution.reporterSource, execution.assets),
       );
       if (uploaded.outcome !== "PASS") {
         outcome = { process: infrastructureFailure(uploaded), result: undefined };
