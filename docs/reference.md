@@ -22,6 +22,8 @@ assertledger analyze . --json
 assertledger schema verification-request --json
 assertledger verify assertledger.request.json --allow-unsafe-execution --json
 assertledger verify assertledger.container-request.json --container-runtime '["docker"]' --json
+assertledger verify assertledger.windows-request.json --allow-windows-native-execution --json
+assertledger import-witness witness.json --out evidence --allow-unsafe-execution --json
 assertledger replay assertledger.manifest.json --json
 assertledger provider --json
 assertledger export assertledger.export-request.json --json
@@ -68,6 +70,11 @@ results go to stdout. Diagnostics go to stderr. `assertledger mcp` reserves stdo
 `--allow-unsafe-execution` is an external authorization signal. The CLI requires it for every
 trusted-local campaign and sets the request's local acknowledgement before validation. The flag does
 not create a sandbox.
+
+`--allow-windows-native-execution` authorizes a v4 request with `windows-native` isolation on a Windows
+host, recorded as `WINDOWS_NATIVE_UNSANDBOXED`; it cannot be combined with the other backend flags.
+`import-witness` replays a recorded red/green witness under exactly one operator-chosen backend; see
+[witness import](witness-import.md) and the [v4 migration guide](migration-verification-v4.md).
 
 A v2 request with `container` isolation runs without that flag: each execution uses a fresh
 container from a digest-pinned local image through the operator's `--container-runtime` JSON argv,

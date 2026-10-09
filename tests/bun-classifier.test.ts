@@ -30,6 +30,18 @@ describe("instrumented Bun test evidence classification", () => {
     );
   });
 
+  it("never credits an owned assertion from a candidate Bun reports as timed out", () => {
+    const timedOut = classifyBunInstrumentedEvidence(
+      complete,
+      { tests: 2, failures: 1, skipped: 0, timeouts: 1 },
+      base,
+      candidates,
+      1,
+    );
+    assert.equal(timedOut.outcome, "INFRA_ERROR");
+    assert.equal(timedOut.attributed, false);
+  });
+
   it("rejects a missing base callback or an extra Bun failure", () => {
     const missingBase = [foundCandidate, candidateFail] satisfies BunTestEvent[];
     const missing = classifyBunInstrumentedEvidence(

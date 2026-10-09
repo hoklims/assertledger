@@ -102,6 +102,15 @@ export const TrustedLocalIsolationSchema = z.strictObject({
 
 export const VERIFICATION_SCHEMA_VERSION_V2 = "2.0.0" as const;
 export const VERIFICATION_SCHEMA_VERSION_V3 = "3.0.0" as const;
+export const VERIFICATION_SCHEMA_VERSION_V4 = "4.0.0" as const;
+
+// Windows-native execution is a distinct, operator-declared level: it is never inferred from a
+// trusted-local request and requires its own authorization on a Windows host.
+export const WindowsNativeIsolationSchema = z.strictObject({
+  kind: z.literal("windows-native"),
+  acknowledgedUnsafeExecution: z.boolean(),
+  environmentAllowlist: z.array(EnvironmentVariableSchema).max(100),
+});
 
 // Only digest-pinned references are accepted; the leading alphanumeric also keeps a reference
 // from being parsed as a container runtime option.
@@ -203,6 +212,106 @@ export const VerificationRequestV3Schema = z
     title: "AssertLedger verification request v3",
     description:
       "A versioned campaign with an official Bun test adapter and explicit execution backend.",
+  });
+
+/**
+ * "excluded" keeps the snapshot without Git metadata. "synthesized" commits the snapshot once into
+ * a fresh repository, never the source's own .git, for tests that ask Git for the tracked files.
+ */
+export const RepositoryGitModeSchema = z.enum(["excluded", "synthesized"]);
+
+/** One existing repository test, named by its file and its describe path ending with the test. */
+export const DesignatedTestSchema = z.strictObject({
+  file: z.string().min(1).max(512),
+  path: z.array(z.string().min(1).max(1_024)).min(1).max(32),
+});
+
+export const BunDesignatedTestAdapterSchema = z.strictObject({
+  kind: z.literal("bun-test-designated"),
+  executable: z.string().min(1),
+  /** Bun's per-test timeout (`bun test --timeout`); null keeps Bun's default. */
+  testTimeoutMs: z.number().int().min(1).max(3_600_000).nullable(),
+});
+
+export const AdapterV4Schema = z.discriminatedUnion("kind", [
+  NodeTestAdapterSchema,
+  StructuredCommandAdapterSchema,
+  BunTestAdapterSchema,
+  BunDesignatedTestAdapterSchema,
+]);
+
+export const DesignatedCandidateSchema = z.strictObject({
+  id: IdentifierSchema,
+  test: DesignatedTestSchema,
+  expectedFailure: z.string().min(1).max(1_024).nullable(),
+});
+
+export const CandidateV4Schema = z.union([CandidateSchema, DesignatedCandidateSchema]);
+
+export const VerificationRequestV4Schema = z
+  .strictObject({
+    ...VerificationRequestV3Schema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V4),
+    repository: z.strictObject({
+      root: z.string().min(1),
+      exclude: z.array(z.string().min(1).max(512)).max(1_000),
+      includeDependencies: z.boolean(),
+      git: RepositoryGitModeSchema,
+    }),
+    adapter: AdapterV4Schema,
+    isolation: z.discriminatedUnion("kind", [
+      TrustedLocalIsolationSchema,
+      ContainerIsolationSchema,
+      WindowsNativeIsolationSchema,
+    ]),
+    candidates: z.array(CandidateV4Schema).min(1).max(1_000),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/verification-request.v4.json",
+    title: "AssertLedger verification request v4",
+    description:
+      "A versioned campaign that can designate existing Bun tests, snapshot dependencies, and declare Windows-native execution.",
+  });
+
+// A recorded red/green witness: the mutated targets, the one test expected to detect them and the
+// first line of its expected failure. The isolation backend is an operator flag, never request data.
+export const WitnessImportRequestSchema = z
+  .strictObject({
+    schemaVersion: z.literal("1.0.0"),
+    provenance: z.string().min(1).max(512),
+    repository: z.strictObject({
+      root: z.string().min(1),
+      exclude: z.array(z.string().min(1).max(512)).max(1_000),
+      includeDependencies: z.boolean(),
+      git: RepositoryGitModeSchema,
+    }),
+    adapter: BunDesignatedTestAdapterSchema,
+    test: DesignatedTestSchema,
+    expectedFailure: z.string().min(1).max(1_024),
+    targets: z
+      .array(
+        z.strictObject({
+          path: z.string().min(1).max(512),
+          beforeDigest: Sha256DigestSchema,
+          content: z.string().max(1_048_576),
+        }),
+      )
+      .min(1)
+      .max(100),
+    neutral: z
+      .strictObject({
+        reason: z.string().min(1).max(1_024),
+        files: z.array(FileOverlaySchema).min(1).max(100),
+      })
+      .nullable(),
+    requiredAttempts: z.int().min(2).max(10),
+    timeoutMsPerExecution: z.int().min(1_000).max(3_600_000),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/witness-import-request.v1.json",
+    title: "AssertLedger witness import request",
+    description:
+      "A recorded red/green witness to replay: mutated targets, one designated test and its expected failure line.",
   });
 
 export const RepositoryAnalysisSchema = z
@@ -652,6 +761,70 @@ export const EvidenceManifestV3Schema = z
     title: "AssertLedger evidence manifest v3",
     description:
       "A replayable campaign artifact recording the official Bun test adapter and execution backend.",
+  });
+
+const FinalAdapterSummaryV4Schema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("node-test") }),
+  z.strictObject({ kind: z.literal("bun-test") }),
+  z.strictObject({ kind: z.literal("bun-test-designated") }),
+  z.strictObject({
+    kind: z.literal("testforge-command"),
+    protocolVersion: z.literal("1.0.0"),
+  }),
+]);
+
+const ExecutionBackendRecordV4Schema = z.discriminatedUnion("kind", [
+  ...ExecutionBackendRecordSchema.options,
+  z.strictObject({
+    kind: z.literal("windows-native"),
+    level: z.literal("WINDOWS_NATIVE_UNSANDBOXED"),
+    platform: z.literal("win32"),
+  }),
+]);
+
+// The snapshot record qualifies the repository digest: which dependency directories it covers and
+// which repository links outside every executed test's closure were omitted from the snapshot.
+const RepositorySnapshotRecordSchema = z.strictObject({
+  includeDependencies: z.boolean(),
+  omittedLinks: z.array(z.string().min(1).max(1_024)).max(10_000),
+  git: z
+    .strictObject({
+      mode: z.literal("synthesized"),
+      treeId: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
+      gitVersion: z.string().min(1).max(256),
+    })
+    .nullable(),
+});
+
+const EvidenceContextV4Schema = z.strictObject({
+  ...EvidenceContextSchema.shape,
+  execution: z.strictObject({
+    ...EvidenceContextSchema.shape.execution.shape,
+    backend: ExecutionBackendRecordV4Schema,
+  }),
+  repository: RepositorySnapshotRecordSchema,
+});
+
+export const EvidenceManifestV4Schema = z
+  .strictObject({
+    ...EvidenceManifestV3Schema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V4),
+    evidenceContext: EvidenceContextV4Schema,
+    adapter: FinalAdapterSummaryV4Schema,
+    isolation: z.discriminatedUnion("kind", [
+      ...EvidenceManifestV2Schema.shape.isolation.options,
+      z.strictObject({
+        kind: z.literal("windows-native"),
+        level: z.literal("WINDOWS_NATIVE_UNSANDBOXED"),
+        acknowledgedUnsafeExecution: z.literal(true),
+      }),
+    ]),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-manifest.v4.json",
+    title: "AssertLedger evidence manifest v4",
+    description:
+      "A replayable campaign artifact that records designated tests, the repository snapshot scope and the declared isolation level.",
   });
 
 export const ReplayResultSchema = z
@@ -2001,6 +2174,11 @@ export type Candidate = z.infer<typeof CandidateSchema>;
 export type VerificationRequest = z.infer<typeof VerificationRequestSchema>;
 export type VerificationRequestV2 = z.infer<typeof VerificationRequestV2Schema>;
 export type VerificationRequestV3 = z.infer<typeof VerificationRequestV3Schema>;
+export type VerificationRequestV4 = z.infer<typeof VerificationRequestV4Schema>;
+export type DesignatedTest = z.infer<typeof DesignatedTestSchema>;
+export type DesignatedCandidate = z.infer<typeof DesignatedCandidateSchema>;
+export type WindowsNativeIsolation = z.infer<typeof WindowsNativeIsolationSchema>;
+export type WitnessImportRequest = z.infer<typeof WitnessImportRequestSchema>;
 export type ContainerIsolation = z.infer<typeof ContainerIsolationSchema>;
 export type ContainerLimits = z.infer<typeof ContainerLimitsSchema>;
 export type NodeTestAdapter = z.infer<typeof NodeTestAdapterSchema>;
@@ -2019,7 +2197,9 @@ export type RepositoryInitDetectionsV2 = z.infer<typeof RepositoryInitDetections
 export type EvidenceManifestContract = z.infer<typeof EvidenceManifestSchema>;
 export type EvidenceManifestV2Contract = z.infer<typeof EvidenceManifestV2Schema>;
 export type EvidenceManifestV3Contract = z.infer<typeof EvidenceManifestV3Schema>;
+export type EvidenceManifestV4Contract = z.infer<typeof EvidenceManifestV4Schema>;
 export type ExecutionBackendRecord = z.infer<typeof ExecutionBackendRecordSchema>;
+export type ExecutionBackendRecordV4 = z.infer<typeof ExecutionBackendRecordV4Schema>;
 export type ReplayResult = z.infer<typeof ReplayResultSchema>;
 export type AgenticProfilePolicy = z.infer<typeof AgenticProfilePolicySchema>;
 export type AgenticProfileRequest = z.infer<typeof AgenticProfileRequestSchema>;
@@ -2100,9 +2280,15 @@ function assertUniqueIdentifiers(items: ReadonlyArray<{ id: string }>, code: str
   }
 }
 
-function assertWorldKinds(
-  request: Omit<VerificationRequestV3, "schemaVersion" | "isolation">,
-): void {
+/** The campaign fields shared by every request version that the budget and world checks read. */
+interface CampaignShape {
+  worlds: ReadonlyArray<World>;
+  candidates: ReadonlyArray<{ id: string; files?: ReadonlyArray<FileOverlay> }>;
+  budgets: VerificationRequest["budgets"];
+  policy: VerificationRequest["policy"];
+}
+
+function assertWorldKinds(request: CampaignShape): void {
   if (!request.worlds.some((world) => world.kind === "REFERENCE" && world.required)) {
     throw new ContractError("REFERENCE_WORLD_REQUIRED");
   }
@@ -2123,7 +2309,7 @@ function assertWorldKinds(
   }
 }
 
-function assertBudgets(request: Omit<VerificationRequestV3, "schemaVersion" | "isolation">): void {
+function assertBudgets(request: CampaignShape): void {
   if (request.candidates.length > request.budgets.maximumCandidates) {
     throw new ContractError("CANDIDATE_BUDGET_EXCEEDED");
   }
@@ -2158,7 +2344,8 @@ function assertBudgets(request: Omit<VerificationRequestV3, "schemaVersion" | "i
 
   let totalCandidateBytes = 0;
   for (const candidate of request.candidates) {
-    const bytes = candidate.files.reduce(
+    // A designated candidate overlays nothing; its test bytes belong to the repository snapshot.
+    const bytes = (candidate.files ?? []).reduce(
       (total, file) => total + Buffer.byteLength(file.content, "utf8"),
       0,
     );
@@ -2248,10 +2435,18 @@ export function parseVerificationRequest(value: unknown): VerificationRequest {
   return request;
 }
 
-/** Parses a frozen v1/v2 request or a v3 request that adds the Bun adapter. */
+/** Parses a frozen v1/v2/v3 request or a v4 request that adds designated Bun tests. */
 export function parseVersionedVerificationRequest(
   value: unknown,
-): VerificationRequest | VerificationRequestV2 | VerificationRequestV3 {
+): VerificationRequest | VerificationRequestV2 | VerificationRequestV3 | VerificationRequestV4 {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "schemaVersion" in value &&
+    value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4
+  ) {
+    return parseVerificationRequestV4(value);
+  }
   if (
     typeof value === "object" &&
     value !== null &&
@@ -2300,6 +2495,83 @@ export function parseVerificationRequestV3(value: unknown): VerificationRequestV
     }
   }
   return request;
+}
+
+function isDesignatedCandidate(
+  candidate: VerificationRequestV4["candidates"][number],
+): candidate is DesignatedCandidate {
+  return "test" in candidate;
+}
+
+/**
+ * Parses a v4 request. Designated candidates belong to the designated Bun adapter only, and that
+ * adapter accepts nothing else, so native expect attribution never reaches a v3-style campaign.
+ */
+export function parseVerificationRequestV4(value: unknown): VerificationRequestV4 {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== VERIFICATION_SCHEMA_VERSION_V4
+  ) {
+    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
+  }
+  assertVerificationRequestPreconditions(value);
+  const parsed = VerificationRequestV4Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
+  }
+  const request = parsed.data;
+  assertUniqueIdentifiers(request.worlds, "DUPLICATE_WORLD_ID");
+  assertUniqueIdentifiers(request.candidates, "DUPLICATE_CANDIDATE_ID");
+  assertWorldKinds(request);
+  assertBudgets(request);
+  const designated = request.candidates.filter(isDesignatedCandidate);
+  if (request.adapter.kind === "bun-test-designated") {
+    if (designated.length !== request.candidates.length) {
+      throw new ContractError("DESIGNATED_CANDIDATE_REQUIRED");
+    }
+    assertDesignatedTestTimeout(
+      request.adapter.testTimeoutMs,
+      request.budgets.timeoutMsPerExecution,
+    );
+  } else if (designated.length > 0) {
+    throw new ContractError("DESIGNATED_CANDIDATE_ADAPTER_MISMATCH", request.adapter.kind);
+  }
+  if (request.isolation.kind === "container") {
+    // Only the designated adapter qualifies Bun inside a container; candidate files stay local.
+    if (request.adapter.kind === "bun-test") {
+      throw new ContractError("BUN_TEST_CONTAINER_UNSUPPORTED");
+    }
+    const names = request.isolation.environment.map((variable) => variable.name);
+    if (new Set(names).size !== names.length) {
+      throw new ContractError("DUPLICATE_CONTAINER_ENVIRONMENT_VARIABLE");
+    }
+  }
+  return request;
+}
+
+/** A per-test timeout must end before the execution timeout, or it could never be observed. */
+function assertDesignatedTestTimeout(
+  testTimeoutMs: number | null,
+  executionTimeoutMs: number,
+): void {
+  if (testTimeoutMs !== null && testTimeoutMs >= executionTimeoutMs) {
+    throw new ContractError("DESIGNATED_TEST_TIMEOUT_EXCEEDS_EXECUTION");
+  }
+}
+
+/** Parses a witness import request; its targets and test are checked against the repository later. */
+export function parseWitnessImportRequest(value: unknown): WitnessImportRequest {
+  if (!isJsonObject(value) || value.schemaVersion !== "1.0.0") {
+    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
+  }
+  const parsed = WitnessImportRequestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("WITNESS_IMPORT_REQUEST_INVALID", z.prettifyError(parsed.error));
+  }
+  assertDesignatedTestTimeout(parsed.data.adapter.testTimeoutMs, parsed.data.timeoutMsPerExecution);
+  return parsed.data;
 }
 
 /** Parses only the v2 request, which adds container isolation to the frozen v1 request. */
@@ -2989,7 +3261,11 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 function manifestSummariesAreConsistent(
-  manifest: EvidenceManifestContract | EvidenceManifestV2Contract | EvidenceManifestV3Contract,
+  manifest:
+    | EvidenceManifestContract
+    | EvidenceManifestV2Contract
+    | EvidenceManifestV3Contract
+    | EvidenceManifestV4Contract,
 ): boolean {
   const engineError = manifest.decision.status === "ENGINE_ERROR";
   const invalidEvidence =
@@ -3060,10 +3336,36 @@ export function parseEvidenceManifestV3(value: unknown): EvidenceManifestV3Contr
   return manifest;
 }
 
-/** Parses a frozen v1/v2 manifest or a v3 manifest with the Bun adapter. */
+export function parseEvidenceManifestV4(value: unknown): EvidenceManifestV4Contract {
+  const parsed = EvidenceManifestV4Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_MANIFEST_INVALID", z.prettifyError(parsed.error));
+  }
+  const manifest = parsed.data;
+  const omittedLinks = manifest.evidenceContext.repository.omittedLinks;
+  if (
+    !manifestSummariesAreConsistent(manifest) ||
+    !manifestReferencesAreConsistent(manifest) ||
+    !executionBackendIsConsistent(manifest) ||
+    new Set(omittedLinks).size !== omittedLinks.length ||
+    omittedLinks.some((link, index) => index > 0 && (omittedLinks[index - 1] ?? "") >= link)
+  ) {
+    throw new ContractError("EVIDENCE_MANIFEST_INCONSISTENT");
+  }
+  return manifest;
+}
+
+/** Parses a frozen v1/v2/v3 manifest or a v4 manifest with designated tests. */
 export function parseVersionedEvidenceManifest(
   value: unknown,
-): EvidenceManifestContract | EvidenceManifestV2Contract | EvidenceManifestV3Contract {
+):
+  | EvidenceManifestContract
+  | EvidenceManifestV2Contract
+  | EvidenceManifestV3Contract
+  | EvidenceManifestV4Contract {
+  if (isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4) {
+    return parseEvidenceManifestV4(value);
+  }
   if (isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V3) {
     return parseEvidenceManifestV3(value);
   }
@@ -3073,7 +3375,7 @@ export function parseVersionedEvidenceManifest(
 }
 
 function executionBackendIsConsistent(
-  manifest: EvidenceManifestV2Contract | EvidenceManifestV3Contract,
+  manifest: EvidenceManifestV2Contract | EvidenceManifestV3Contract | EvidenceManifestV4Contract,
 ): boolean {
   const execution = manifest.evidenceContext.execution;
   const backend = execution.backend;
@@ -3089,7 +3391,11 @@ function executionBackendIsConsistent(
 }
 
 function manifestReferencesAreConsistent(
-  manifest: EvidenceManifestContract | EvidenceManifestV2Contract | EvidenceManifestV3Contract,
+  manifest:
+    | EvidenceManifestContract
+    | EvidenceManifestV2Contract
+    | EvidenceManifestV3Contract
+    | EvidenceManifestV4Contract,
 ): boolean {
   const worldIds = new Set(manifest.worlds.map((world) => world.id));
   const candidateIds = new Set(manifest.candidates.map((candidate) => candidate.id));
@@ -4081,6 +4387,27 @@ export function evidenceManifestV3JsonSchema(): Record<string, unknown> {
   return jsonSchemaFor(
     EvidenceManifestV3Schema,
     "https://testforge.dev/schemas/evidence-manifest.v3.json",
+  );
+}
+
+export function verificationRequestV4JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    VerificationRequestV4Schema,
+    "https://testforge.dev/schemas/verification-request.v4.json",
+  );
+}
+
+export function evidenceManifestV4JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceManifestV4Schema,
+    "https://testforge.dev/schemas/evidence-manifest.v4.json",
+  );
+}
+
+export function witnessImportRequestJsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    WitnessImportRequestSchema,
+    "https://testforge.dev/schemas/witness-import-request.v1.json",
   );
 }
 

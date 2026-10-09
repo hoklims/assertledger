@@ -260,8 +260,8 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Keep the campaign unqualified and inspect the Bun installation and AssertLedger package.",
   ],
   BUN_TEST_CONTAINER_UNSUPPORTED: [
-    "The Bun callback profile has not been qualified in the container backend.",
-    "Use explicitly authorized trusted-local execution for the qualified Bun version.",
+    "The Bun file-candidate profile has not been qualified in the container backend.",
+    "Use explicitly authorized trusted-local execution for the qualified Bun version, or a v4 campaign with the bun-test-designated adapter, which runs in the container backend.",
   ],
   BUN_TEST_ASSET_CHANGED_DURING_CAMPAIGN: [
     "The bundled Bun driver, preload or assertion helper changed during the campaign.",
@@ -295,6 +295,78 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "The adapter and detected test framework do not match.",
     "Select the adapter matching the test runner; detection alone does not establish official support.",
   ],
+  REPOSITORY_LINK_IN_TEST_CLOSURE: [
+    "A symbolic link is on the module closure of a test that would run, or a runner discovering tests could reach one through it; AssertLedger neither follows nor copies links.",
+    "Replace the named link with a regular file or directory; excluding it would remove code the test needs.",
+  ],
+  REPOSITORY_LINK_ESCAPES_ROOT: [
+    "A symbolic link resolves, or would resolve, outside the repository root.",
+    "Remove the named link or replace it with repository content; a link out of the repository is never admitted.",
+  ],
+  TEST_CLOSURE_UNBOUNDED: [
+    "A test module imports a computed or absolute specifier, so the files it can load are not statically bounded.",
+    "A campaign refuses repository links in that case; replace the links, or make the named imports literal and repository-relative.",
+  ],
+  REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE: [
+    "Every repository link lies outside the module closure of the tests that would run; v4 campaigns leave such links out of the snapshot and record them.",
+    "No action is required; v1 to v3 campaigns and analyze still refuse any link, so declare the entry's name with --exclude when they must run.",
+  ],
+  WINDOWS_NATIVE_EXECUTION_NOT_ACKNOWLEDGED: [
+    "Windows-native execution was requested without the operator acknowledgement.",
+    "Run it only for trusted code, with --allow-windows-native-execution or acknowledgedUnsafeExecution set; the manifest then records WINDOWS_NATIVE_UNSANDBOXED.",
+  ],
+  WINDOWS_NATIVE_HOST_REQUIRED: [
+    "Windows-native execution was requested on a host that is not Windows.",
+    "Use the container backend for Linux-runnable tests, or run the campaign on Windows.",
+  ],
+  DESIGNATED_CANDIDATE_REQUIRED: [
+    "The bun-test-designated adapter runs only designated tests, and a candidate declares files instead.",
+    "Name each candidate's existing test by file and describe path, or use the bun-test adapter for candidate files.",
+  ],
+  DESIGNATED_CANDIDATE_ADAPTER_MISMATCH: [
+    "A designated test candidate was given to an adapter that runs candidate files.",
+    "Use the bun-test-designated adapter for designated tests.",
+  ],
+  DESIGNATED_TEST_OVERLAID: [
+    "A world rewrites the designated test file, so the test under verification would differ between worlds.",
+    "Keep the designated test identical in every world and mutate only the code it covers.",
+  ],
+  DESIGNATED_TEST_FILE_MISSING: [
+    "A designated test file is absent from the repository snapshot.",
+    "Check the file path against the repository and its declared exclusions.",
+  ],
+  DESIGNATED_TEST_TIMEOUT_EXCEEDS_EXECUTION: [
+    "Bun's per-test timeout is not shorter than the execution timeout, so it could never be observed.",
+    "Declare a per-test timeout below timeoutMsPerExecution, or null for Bun's default.",
+  ],
+  REPOSITORY_DEPENDENCIES_EXCLUDED: [
+    "The request includes dependency directories but also excludes node_modules.",
+    "Remove node_modules from the exclusions, or set includeDependencies to false.",
+  ],
+  REPOSITORY_GIT_SYNTHESIS_FAILED: [
+    "The synthesized Git repository of the snapshot could not be created.",
+    "Check that git is installed and runnable, or set repository.git to excluded when the tests do not need Git.",
+  ],
+  WITNESS_IMPORT_REQUEST_INVALID: [
+    "The witness import request does not satisfy its published schema.",
+    "Validate it against witness-import-request.v1.json.",
+  ],
+  WITNESS_TARGET_BASE_MISMATCH: [
+    "A witness target is missing or no longer holds the bytes the witness recorded as its base.",
+    "Replay the witness on the exact revision it was recorded against.",
+  ],
+  WITNESS_TARGET_UNCHANGED: [
+    "A witness target's mutated content equals the repository's bytes, so it would not inject a fault.",
+    "Check the recorded mutation.",
+  ],
+  WITNESS_OUTPUT_EXISTS: [
+    "The witness import output directory already exists.",
+    "Choose a new directory; an import never overwrites earlier evidence.",
+  ],
+  WITNESS_OUTPUT_INSIDE_REPOSITORY: [
+    "The witness import output directory is inside the repository it replays.",
+    "Choose a directory outside the repository so the evidence cannot change the snapshot.",
+  ],
 };
 
 /** Derived guidance only: never changes a verdict or either manifest digest. */
@@ -318,7 +390,12 @@ export function explainReasonCodes(codes: readonly string[]): DiagnosticReport {
   });
 }
 
-const LINK_REFUSAL_CODE = "UNSUPPORTED_REPOSITORY_SYMLINK";
+const LINK_REFUSAL_CODES = new Set([
+  "UNSUPPORTED_REPOSITORY_SYMLINK",
+  "REPOSITORY_LINK_IN_TEST_CLOSURE",
+  "REPOSITORY_LINK_ESCAPES_ROOT",
+  "TEST_CLOSURE_UNBOUNDED",
+]);
 const MAXIMUM_QUOTED_ENTRY_LENGTH = 200;
 
 /** Quotes a repository entry name for a refusal message. A file name is repository content, so it
@@ -336,7 +413,7 @@ export function quoteRepositoryEntry(entry: string): string {
 export function renderRepositoryLinkRefusal(error: unknown): string | undefined {
   if (
     !(error instanceof Error) ||
-    error.message !== LINK_REFUSAL_CODE ||
+    !LINK_REFUSAL_CODES.has(error.message) ||
     typeof error.cause !== "string"
   ) {
     return undefined;

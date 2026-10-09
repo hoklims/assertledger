@@ -173,6 +173,9 @@ The Bun adapter pins version 1.4.2 and attributes failures from this helper. Nat
 failures remain operational failures and cannot count as target detection. See the
 [Bun migration guide](docs/migration-verification-v3.md) for the request, execution and replay
 contract. The execution mode is explicitly unsandboxed and intended for trusted local code.
+To verify an existing `bun:test` test by name, or to replay a recorded red/green witness, use a v4
+request or `import-witness`, which also run in a container or a declared Windows-native backend; see
+the [v4 migration guide](docs/migration-verification-v4.md).
 
 ### Qualify a committed regression test
 
