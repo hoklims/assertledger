@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+Verification request and evidence manifest v4 verify existing Bun tests by name, judge repository
+links against the tests that run, and declare every isolation level. V1 to v3 schemas, parsers and
+manifests are unchanged. See the [v4 migration guide](docs/migration-verification-v4.md).
+
+- New `bun-test-designated` adapter (v4): runs one existing `bun:test` test, named by file and
+  describe path, with an optional expected first failure line and a declared per-test timeout. Only a
+  built-in matcher or `assertSame` failure attributed to that test is red; a timeout, crash, hook,
+  collection or compile error, or a missing test never is, and diverging runs are `UNSTABLE`. It
+  runs trusted-local, Windows-native or in a container, including the native WSL2 engine through
+  `--container-runtime`; `bun-test` with candidate files is still refused in a container.
+- New `import-witness` command and `importWitness` SDK method: replay a recorded red/green witness
+  (mutated targets with base digests, a designated test and its failure line) as a v4 campaign under
+  an operator-chosen backend, and save the manifest, executed request and summary in a new directory.
+- Behavior change: `doctor` no longer refuses a repository for a link outside every test closure.
+  It plans the repository and reports `REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE`, plus
+  `TEST_CLOSURE_UNBOUNDED` when a test's imports are computed. A link on a test's module closure,
+  one through which a runner could discover a test, or one leaving the root still refuses, now with
+  `REPOSITORY_LINK_IN_TEST_CLOSURE` or `REPOSITORY_LINK_ESCAPES_ROOT` beside
+  `UNSUPPORTED_REPOSITORY_SYMLINK`, and the CLI names the path. Because the closure depends on the
+  framework, a framework conflict is now reported before a link refusal. `analyze`, `audit` and
+  v1 to v3 campaigns still refuse any link.
+- v4 campaigns leave links outside the executed tests' closure out of the snapshot and record them in
+  the manifest; `repository.includeDependencies` keeps `node_modules`, and `repository.git:
+  "synthesized"` gives tests a fresh, deterministic Git repository of the snapshot, recorded by tree.
+- New `windows-native` isolation (v4) for tests that only run natively on Windows: declared in the
+  request, acknowledged with `--allow-windows-native-execution`, refused on other hosts, and
+  recorded as `WINDOWS_NATIVE_UNSANDBOXED`.
+- Tightened: the v3 `bun-test` driver now classifies any test Bun reports as timed out as an
+  infrastructure error, so a synchronous test that overran its timeout before failing an assertion
+  is no longer counted as an assertion failure.
+- New schemas `verification-request.v4.json`, `evidence-manifest.v4.json` and
+  `witness-import-request.v1.json` join the post-conformance lock; the frozen v1 bundle is unchanged.
+
 ## 1.4.0 — 2026-10-02
 
 - Behavior change: `analyze` now refuses an unknown option with the usage on stderr and exit code 64,

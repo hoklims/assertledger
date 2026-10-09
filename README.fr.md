@@ -181,6 +181,9 @@ L’adaptateur cible précisément Bun 1.4.2 et attribue les échecs de cet outi
 natifs restent des erreurs d’exécution et ne comptent pas comme détection du défaut. Le
 [guide de migration Bun](docs/migration-verification-v3.md) décrit la requête, l’exécution et le
 rejeu. Ce mode exécute du code local de confiance sans bac à sable.
+Pour vérifier un test `bun:test` existant désigné par son nom, ou rejouer un témoin rouge/vert
+enregistré, utilisez une requête v4 ou `import-witness`, qui s’exécutent aussi en conteneur ou dans un
+mode Windows natif déclaré ; voir le [guide de migration v4](docs/migration-verification-v4.md).
 
 ### Qualifier un test de régression commité
 
