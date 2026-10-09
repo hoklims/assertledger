@@ -55,6 +55,17 @@ export const QualificationPlanSchema = z.strictObject({
     candidateDigest: Digest,
     inputDigest: Digest,
   }),
+  ciTrust: z
+    .strictObject({
+      repositoryId: z.string().min(1).max(512),
+      observerId: Id,
+      publicKeyPem: z.string().min(1).max(8192),
+      requiredSteps: z
+        .array(z.strictObject({ id: Id, commandDigest: Digest }))
+        .min(1)
+        .max(1000),
+    })
+    .optional(),
   tools: z
     .array(
       z.strictObject({
@@ -155,7 +166,7 @@ export const QualificationPlanSchema = z.strictObject({
           .max(1000),
       }),
     )
-    .min(3)
+    .min(2)
     .max(1000),
   requiredAttempts: z.int().min(2).max(10),
   timeoutMs: z.int().min(1).max(600_000),
@@ -202,6 +213,11 @@ export function parseQualificationPlan(value: unknown): QualificationPlan {
       label,
     );
   unique(plan.allowedCandidatePaths, "candidate path");
+  if (plan.ciTrust)
+    unique(
+      plan.ciTrust.requiredSteps.map((step) => step.id),
+      "CI required step",
+    );
   const actions = new Set(plan.actions.map((action) => action.id));
   const suites = new Set(plan.suites.map((suite) => suite.id));
   for (const suite of plan.suites) unique(suite.files, "suite file");
@@ -227,12 +243,8 @@ export function parseQualificationPlan(value: unknown): QualificationPlan {
     unique(action.removePaths, "remove path");
     unique(action.observe.outputs, "output path");
   }
-  if (
-    !["REFERENCE", "TARGET", "NEUTRAL"].every((kind) =>
-      plan.worlds.some((world) => world.kind === kind),
-    )
-  )
-    throw new Error("Reference, target and neutral worlds required");
+  if (!["REFERENCE", "NEUTRAL"].every((kind) => plan.worlds.some((world) => world.kind === kind)))
+    throw new Error("Reference and neutral worlds required");
   for (const world of plan.worlds) {
     unique(
       world.files.map((file) => file.path),
@@ -263,6 +275,32 @@ export const QualificationProvenanceSchema = z.strictObject({
   runtime: QualificationJsonSchema,
   executionTrust: z.literal("TRUSTED_LOCAL_UNSANDBOXED"),
 });
+export const QualificationCiObservationSchema = z.strictObject({
+  protocolVersion: z.literal("1.0.0"),
+  provider: z.literal("bitbucket"),
+  repositoryId: z.string().min(1).max(512),
+  observerId: Id,
+  commit: z.string().min(1).max(128),
+  baseCommit: z.string().min(1).max(128),
+  candidateDigest: Digest,
+  inputDigest: Digest,
+  planDigest: Digest,
+  pipelineId: z.string().min(1).max(128),
+  pipelineUrl: z.string().min(1).max(2048),
+  steps: z
+    .array(
+      z.strictObject({
+        id: Id,
+        commandDigest: Digest,
+        commit: z.string().min(1).max(128),
+        result: z.enum(["SUCCESS", "FAILURE", "SKIPPED"]),
+      }),
+    )
+    .max(1000),
+  terminalResult: z.enum(["SUCCESS", "FAILURE", "STOPPED"]),
+  signature: z.string().regex(/^[A-Za-z0-9+/]{86}==$/),
+});
+export type QualificationCiObservation = z.infer<typeof QualificationCiObservationSchema>;
 export const QualificationAssessmentSchema = z.strictObject({
   obligationId: Id,
   kind: z.string(),

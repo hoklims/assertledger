@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sha256Canonical } from "../src/core/index.js";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { canonicalize, sha256Canonical } from "../src/core/index.js";
 import type {
   QualificationPlan,
   QualificationObservation,
@@ -88,6 +89,7 @@ function observations(plan: QualificationPlan): QualificationObservation[] {
         facts: {
           exitCode: world.kind === "TARGET" ? 0 : 1,
           testsDiscovered: 1,
+          attributed: true,
           testOutcome: world.kind === "TARGET" ? "PASS" : "ASSERTION_FAILURE",
         },
         bindingDigest: core.qualificationBinding(
@@ -249,6 +251,21 @@ test("contradictory completed test facts reject evidence even with all digests r
     { exitCode: 0, testOutcome: "ASSERTION_FAILURE" },
     { exitCode: 1, testOutcome: "COMPILE_FAILURE" },
   ]) {
+    const altered = structuredClone(baseline);
+    Object.assign(present(altered.observations[0]).facts, facts);
+    const generated = core.createQualificationReceipt(altered);
+    assert.equal(generated.decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(generated).valid, false);
+    assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+  }
+});
+
+test("completed test assertions require candidate attribution and integral discovery counts", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  const baseline = receipt(plan);
+  assert.equal(baseline.decision, "QUALIFIED");
+  for (const facts of [{ attributed: false }, { testsDiscovered: 1.5 }]) {
     const altered = structuredClone(baseline);
     Object.assign(present(altered.observations[0]).facts, facts);
     const generated = core.createQualificationReceipt(altered);
@@ -442,4 +459,103 @@ test("execution requests and expected replay domains use strict schemas with nam
     assert.equal(typeof schema.$id, "string");
     assert.equal(typeof schema.title, "string");
   }
+});
+
+// These signing fixtures qualify admission behavior; they are not observations of Bitbucket.
+function signedCiFixture() {
+  const keys = generateKeyPairSync("ed25519");
+  const plan = fixture();
+  present(plan.obligations[0]).kind = "ci-live";
+  present(plan.worlds[1]).discriminants = [];
+  plan.worlds = plan.worlds.filter((world) => world.kind !== "TARGET");
+  Object.assign(plan, {
+    ciTrust: {
+      repositoryId: "public-fixture/repository",
+      observerId: "independent-observer",
+      publicKeyPem: keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      requiredSteps: [
+        {
+          id: "gate",
+          commandDigest: sha256Canonical({ executable: "pnpm", arguments: ["check"] }),
+        },
+      ],
+    },
+  });
+  const payload = {
+    protocolVersion: "1.0.0",
+    provider: "bitbucket",
+    repositoryId: "public-fixture/repository",
+    observerId: "independent-observer",
+    ...plan.subject,
+    planDigest: sha256Canonical(plan),
+    pipelineId: "42",
+    pipelineUrl: "https://bitbucket.org/public-fixture/repository/pipelines/results/42",
+    steps: [
+      {
+        id: "gate",
+        commandDigest: sha256Canonical({ executable: "pnpm", arguments: ["check"] }),
+        commit: plan.subject.commit,
+        result: "SUCCESS",
+      },
+    ],
+    terminalResult: "SUCCESS",
+  };
+  const signer = (statement: typeof payload) => ({
+    ...statement,
+    signature: sign(
+      null,
+      Buffer.from(canonicalize({ domain: "ASSERTLEDGER_CI_OBSERVATION_V1", statement })),
+      keys.privateKey,
+    ).toString("base64"),
+  });
+  return { plan, payload, signer };
+}
+
+test("a trusted signed exact-domain CI observation covers live CI without a local target witness", () => {
+  const { plan, payload, signer } = signedCiFixture();
+  assert.doesNotThrow(() => contracts.parseQualificationPlan(plan));
+  const result = core.createQualificationReceipt({ ...receipt(plan), externalCi: signer(payload) });
+  assert.equal(result.decision, "QUALIFIED");
+  assert.deepEqual(result.coveredGuaranteeIds, ["propagation"]);
+  const replay = core.replayQualificationReceipt(result);
+  assert.equal(replay.valid, true);
+  assert.equal(replay.producerAuthenticated, false);
+  assert.equal(replay.reexecuted, false);
+});
+
+test("trusted CI admission rejects invalid signatures and signed wrong domains or incomplete execution", () => {
+  const { plan, payload, signer } = signedCiFixture();
+  const changes = [
+    { commit: "other" },
+    { baseCommit: "other" },
+    { candidateDigest: sha256Canonical("other") },
+    { inputDigest: sha256Canonical("other") },
+    { planDigest: sha256Canonical("other") },
+    { repositoryId: "other/repository" },
+    { observerId: "other" },
+    { terminalResult: "FAILURE" },
+    { pipelineUrl: "https://example.com/pipelines/results/42" },
+    { pipelineUrl: "https://bitbucket.org/public-fixture/repository/pipelines/results/43" },
+    { pipelineUrl: "https://bitbucket.org/other/repository/pipelines/results/42" },
+    { pipelineUrl: "https://api.bitbucket.org/fake/prefix/public-fixture/repository/pipelines/42" },
+    { steps: [] },
+    { steps: [...payload.steps, ...payload.steps] },
+    { steps: [{ ...present(payload.steps[0]), result: "SKIPPED" }] },
+    { steps: [{ ...present(payload.steps[0]), commandDigest: sha256Canonical("other") }] },
+    { steps: [{ ...present(payload.steps[0]), commit: "other" }] },
+  ];
+  for (const change of changes) {
+    const result = core.createQualificationReceipt({
+      ...receipt(plan),
+      externalCi: signer({ ...payload, ...change }),
+    });
+    assert.equal(result.decision, "OPEN");
+    assert.equal(core.replayQualificationReceipt(result).valid, true);
+  }
+  const signed = signer(payload);
+  signed.signature = Buffer.alloc(64).toString("base64");
+  assert.equal(
+    core.createQualificationReceipt({ ...receipt(plan), externalCi: signed }).decision,
+    "OPEN",
+  );
 });

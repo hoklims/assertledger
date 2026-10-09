@@ -1,7 +1,9 @@
+import { createPublicKey, verify } from "node:crypto";
 import {
   parseQualificationPlan,
   QualificationObservationSchema,
   QualificationProvenanceSchema,
+  QualificationCiObservationSchema,
   QualificationReceiptSchema,
   type QualificationObservation,
   type QualificationPlan,
@@ -72,7 +74,7 @@ function observationIssues(
       observation.state === "COMPLETED" &&
       (action?.adapter === "node-test" || action?.adapter === "bun-native")
     ) {
-      const { testOutcome, exitCode } = observation.facts;
+      const { testOutcome, exitCode, attributed, testsDiscovered } = observation.facts;
       if (
         (testOutcome !== "PASS" && testOutcome !== "ASSERTION_FAILURE") ||
         (testOutcome === "PASS" && exitCode !== 0) ||
@@ -80,6 +82,13 @@ function observationIssues(
           (typeof exitCode !== "number" || !Number.isInteger(exitCode) || exitCode <= 0))
       )
         issues.push(`CONTRADICTORY_TEST_FACTS:${key}`);
+      if (testOutcome === "ASSERTION_FAILURE" && attributed !== true)
+        issues.push(`UNATTRIBUTED_TEST_ASSERTION:${key}`);
+      if (
+        typeof testsDiscovered === "number" &&
+        (!Number.isInteger(testsDiscovered) || testsDiscovered < 0)
+      )
+        issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);
     }
     if (
       observation.bindingDigest !==
@@ -101,6 +110,103 @@ export type CreateQualificationReceiptInput = Pick<
   QualificationReceipt,
   "plan" | "planDigest" | "candidateDigest" | "observations" | "provenance" | "externalCi"
 >;
+
+export function verifyQualificationCiObservation(
+  plan: QualificationPlan,
+  planDigest: string,
+  value: unknown,
+): { valid: boolean; reasons: string[] } {
+  if (!plan.ciTrust) return { valid: false, reasons: ["LIVE_CI_TRUST_ROOT_MISSING"] };
+  if (value === null || value === undefined)
+    return { valid: false, reasons: ["LIVE_CI_OBSERVATION_MISSING"] };
+  const parsed = QualificationCiObservationSchema.safeParse(value);
+  if (!parsed.success) return { valid: false, reasons: ["LIVE_CI_OBSERVATION_INVALID"] };
+  const statement = parsed.data;
+  const reasons: string[] = [];
+  if (
+    statement.repositoryId !== plan.ciTrust.repositoryId ||
+    statement.observerId !== plan.ciTrust.observerId
+  )
+    reasons.push("LIVE_CI_OBSERVER_DOMAIN_MISMATCH");
+  if (
+    statement.planDigest !== planDigest ||
+    statement.candidateDigest !== plan.subject.candidateDigest ||
+    statement.inputDigest !== plan.subject.inputDigest ||
+    statement.commit !== plan.subject.commit ||
+    statement.baseCommit !== plan.subject.baseCommit
+  )
+    reasons.push("LIVE_CI_SUBJECT_MISMATCH");
+  if (statement.terminalResult !== "SUCCESS") reasons.push("LIVE_CI_TERMINAL_NOT_SUCCESS");
+  if (new Set(statement.steps.map((step) => step.id.toLowerCase())).size !== statement.steps.length)
+    reasons.push("LIVE_CI_DUPLICATE_STEP");
+  for (const required of plan.ciTrust.requiredSteps) {
+    const observed = statement.steps.find((step) => step.id === required.id);
+    if (
+      observed?.result !== "SUCCESS" ||
+      observed.commandDigest !== required.commandDigest ||
+      observed.commit !== plan.subject.commit
+    )
+      reasons.push(`LIVE_CI_REQUIRED_STEP_UNSATISFIED:${required.id}`);
+  }
+  if (statement.steps.some((step) => step.commit !== plan.subject.commit))
+    reasons.push("LIVE_CI_STEP_COMMIT_MISMATCH");
+  try {
+    const url = new URL(statement.pipelineUrl);
+    const segments = url.pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+    const pipelineIndex = segments.lastIndexOf("pipelines");
+    const repositorySegments =
+      url.hostname === "api.bitbucket.org"
+        ? segments.slice(2, pipelineIndex)
+        : segments.slice(0, pipelineIndex);
+    const repositoryIdentity =
+      repositorySegments.length === 2 &&
+      repositorySegments.join("/") === statement.repositoryId &&
+      (url.hostname !== "api.bitbucket.org" ||
+        (segments[0] === "2.0" && segments[1] === "repositories"));
+    const immutableIdentity =
+      pipelineIndex >= 0 &&
+      ((segments[pipelineIndex + 1] === "results" &&
+        segments.length === pipelineIndex + 3 &&
+        segments[pipelineIndex + 2] === statement.pipelineId) ||
+        (url.hostname === "api.bitbucket.org" &&
+          segments.length === pipelineIndex + 2 &&
+          segments[pipelineIndex + 1] === statement.pipelineId));
+    if (
+      url.protocol !== "https:" ||
+      !["bitbucket.org", "api.bitbucket.org"].includes(url.hostname) ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.search ||
+      url.hash ||
+      !repositoryIdentity ||
+      !immutableIdentity
+    )
+      reasons.push("LIVE_CI_PIPELINE_IDENTITY_INVALID");
+  } catch {
+    reasons.push("LIVE_CI_PIPELINE_IDENTITY_INVALID");
+  }
+  try {
+    const key = createPublicKey(plan.ciTrust.publicKeyPem);
+    const { signature, ...payload } = statement;
+    if (
+      key.asymmetricKeyType !== "ed25519" ||
+      !verify(
+        null,
+        Buffer.from(canonicalize({ domain: "ASSERTLEDGER_CI_OBSERVATION_V1", statement: payload })),
+        key,
+        Buffer.from(signature, "base64"),
+      )
+    )
+      reasons.push("LIVE_CI_SIGNATURE_INVALID");
+  } catch {
+    reasons.push("LIVE_CI_SIGNATURE_INVALID");
+  }
+  return { valid: reasons.length === 0, reasons: [...new Set(reasons)].sort() };
+}
 
 export function createQualificationReceipt(
   input: CreateQualificationReceiptInput,
@@ -138,7 +244,18 @@ export function createQualificationReceipt(
       if (suite?.extraction !== "COMPLETE" || suite.files.length === 0)
         reasons.push(`SUITE_NOT_EXTRACTED:${suiteId}`);
     }
-    if (obligation.kind === "ci-live") reasons.push("LIVE_CI_INDEPENDENT_ADMISSION_UNAVAILABLE");
+    if (obligation.kind === "ci-live") {
+      const admission = verifyQualificationCiObservation(plan, input.planDigest, input.externalCi);
+      reasons.push(...admission.reasons);
+      return {
+        obligationId: obligation.id,
+        kind: obligation.kind,
+        required: obligation.required,
+        status: rejected ? "REJECTED" : reasons.length > 0 ? "OPEN" : "COVERED",
+        reasons: [...new Set(reasons)].sort(),
+        mismatchCheckIds: [],
+      };
+    }
     const targets = plan.worlds.filter(
       (world) =>
         world.kind === "TARGET" &&
