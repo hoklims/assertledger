@@ -10,6 +10,7 @@ import {
   qualificationFileDigest,
   qualificationRepositoryDigest,
   qualifyOrchestration,
+  qualificationMechanismDigest,
 } from "../src/engine/qualification.js";
 
 // The operator owns this manifest and oracle. Fixture fault overlays never select checks.
@@ -397,7 +398,12 @@ const receipt = await qualifyOrchestration(
 const replay = replayQualificationReceipt(receipt, {
   planDigest: sealed.planDigest,
   ...sealed.plan.subject,
+  mechanismDigest: await qualificationMechanismDigest(),
 });
+await writeFile(
+  path.join(output, "domain.json"),
+  `${JSON.stringify({ planDigest: sealed.planDigest, ...sealed.plan.subject, mechanismDigest: await qualificationMechanismDigest() }, null, 2)}\n`,
+);
 await writeFile(path.join(output, "receipt.json"), `${JSON.stringify(receipt, null, 2)}\n`);
 await writeFile(path.join(output, "replay.json"), `${JSON.stringify(replay, null, 2)}\n`);
 await writeFile(

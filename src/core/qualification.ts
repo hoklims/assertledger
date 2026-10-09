@@ -72,6 +72,14 @@ function observationIssues(
     const action = plan.actions.find((item) => item.id === observation.actionId);
     if (
       observation.state === "COMPLETED" &&
+      (typeof observation.facts.exitCode !== "number" ||
+        !Number.isSafeInteger(observation.facts.exitCode) ||
+        observation.facts.exitCode < 0)
+    ) {
+      issues.push(`CONTRADICTORY_PROCESS_FACTS:${key}`);
+    }
+    if (
+      observation.state === "COMPLETED" &&
       (action?.adapter === "node-test" || action?.adapter === "bun-native")
     ) {
       const { testOutcome, exitCode, attributed, testsDiscovered } = observation.facts;
@@ -243,6 +251,29 @@ export function createQualificationReceipt(
       const suite = plan.suites.find((item) => item.id === suiteId);
       if (suite?.extraction !== "COMPLETE" || suite.files.length === 0)
         reasons.push(`SUITE_NOT_EXTRACTED:${suiteId}`);
+      for (const world of plan.worlds.filter(
+        (item) =>
+          item.kind !== "TARGET" ||
+          item.discriminants.some((discriminant) => discriminant.obligationId === obligation.id),
+      )) {
+        for (let attempt = 1; attempt <= plan.requiredAttempts; attempt += 1) {
+          const observedFiles = new Set(
+            observations
+              .filter(
+                (item) =>
+                  item.worldId === world.id &&
+                  item.attempt === attempt &&
+                  item.state === "COMPLETED" &&
+                  typeof item.facts.testsDiscovered === "number" &&
+                  item.facts.testsDiscovered > 0,
+              )
+              .flatMap((item) => (Array.isArray(item.facts.testFiles) ? item.facts.testFiles : [])),
+          );
+          for (const file of suite?.files ?? [])
+            if (!observedFiles.has(file))
+              reasons.push(`SUITE_FILE_NOT_OBSERVED:${suiteId}:${world.id}:${attempt}:${file}`);
+        }
+      }
     }
     if (obligation.kind === "ci-live") {
       const admission = verifyQualificationCiObservation(plan, input.planDigest, input.externalCi);
@@ -420,10 +451,26 @@ export function replayQualificationReceipt(
         expectedDomain.candidateDigest === candidateDigest &&
         expectedDomain.inputDigest === receipt.plan.subject.inputDigest &&
         expectedDomain.commit === receipt.plan.subject.commit &&
-        expectedDomain.baseCommit === receipt.plan.subject.baseCommit);
+        expectedDomain.baseCommit === receipt.plan.subject.baseCommit &&
+        (expectedDomain.mechanismDigest === undefined ||
+          (receipt.provenance.runtime !== null &&
+            typeof receipt.provenance.runtime === "object" &&
+            !Array.isArray(receipt.provenance.runtime) &&
+            receipt.provenance.runtime.mechanismDigest === expectedDomain.mechanismDigest)));
     result.valid = result.integrityValid && result.semanticsValid && result.domainValid;
   } catch {
     /* Strict parsing or recomputation failure is a failed replay. */
   }
   return result;
+}
+
+/** Attach observations only to an intact receipt whose operator-pinned trust policy is unchanged. */
+export function admitQualificationCi(value: unknown, externalCi: unknown): QualificationReceipt {
+  if (!replayQualificationReceipt(value).valid)
+    throw new Error("QUALIFICATION_SOURCE_RECEIPT_INVALID");
+  const receipt = QualificationReceiptSchema.parse(value);
+  return createQualificationReceipt({
+    ...receipt,
+    externalCi: externalCi as QualificationReceipt["externalCi"],
+  });
 }

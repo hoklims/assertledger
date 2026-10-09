@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
+import { QualificationExpectedDomainSchema } from "./contracts/qualification.js";
 import { renderDiagnostics, renderRepositoryLinkRefusal } from "./diagnostics.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
@@ -84,6 +85,13 @@ Commands:
   verify [request.json|-] [--container-runtime JSON_ARGV | --allow-unsafe-execution]
                                                Execute a v2 container or trusted-local campaign
   replay [manifest.json|-]                     Verify an evidence digest
+  qualification-plan [plan.json|-]             Seal an operator-owned obligation inventory
+  qualify [request.json|-] --allow-unsafe-execution
+                                               Execute a scoped UNSANDBOXED qualification
+  qualification-replay [receipt.json|-] [--domain domain.json]
+                                               Replay integrity and explicit validity domain
+  qualification-ci [receipt.json|-] --observation observation.json
+                                               Admit an independently signed CI observation
   export [request.json|-]                      Export replay-valid evidence for external consumers
   export-replay [export.json|-]                Replay an evidence export
   provider                                     Describe the evidence provider and its limits
@@ -1178,6 +1186,10 @@ export async function runCli(
           name !== "replay-result" &&
           name !== "agentic-benchmark-request" &&
           name !== "agentic-benchmark-artifact" &&
+          name !== "qualification-plan" &&
+          name !== "qualification-execution-request" &&
+          name !== "qualification-receipt" &&
+          name !== "qualification-replay-result" &&
           name !== "agentic-benchmark-replay-result" &&
           name !== "agentic-benchmark-acquisition-request" &&
           name !== "agentic-benchmark-acquisition-result" &&
@@ -1248,6 +1260,80 @@ export async function runCli(
             : await ledger.verify(authorizeTrustedLocalExecution(request));
         writeJson(io, result);
         return decisionExitCode(result);
+      }
+      case "qualification-plan": {
+        if (
+          argv.slice(1).filter((item) => item !== "--json").length > 1 ||
+          argv.slice(1).some((item) => item.startsWith("--") && item !== "--json")
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        writeJson(io, ledger.sealQualificationPlan(await readJsonInput(positional[1], io)));
+        return 0;
+      }
+      case "qualify": {
+        if (
+          argv
+            .slice(1)
+            .some(
+              (item) =>
+                item.startsWith("--") && item !== "--allow-unsafe-execution" && item !== "--json",
+            ) ||
+          positional.length > 2
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        if (!argv.includes("--allow-unsafe-execution")) {
+          io.writeStderr("Refusing UNSANDBOXED qualification without --allow-unsafe-execution.\n");
+          return 4;
+        }
+        const result = await ledger.qualifyOrchestration(await readJsonInput(positional[1], io), {
+          allowUnsafeExecution: true,
+        });
+        writeJson(io, result);
+        return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 2;
+      }
+      case "qualification-replay": {
+        const domainPath = optionalFlag(argv, "--domain");
+        const args = positionalArguments(argv, new Set(["--domain"]));
+        if (
+          args.length > 2 ||
+          argv
+            .slice(1)
+            .some((item) => item.startsWith("--") && item !== "--domain" && item !== "--json")
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const domain =
+          domainPath === undefined
+            ? undefined
+            : QualificationExpectedDomainSchema.parse(await readJsonInput(domainPath, io));
+        const result = ledger.replayQualification(await readJsonInput(args[1], io), domain);
+        writeJson(io, result);
+        return result.valid ? 0 : 4;
+      }
+      case "qualification-ci": {
+        const observationPath = optionalFlag(argv, "--observation");
+        const args = positionalArguments(argv, new Set(["--observation"]));
+        if (
+          observationPath === undefined ||
+          args.length > 2 ||
+          argv
+            .slice(1)
+            .some((item) => item.startsWith("--") && item !== "--observation" && item !== "--json")
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const result = ledger.admitQualificationCi(
+          await readJsonInput(args[1], io),
+          await readJsonInput(observationPath, io),
+        );
+        writeJson(io, result);
+        return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 2;
       }
       case "replay": {
         const result = ledger.replay(await readJsonInput(positional[1], io));

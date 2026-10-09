@@ -192,6 +192,7 @@ export const QualificationExpectedDomainSchema = z.strictObject({
   inputDigest: Digest,
   commit: z.string().min(1).max(128),
   baseCommit: z.string().min(1).max(128),
+  mechanismDigest: Digest.optional(),
 });
 export type QualificationExpectedDomain = z.infer<typeof QualificationExpectedDomainSchema>;
 

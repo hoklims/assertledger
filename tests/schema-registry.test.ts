@@ -6,6 +6,10 @@ it("checks every generated public schema for staleness", () => {
   assert.deepEqual(
     publishedSchemas().map(([filename]) => filename),
     [
+      "qualification-plan.v1.json",
+      "qualification-execution-request.v1.json",
+      "qualification-receipt.v1.json",
+      "qualification-replay-result.v1.json",
       "agentic-corpus-trust-policy.v1.json",
       "agentic-corpus-provenance.v1.json",
       "agentic-benchmark-request.v1.json",

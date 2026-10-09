@@ -40,6 +40,14 @@ import {
 } from "../diagnostics.js";
 import { AssertLedger } from "../sdk/index.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
+import {
+  QualificationPlanSchema,
+  QualificationExecutionRequestSchema,
+  QualificationExpectedDomainSchema,
+  QualificationReceiptSchema,
+  QualificationReplayResultSchema,
+  QualificationCiObservationSchema,
+} from "../contracts/qualification.js";
 
 function jsonResult(value: unknown) {
   const structuredContent =
@@ -86,6 +94,97 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     { name: "assertledger", version: ASSERTLEDGER_VERSION },
     { capabilities: { tools: {} } },
   );
+
+  const qualificationPlanInput = z.strictObject({ plan: QualificationPlanSchema });
+  server.registerTool(
+    "assertledger_qualification_plan",
+    {
+      title: "Seal a qualification plan",
+      description:
+        "Seal operator-owned obligations and discriminant worlds before candidate execution. The plan digest must be anchored outside candidate control.",
+      inputSchema: qualificationPlanInput,
+      outputSchema: z.strictObject({ plan: QualificationPlanSchema, planDigest: z.string() }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ plan }) => jsonResult(assertLedger.sealQualificationPlan(plan)),
+  );
+
+  const qualificationReplayInput = z.strictObject({
+    receipt: QualificationReceiptSchema,
+    expectedDomain: QualificationExpectedDomainSchema.optional(),
+  });
+  const qualificationCiInput = z.strictObject({
+    receipt: QualificationReceiptSchema,
+    observation: QualificationCiObservationSchema,
+  });
+  server.registerTool(
+    "assertledger_qualification_ci",
+    {
+      title: "Admit signed CI observations",
+      description:
+        "Verify an external observer signature against the operator trust root already sealed in an intact receipt. Require exact commit, base, steps and terminal success. Does not run a pipeline or authorize merge.",
+      inputSchema: qualificationCiInput,
+      outputSchema: QualificationReceiptSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ receipt, observation }) =>
+      jsonResult(assertLedger.admitQualificationCi(receipt, observation)),
+  );
+  server.registerTool(
+    "assertledger_qualification_replay",
+    {
+      title: "Replay scoped qualification",
+      description:
+        "Recompute receipt integrity, completeness, decision and optional domain. Does not execute tests or authenticate the producer.",
+      inputSchema: qualificationReplayInput,
+      outputSchema: QualificationReplayResultSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ receipt, expectedDomain }) =>
+      jsonResult(assertLedger.replayQualification(receipt, expectedDomain)),
+  );
+
+  if (options.allowUnsafeExecution === true) {
+    const qualificationInput = z.strictObject({ request: QualificationExecutionRequestSchema });
+    server.registerTool(
+      "assertledger_qualify",
+      {
+        title: "Execute scoped orchestration qualification",
+        description:
+          "DANGEROUS: execute operator-sealed actions and candidate code in explicitly UNSANDBOXED trusted-local workspaces. Reports each covered and open obligation; never authorizes merge.",
+        inputSchema: qualificationInput,
+        outputSchema: QualificationReceiptSchema,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      },
+      async ({ request }) =>
+        jsonResult(
+          await assertLedger.qualifyOrchestration(
+            { ...request, root: await confinedRepositoryRoot(request.root) },
+            { allowUnsafeExecution: true },
+          ),
+        ),
+    );
+  }
 
   const analyzeInputSchema = z.strictObject({ root: z.string().min(1) });
   const explainInputSchema = z.strictObject({ codes: DiagnosticCodesSchema });
@@ -595,6 +694,10 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
 
   const schemaInputSchema = z.strictObject({
     name: z.enum([
+      "qualification-plan",
+      "qualification-execution-request",
+      "qualification-receipt",
+      "qualification-replay-result",
       "agentic-corpus-allocation-request",
       "agentic-corpus-allocation",
       "agentic-corpus-allocation-replay-result",

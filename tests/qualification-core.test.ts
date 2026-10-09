@@ -89,6 +89,7 @@ function observations(plan: QualificationPlan): QualificationObservation[] {
         facts: {
           exitCode: world.kind === "TARGET" ? 0 : 1,
           testsDiscovered: 1,
+          testFiles: plan.suites.flatMap((suite) => suite.files),
           attributed: true,
           testOutcome: world.kind === "TARGET" ? "PASS" : "ASSERTION_FAILURE",
         },
@@ -118,6 +119,53 @@ function receipt(plan = fixture(), records = observations(plan)): QualificationR
     externalCi: null,
   });
 }
+
+test("replay refuses reuse under a changed proof mechanism", () => {
+  const evidence = receipt();
+  const domain = {
+    planDigest: evidence.planDigest,
+    candidateDigest: evidence.candidateDigest,
+    inputDigest: evidence.plan.subject.inputDigest,
+    commit: evidence.plan.subject.commit,
+    baseCommit: evidence.plan.subject.baseCommit,
+    mechanismDigest: sha256Canonical("new-mechanism"),
+  };
+  assert.equal(
+    core.replayQualificationReceipt(evidence, domain).valid,
+    false,
+    "changed proof mechanism was accepted",
+  );
+});
+
+test("a declared complete suite with an unobserved file remains open", () => {
+  const records = observations(fixture());
+  for (const observation of records) observation.facts.testFiles = [];
+  assert.equal(
+    receipt(fixture(), records).decision,
+    "OPEN",
+    "unobserved declared suite was credited",
+  );
+});
+
+test("completed command facts cannot conceal a crash or invalid exit code", () => {
+  for (const exitCode of [null, 0.5, true]) {
+    const records = observations(fixture());
+    for (const observation of records.filter((item) => item.worldId === "fault"))
+      observation.facts.exitCode = exitCode;
+    const evidence = receipt(fixture(), records);
+    assert.equal(evidence.decision, "REJECTED", "contradictory completed command was credited");
+    assert.equal(core.replayQualificationReceipt(evidence).valid, false);
+  }
+});
+
+test("CI observation import requires an intact source receipt", () => {
+  assert.equal(typeof core.admitQualificationCi, "function", "signed observation importer missing");
+  assert.throws(
+    () =>
+      core.admitQualificationCi({ ...receipt(), artifactDigest: sha256Canonical("tamper") }, {}),
+    /SOURCE_RECEIPT_INVALID/u,
+  );
+});
 
 function reseal(value: QualificationReceipt): QualificationReceipt {
   const {
