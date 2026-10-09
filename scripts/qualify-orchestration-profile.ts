@@ -296,6 +296,7 @@ const worlds: World[] = [
       config((value) => {
         value.tasks.build.inputs = [
           "$TURBO_DEFAULT$",
+          "$TURBO_ROOT$/task.mjs",
           "!dist/**",
           "!.turbo/**",
           "!node_modules/**",

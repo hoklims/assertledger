@@ -9,12 +9,25 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "!dist/**", "!.turbo/**", "!node_modules/**", "verdict.txt"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/task.mjs",
+        "!dist/**",
+        "!.turbo/**",
+        "!node_modules/**",
+        "verdict.txt"
+      ],
       "outputs": ["dist/**"]
     },
     "check": {
       "cache": false,
-      "inputs": ["$TURBO_DEFAULT$", "!dist/**", "!.turbo/**", "!node_modules/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/task.mjs",
+        "!dist/**",
+        "!.turbo/**",
+        "!node_modules/**"
+      ],
       "outputs": []
     },
     "fail": { "dependsOn": ["^fail"], "cache": false, "outputs": [] }

@@ -15,7 +15,7 @@ if (layer === "seed") {
 }
 let status;
 if (layer === "orchestrator") {
-  if (faults.omitStage || faults.emptySelection || faults.staleResult) status = 0;
+  if (faults.omitStage || faults.staleResult) status = 0;
   else {
     emit("mandatory-stage", "start");
     emit("mandatory-stage", "finish");
@@ -24,7 +24,7 @@ if (layer === "orchestrator") {
       [
         "run",
         "fail",
-        "--filter=@public/app...",
+        faults.emptySelection ? "--filter=@public/missing..." : "--filter=@public/app...",
         "--cache=local:rw",
         `--cache-dir=${process.env.ASSERTLEDGER_QUALIFICATION_CACHE}`,
         "--summarize",
