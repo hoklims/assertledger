@@ -149,6 +149,13 @@ const cases = [
     diagnostic: "SCHEMA_RAW_DIGEST_MISMATCH",
   },
   {
+    id: "frozen-v4-compatibility",
+    target: "schemas/evidence-manifest.v4.json",
+    change: (source: string) => source.replace('"const": "4.0.0"', '"const": "9.0.0"'),
+    args: ["scripts/check-conformance-v1.ts"],
+    diagnostic: "SCHEMA_RAW_DIGEST_MISMATCH",
+  },
+  {
     id: "frozen-v3-compatibility",
     target: "schemas/evidence-manifest.v3.json",
     change: (source: string) => source.replace('"const": "3.0.0"', '"const": "9.0.0"'),

@@ -12,7 +12,7 @@ distributed. Approval gates, brokers, shared skills and merge authorization are 
 ## Work and acceptance
 
 1. Inventory the published CLI/SDK/MCP and consumer version/test forms; preserve concurrent work.
-2. Add versioned contracts/core and qualify native Bun assertions without changing frozen v1-v3.
+2. Add versioned contracts/core and qualify native Bun assertions without changing frozen v1-v4.
 3. Execute real pinned Turbo cold/warm/invalidation, selection and failure propagation campaigns.
 4. Expose CLI/SDK/MCP, retain receipts/replay and the obligation matrix; run `pnpm check`.
 5. Freeze the aggregate candidate and obtain independent proof-integrity review before publishing PR.
@@ -31,9 +31,13 @@ they do not authenticate the producer or cause test reexecution.
 
 ## Existing capabilities and the consumer
 
-The existing `verify` CLI, SDK `verify`/`verifyV2`/`verifyV3`, MCP verification tools and versioned
+The existing `verify` CLI, SDK `verify`/`verifyV2`/`verifyV3`/`verifyV4`, MCP verification tools and versioned
 manifest replay remain available. Node uses its owned reporter and shallow `ERR_ASSERTION`
 attribution. The frozen Bun v3 profile admits only errors issued by `assertledger/bun` helpers.
+The integrated v4 baseline also supports designated Bun tests and imported witness execution.
+Those paths prove their declared test campaign; they do not supply Turbo, wrapper or hosted-CI
+qualification. The native qualification collector retains a separate event/JUnit protocol and
+passive matcher boundary, and reuses the v4 parser's per-test timeout refusal rule.
 The existing structured-command v1 protocol requires exit zero for `PASS`; it cannot represent a
 successful propagation check whose tested command intentionally exits seven. This extension reuses
 the bounded process runner, canonical hashing, Node reporter and existing versioned contracts.
@@ -150,7 +154,7 @@ grants approval or merge authority.
 
 ## Compatibility and delivery
 
-The four qualification v1 schemas are additive. Existing verification/manifest v1–v3, conformance
+The four qualification v1 schemas are additive. Existing verification/manifest v1–v4, conformance
 v1 projections, schema bytes and the old extension lock remain unchanged. The new schema lock is
 separate. [Migration notes](migration-orchestration-qualification-v1.md) describe opt-in adoption.
 

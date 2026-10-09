@@ -1,7 +1,7 @@
 # Adopt orchestration qualification v1
 
 This release candidate adds a separate capability. It does not change verification requests,
-evidence manifests, outcome taxonomies or decision/artifact digest projections of versions 1–3.
+evidence manifests, outcome taxonomies or decision/artifact digest projections of versions 1–4.
 Old receipts remain receipts for their original declared test campaign. Their scope is not widened.
 
 For a test-only consumer, existing `verify` and `replay` continue unchanged. To qualify orchestration:
@@ -17,7 +17,8 @@ For a test-only consumer, existing `verify` and `replay` continue unchanged. To 
 conditions. It is not repository-wide correctness, consumer-wide readiness, an approval or merge
 permission. `OPEN` keeps unknown, omitted, operational or missing independent evidence visible.
 
-Native Bun expectations use a new profile. Do not reinterpret an existing helper-only v3 receipt
+Native Bun qualification uses a separate profile. Existing v4 designated-test and witness-import
+paths remain available with their original test scope. Do not reinterpret a v4 test receipt or a helper-only v3 receipt
 as native-expect qualification. Matchers, callbacks, preloads, conditions, isolation and runtime
 versions outside the new profile's measured forms require new witnesses.
 
