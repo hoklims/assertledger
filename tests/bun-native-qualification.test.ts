@@ -39,7 +39,7 @@ async function collect(
       maximumOutputBytes: 65536,
     });
   } finally {
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 
@@ -251,4 +251,16 @@ test("all declared files must actually start tests", async () => {
   });
   assert.equal(full.facts.testOutcome, "PASS");
   assert.deepEqual(full.facts.testFiles, ["case.test.ts", "other.test.ts"]);
+});
+
+test("Bun per-test timeout preceding a late matcher failure cannot earn detection", async () => {
+  const result = await collect(
+    'import {test,expect} from "bun:test"; test("late",()=>{const end=Date.now()+300;while(Date.now()<end){}expect(1).toBe(2);},50);',
+    ["case.test.ts"],
+    5000,
+  );
+  assert.equal(result.state, "INFRA_ERROR");
+  assert.notEqual(result.facts.testOutcome, "ASSERTION_FAILURE");
+  assert.equal(result.facts.attributed, false);
+  assert.notEqual(result.state, "TIMEOUT", "the outer bounded process completed before its budget");
 });

@@ -90,7 +90,11 @@ function parseJunitSummary(xml) {
   ) {
     return undefined;
   }
-  return { tests, failures, skipped };
+  // Same report observation as the v4 Bun driver: a late callback failure does not
+  // erase Bun's per-test TimeoutError. This is operational evidence, not attribution.
+  const timeouts = [...xml.matchAll(/<failure\b[^>]*\btype="TimeoutError"/gu)].length;
+  if (timeouts > failures) return undefined;
+  return { tests, failures, skipped, timeouts };
 }
 
 function parseEvents(content, root, allowedFiles, evidenceKey) {
@@ -169,6 +173,7 @@ export function classifyBunInstrumentedEvidence(
   ) {
     return infrastructureFailure("INCOMPLETE_CONTROLLED_REPORT");
   }
+  if (junit.timeouts > 0) return infrastructureFailure("BUN_TEST_TIMEOUT");
   const found = new Map();
   const ended = new Map();
   for (const event of events) {

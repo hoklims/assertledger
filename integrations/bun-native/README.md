@@ -26,6 +26,12 @@ cannot establish a detection. Rejected inputs under `resolves`, TypeError and
 RangeError remain operational failures. Custom matchers (`expect.extend`) are
 explicitly unqualified.
 
+Both the outer process timeout and Bun's per-test timeout are operational failures.
+JUnit `TimeoutError` observations invalidate collection even when a synchronous
+callback finishes before the outer budget and throws an owned matcher error after
+its per-test deadline. This observation matches the existing v4 Bun driver's
+timeout handling; its private JUnit parser is not imported as a new dependency.
+
 The Node compatibility forms `node:test` default/named registrations with callback
 contexts (`t.after`), generated parameterized registrations, helper imports and
 `node:assert/strict` `ok`, `equal` and `strictEqual` assertions are qualified under
