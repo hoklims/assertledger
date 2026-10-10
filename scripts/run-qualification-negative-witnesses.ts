@@ -23,6 +23,22 @@ const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
 const rawDigest = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 const cases = [
   {
+    id: "physical-workspace-attribution",
+    target: "src/engine/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        /const temporary = await realpath\([\s\S]*?\);/u,
+        'const temporary = await mkdtemp(path.join(os.tmpdir(), "assertledger-orchestration-"));',
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "node:test qualification preserves suite attribution through a temporary-directory alias",
+      "tests/qualification-engine.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "unassigned-fault-world",
     target: "src/contracts/qualification.ts",
     change: (source: string) =>
