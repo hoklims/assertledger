@@ -133,7 +133,12 @@ function receipt(plan = fixture(), records = observations(plan)): QualificationR
     observations: records,
     provenance: {
       engineVersion: "1.0.0",
-      adapterVersions: { command: "1.0.0", turbo: "1.0.0", "node-test": "1.0.0" },
+      adapterVersions: {
+        command: "1.0.0",
+        turbo: "1.0.0",
+        "node-test": "1.0.0",
+        "bun-native": "1.0.0",
+      },
       runtime: { node: "22.15.0" },
       executionTrust: "TRUSTED_LOCAL_UNSANDBOXED",
     },
@@ -324,6 +329,60 @@ test("rehashed missing and contradictory assertion owning-file reports invalidat
   const passing = present(altered.observations.find((item) => item.worldId === "fault"));
   passing.facts.assertionFailureFiles = ["tests/sample.test.js"];
   assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+});
+
+test("native discovery and started-file inventories remain concordant during receipt creation and replay", () => {
+  for (const adapter of ["node-test", "bun-native"] as const) {
+    const plan = fixture();
+    present(plan.actions[0]).adapter = adapter;
+    present(plan.actions[0]).arguments = ["tests/a.test.js", "tests/b.test.js"];
+    present(plan.suites[0]).files = ["tests/a.test.js", "tests/b.test.js"];
+    const obligation = present(plan.obligations[0]);
+    obligation.kind = "tests";
+    obligation.checks = [
+      { id: "outcome", actionId: "gate", field: "testOutcome", expected: "PASS" },
+    ];
+    present(plan.worlds[1]).discriminants = [
+      { obligationId: "propagation", checkIds: ["outcome"] },
+    ];
+    const records = observations(plan);
+    for (const record of records) {
+      const failed = record.worldId === "fault";
+      record.facts.exitCode = failed ? 1 : 0;
+      record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+      record.facts.testsDiscovered = 2;
+      record.facts.assertionFailureFiles = failed ? present(plan.suites[0]).files : [];
+    }
+    const baseline = receipt(plan, records);
+    assert.equal(baseline.decision, "QUALIFIED", adapter);
+    assert.equal(core.replayQualificationReceipt(baseline).valid, true, adapter);
+    for (const count of [1, undefined, null, "2", 1.5, -1, 0]) {
+      const altered = structuredClone(baseline);
+      const record = present(altered.observations.find((item) => item.worldId === "fault"));
+      if (count === undefined) delete record.facts.testsDiscovered;
+      else record.facts.testsDiscovered = count;
+      assert.equal(
+        core.createQualificationReceipt(altered).decision,
+        "REJECTED",
+        `${adapter}:${count}`,
+      );
+      assert.equal(
+        core.replayQualificationReceipt(reseal(altered)).valid,
+        false,
+        `${adapter}:${count}`,
+      );
+    }
+    for (const files of [
+      ["tests/a.test.js", "tests/a.test.js", "tests/b.test.js"],
+      ["tests/b.test.js", "tests/a.test.js"],
+      ["../tests/a.test.js", "tests/b.test.js"],
+    ]) {
+      const altered = structuredClone(baseline);
+      present(altered.observations[0]).facts.testFiles = files;
+      assert.equal(core.createQualificationReceipt(altered).decision, "REJECTED", adapter);
+      assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false, adapter);
+    }
+  }
 });
 
 test("replay refuses reuse under a changed proof mechanism", () => {
@@ -710,7 +769,7 @@ test("zero discovered tests cannot be misrepresented as completed target evidenc
     record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
     if (failed) record.facts.testsDiscovered = 0;
   }
-  assert.equal(receipt(plan, records).decision, "OPEN");
+  assert.equal(receipt(plan, records).decision, "REJECTED");
 });
 
 test("unassigned suites keep the complete inventory open", () => {

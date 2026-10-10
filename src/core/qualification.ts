@@ -149,6 +149,19 @@ function observationIssues(
       if (testOutcome === "ASSERTION_FAILURE" && attributed !== true)
         issues.push(`UNATTRIBUTED_TEST_ASSERTION:${key}`);
       const { assertionFailureFiles, testFiles } = observation.facts;
+      const canonicalTestFiles =
+        Array.isArray(testFiles) &&
+        testFiles.every(
+          (file) =>
+            typeof file === "string" &&
+            file.length > 0 &&
+            !file.includes("\\") &&
+            !file.startsWith("/") &&
+            !/^[A-Za-z]:/u.test(file) &&
+            !file.split("/").some((part) => part === "" || part === "." || part === ".."),
+        ) &&
+        canonicalize(testFiles) === canonicalize([...new Set(testFiles)].sort());
+      if (!canonicalTestFiles) issues.push(`INVALID_TEST_FILES:${key}`);
       if (
         !Array.isArray(assertionFailureFiles) ||
         !Array.isArray(testFiles) ||
@@ -169,8 +182,10 @@ function observationIssues(
       )
         issues.push(`INVALID_ASSERTION_FAILURE_FILES:${key}`);
       if (
-        typeof testsDiscovered === "number" &&
-        (!Number.isInteger(testsDiscovered) || testsDiscovered < 0)
+        typeof testsDiscovered !== "number" ||
+        !Number.isSafeInteger(testsDiscovered) ||
+        testsDiscovered <= 0 ||
+        (Array.isArray(testFiles) && testsDiscovered < testFiles.length)
       )
         issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);
     }
