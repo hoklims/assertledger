@@ -38,6 +38,32 @@ type Witness = {
 };
 const cases: Witness[] = [
   {
+    id: "runtime-tool-provenance-concordance",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace("issues.push(`RUNTIME_TOOL_CONCORDANCE:${tool.id}`);", "void 0;"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "runtime provenance completeness and sealed tool concordance are required for default replay",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "node-completion-counter-concordance",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace("issues.push(`INVALID_NODE_TEST_COMPLETION:${key}`);", "void 0;"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "completed Node PASS and assertion observations cannot conceal skipped cancelled or todo tests",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "native-discovery-count-concordance",
     target: "src/core/qualification.ts",
     change: (source: string) =>
