@@ -33,7 +33,7 @@ needs registry access; fixture setup runs offline with lifecycle scripts disable
 Workspace links and normalized lockfiles are prepared before cold cache actions.
 
 The operator's manifest declares seven obligations before execution. Reference and
-documentation-only neutral worlds must pass. Fourteen declared fault worlds must mismatch
+documentation-only neutral worlds must pass. Fifteen declared fault worlds must mismatch
 their named discriminants in two independent attempts. The leaf, Turbo and both wrapper
 layers must return 7, as observed on this pinned profile. The expected nonzero reference result is not classified as a regression
 assertion or a successful target kill.
