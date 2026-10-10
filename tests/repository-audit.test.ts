@@ -1,18 +1,171 @@
 import assert from "node:assert/strict";
 import childProcess, { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, it } from "node:test";
-import { parseRepositoryAudit, repositoryAuditJsonSchema } from "../src/contracts/index.js";
-import { auditRepository } from "../src/engine/index.js";
+import {
+  parseRepositoryAudit,
+  parseRepositoryAuditV2,
+  repositoryAuditJsonSchema,
+} from "../src/contracts/index.js";
+import { auditRepository, initializeRepository } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 import { runCli } from "../src/cli.js";
 
 const temporaryDirectories: string[] = [];
 const execFileAsync = promisify(execFile);
+
+describe("audit exclusions", () => {
+  async function excludedLinkFixture(configExcludes: string[]) {
+    const root = await fixture();
+    await writeFile(
+      path.join(root, "tests", "base.test.js"),
+      "import { test } from 'node:test';\n",
+    );
+    const initialized = await initializeRepository(root, {
+      dryRun: true,
+      framework: "node:test",
+      packageManager: "npm",
+      exclude: configExcludes,
+    });
+    const config = initialized.files.find((file) => file.path === "assertledger.config.json");
+    assert(config, "init must generate a valid config");
+    await writeFile(path.join(root, "assertledger.config.json"), config.content);
+    await mkdir(path.join(root, ".claude"));
+    await writeFile(path.join(root, ".claude", "large.txt"), "excluded bytes".repeat(100));
+    await symlink(path.join(root, "src"), path.join(root, ".claude", "link"), "junction");
+    return root;
+  }
+
+  async function successfulAudit(root: string, verificationRequest?: unknown) {
+    try {
+      return await auditRepository(root, { noGit: true, verificationRequest });
+    } catch (error) {
+      assert.fail(`audit must respect selected exclusions: ${String(error)}`);
+    }
+  }
+
+  it("uses config exclusions without a request and discloses the effective list", async () => {
+    const result = await successfulAudit(await excludedLinkFixture([".claude"]));
+    assert.deepEqual((result as unknown as { appliedExcludes: unknown }).appliedExcludes, {
+      source: "config",
+      entries: [".claude", ".git", ".testforge", "node_modules"],
+    });
+    assert(!result.files.some((file) => file.path.startsWith(".claude/")));
+  });
+
+  it("uses request exclusions over config and projects only campaign inventory bytes", async () => {
+    const root = await excludedLinkFixture([]);
+    const verificationRequest = request(root);
+    verificationRequest.repository.exclude = [".claude"];
+    const result = await successfulAudit(root, verificationRequest);
+    assert.deepEqual((result as unknown as { appliedExcludes: unknown }).appliedExcludes, {
+      source: "request",
+      entries: [".claude", ".git", ".testforge", "node_modules"],
+    });
+    assert(!result.files.some((file) => file.path.startsWith(".claude/")));
+    assert.equal(
+      result.repositoryBytes,
+      result.files.reduce((sum, file) => sum + file.bytes, 0),
+    );
+    assert.equal(
+      BigInt(result.cost.materializationBytes),
+      BigInt(result.repositoryBytes) * (BigInt(result.cost.executions) + 1n) +
+        BigInt(result.cost.overlayBytes),
+    );
+  });
+
+  it("never lets config mask a request link and discloses the request exclusion source", async () => {
+    const root = await excludedLinkFixture([".claude"]);
+    await assert.rejects(
+      auditRepository(root, { noGit: true, verificationRequest: request(root) }),
+      (error: unknown) => {
+        assert.match(String(error), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+        assert.deepEqual((error as { appliedExcludes?: unknown }).appliedExcludes, {
+          source: "request",
+          entries: [".git", ".testforge", "node_modules"],
+        });
+        return true;
+      },
+    );
+  });
+
+  it("discloses defaults when no valid configuration or request exists", async () => {
+    const result = await successfulAudit(await fixture());
+    assert.deepEqual((result as unknown as { appliedExcludes: unknown }).appliedExcludes, {
+      source: "defaults",
+      entries: [".git", ".testforge", "node_modules"],
+    });
+  });
+
+  it("snapshots the selected exclusions across both inventories", async () => {
+    const root = await excludedLinkFixture([".claude", "assertledger.config.json"]);
+    const result = await auditRepository(root, {
+      noGit: true,
+      afterInitialInventory: async () => {
+        await writeFile(path.join(root, "assertledger.config.json"), "{}\n");
+        await writeFile(path.join(root, ".claude", "large.txt"), "changed excluded bytes");
+      },
+    });
+    assert.equal(result.appliedExcludes.source, "config");
+    assert(result.appliedExcludes.entries.includes(".claude"));
+    assert(!result.files.some((file) => file.path === "assertledger.config.json"));
+  });
+
+  it("rejects forged or incomplete exclusion disclosures without weakening v1 facts", async () => {
+    const root = await fixture();
+    const result = await successfulAudit(root, request(root));
+    for (const appliedExcludes of [
+      { source: "config", entries: result.appliedExcludes.entries },
+      { source: "request", entries: [".git", ".testforge"] },
+      { source: "request", entries: [...result.appliedExcludes.entries, "extra"] },
+      { source: "request", entries: [...result.appliedExcludes.entries].reverse() },
+    ]) {
+      assert.throws(
+        () => parseRepositoryAuditV2({ ...result, appliedExcludes }),
+        /REPOSITORY_AUDIT_EXCLUSIONS_INCONSISTENT/u,
+      );
+    }
+  });
+
+  for (const explicit of [false, true]) {
+    it(`applies request exclusions through ${explicit ? "explicit" : "automatic"} CLI request discovery`, async () => {
+      const root = await excludedLinkFixture([]);
+      const verificationRequest = request(root);
+      verificationRequest.repository.exclude = [".claude"];
+      await writeFile(
+        path.join(root, "assertledger.request.json"),
+        JSON.stringify(verificationRequest),
+      );
+      let stdout = "";
+      let stderr = "";
+      const exit = await runCli(
+        [
+          "audit",
+          ".",
+          "--no-git",
+          "--json",
+          ...(explicit ? ["--verification-request", "assertledger.request.json"] : []),
+        ],
+        {
+          cwd: root,
+          readStdin: async () => "",
+          writeStdout: (text) => {
+            stdout += text;
+          },
+          writeStderr: (text) => {
+            stderr += text;
+          },
+        },
+      );
+      assert.equal(exit, 0, stderr);
+      assert.equal(JSON.parse(stdout).appliedExcludes.source, "request");
+    });
+  }
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -42,7 +195,7 @@ async function fixture(): Promise<string> {
 function request(root: string) {
   return {
     schemaVersion: "1.0.0",
-    repository: { root, exclude: [] },
+    repository: { root, exclude: [] as string[] },
     adapter: {
       kind: "node-test",
       executable: process.execPath,
@@ -147,7 +300,15 @@ describe("repository audit v1", () => {
     assert.equal(result.cost.candidateExecutions, "432");
     assert.equal(result.verificationRequest?.isolation.acknowledgedUnsafeExecution, false);
     assert.equal(BigInt(result.cost.capturedStreamLimitBytes), 444n * 2048n * 2n);
-    parseRepositoryAudit(result);
+    parseRepositoryAuditV2(result);
+    const { appliedExcludes: _disclosure, ...legacy } = result;
+    const v1 = { ...legacy, schemaVersion: "1.0.0" };
+    assert.equal(parseRepositoryAudit(v1).schemaVersion, "1.0.0");
+    assert.throws(() => parseRepositoryAudit(result), /REPOSITORY_AUDIT_INVALID/u);
+    assert.throws(
+      () => parseRepositoryAudit({ ...v1, appliedExcludes: result.appliedExcludes }),
+      /REPOSITORY_AUDIT_INVALID/u,
+    );
   });
 
   it("keeps cost bounds invariant under candidate and world permutation", async () => {
@@ -213,7 +374,7 @@ describe("repository audit v1", () => {
       },
     ];
     for (const inconsistent of cases) {
-      assert.throws(() => parseRepositoryAudit(inconsistent), /REPOSITORY_AUDIT_/u);
+      assert.throws(() => parseRepositoryAuditV2(inconsistent), /REPOSITORY_AUDIT_/u);
     }
   });
 
@@ -320,7 +481,7 @@ describe("repository audit v1", () => {
     const root = await fixture();
     const ledger = new AssertLedger();
     const result = await ledger.audit(root, { noGit: true });
-    assert.equal(result.schemaVersion, "1.0.0");
+    assert.equal(result.schemaVersion, "2.0.0");
   });
 
   it("discovers and emits a verification request with deterministic CLI exit codes", async () => {
