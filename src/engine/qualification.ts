@@ -614,7 +614,11 @@ export async function qualifyOrchestration(
       versionArguments: args,
     };
   }
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "assertledger-orchestration-"));
+  // runProcess canonicalizes cwd. Use the same identity for adapter-owned paths and
+  // candidate attribution when the host temporary directory is a symlink or junction.
+  const temporary = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "assertledger-orchestration-")),
+  );
   const mechanismDigest = await qualificationMechanismDigest();
   const observations = [];
   try {

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { smokeQualificationPlan, smokeTestSource } from "../scripts/qualification-smoke.js";
+import { runCli } from "../src/cli.js";
 import { sha256Canonical } from "../src/core/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
-import { runCli } from "../src/cli.js";
 
 async function capability() {
   const modulePath = "../src/engine/qualification.js";
@@ -17,6 +18,53 @@ async function capability() {
   );
   return module;
 }
+
+test("node:test qualification preserves suite attribution through a temporary-directory alias", async (context) => {
+  const engine = await capability();
+  const parent = await mkdtemp(path.join(os.tmpdir(), "qualification-alias-"));
+  const source = path.join(parent, "source");
+  const temporary = path.join(parent, "temporary");
+  const alias = path.join(parent, "temporary alias");
+  try {
+    await mkdir(source);
+    await mkdir(temporary);
+    await symlink(temporary, alias, process.platform === "win32" ? "junction" : "dir");
+    await writeFile(path.join(source, "public.test.mjs"), smokeTestSource);
+    const plan = smokeQualificationPlan();
+    plan.subject.inputDigest = await engine.qualificationRepositoryDigest(source);
+    plan.subject.candidateDigest = sha256Canonical([]);
+    const nodeTool = plan.tools[0];
+    assert.ok(nodeTool);
+    nodeTool.digest = await engine.qualificationFileDigest(process.execPath);
+    context.mock.method(os, "tmpdir", () => alias);
+    const receipt = await engine.qualifyOrchestration(
+      { root: source, plan, planDigest: sha256Canonical(plan), candidate: { files: [] } },
+      { allowUnsafeExecution: true },
+    );
+    assert.equal(receipt.decision, "QUALIFIED", JSON.stringify(receipt.observations));
+    assert.ok(receipt.observations.every((row: { state: string }) => row.state === "COMPLETED"));
+    for (const row of receipt.observations) {
+      assert.deepEqual(row.facts.testFiles, ["public.test.mjs"]);
+      assert.equal(row.facts.testsDiscovered, 1);
+      if (row.worldId === "assertion-fault") {
+        assert.equal(row.facts.testOutcome, "ASSERTION_FAILURE");
+        assert.equal(row.facts.attributed, true);
+      }
+    }
+    assert.equal(new AssertLedger().replayQualification(receipt).valid, true);
+    assert.equal(await readFile(path.join(source, "public.test.mjs"), "utf8"), smokeTestSource);
+    await symlink(
+      temporary,
+      path.join(source, "linked"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(engine.qualificationRepositoryDigest(source), /INPUT_SYMLINK/u);
+  } finally {
+    context.mock.restoreAll();
+    await rm(alias, { recursive: false, force: true });
+    await rm(parent, { recursive: true, force: true });
+  }
+});
 
 test("qualification keeps expected nonzero exits as command facts and executes isolated worlds", async () => {
   const engine = await capability();
