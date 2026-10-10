@@ -51,6 +51,7 @@ process.env.PATH = `${path.dirname(bun)}${path.delimiter}${path.dirname(pnpm)}${
 const digest = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 const fixture = (relative: string) => readFile(path.join(root, relative), "utf8");
 const initialConfig = JSON.parse(await fixture("turbo.json"));
+const leafManifest = JSON.parse(await fixture("packages/leaf/package.json"));
 type Action = QualificationPlan["actions"][number];
 const action = (
   id: string,
@@ -307,6 +308,20 @@ const worlds: World[] = [
     ],
     "selection",
     ["selected"],
+  ),
+  fault(
+    "leaf-command-disconnected",
+    [
+      {
+        path: "packages/leaf/package.json",
+        content: JSON.stringify({
+          ...leafManifest,
+          scripts: { ...leafManifest.scripts, fail: leafManifest.scripts.check },
+        }),
+      },
+    ],
+    "propagation",
+    ["terminal-exit", "terminal-events"],
   ),
   fault(
     "forgotten-input",

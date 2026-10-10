@@ -246,6 +246,28 @@ const testCase = (
 });
 cases.push(
   testCase(
+    "fixture-package-manager-pin",
+    "examples/orchestration/workspace/package.json",
+    (source) => source.replace("pnpm@12.9.1", "pnpm@12.9.2"),
+    "public fixture package manager matches its qualified tool pin",
+    "tests/qualification-fixture-integrity.test.ts",
+  ),
+  testCase(
+    "fixture-root-routing-absence",
+    "examples/orchestration/workspace/package.json",
+    (source) =>
+      `${JSON.stringify({ ...JSON.parse(source), scripts: { test: "bun task.mjs fail" } }, null, 2)}\n`,
+    "public fixture root manifest has no executable routing keys",
+    "tests/qualification-fixture-integrity.test.ts",
+  ),
+  testCase(
+    "fixture-lock-pin-link",
+    "examples/orchestration/workspace/pnpm-lock.yaml",
+    (source) => source.replace("specifier: 12.9.1", "specifier: 12.9.2"),
+    "public fixture lock binds the declared manager and workspace dependency",
+    "tests/qualification-fixture-integrity.test.ts",
+  ),
+  testCase(
     "retained-report-payload",
     "src/core/qualification.ts",
     (source) =>
