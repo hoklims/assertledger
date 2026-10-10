@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -26,8 +27,8 @@ test("the real witness runner refuses an interrupted repeated red without a fres
   const repository = fileURLToPath(new URL("../", import.meta.url));
   await mkdir(path.join(repository, ".testforge"), { recursive: true });
   const artifacts = await mkdtemp(path.join(repository, ".testforge", "report-freshness-"));
-  const fixture = path.join(artifacts, "repository");
-  await mkdir(fixture);
+  const temporaryRoot = path.resolve(os.tmpdir());
+  const fixture = await mkdtemp(path.join(temporaryRoot, "al-witness-"));
   try {
     for (const name of [
       ".gitignore",
@@ -74,6 +75,7 @@ test("the real witness runner refuses an interrupted repeated red without a fres
         { encoding: "utf8" },
       );
     git(["init", "--quiet"]);
+    git(["config", "core.longpaths", "true"]);
     git(["add", "."]);
     git(["commit", "--quiet", "-m", "test fixture"]);
     const environment = Object.fromEntries(
@@ -160,7 +162,7 @@ test("the real witness runner refuses an interrupted repeated red without a fres
     assert.equal(repeated.classification, "NOT_ADMISSIBLE");
     assert.deepEqual(repeated.reporter, []);
   } finally {
-    assert.ok(fixture.startsWith(artifacts + path.sep));
+    assert.ok(fixture.startsWith(temporaryRoot + path.sep));
     await rm(fixture, { recursive: true, force: true });
   }
 });
