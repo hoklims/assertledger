@@ -38,6 +38,18 @@ type Witness = {
 };
 const cases: Witness[] = [
   {
+    id: "suite-action-binding",
+    target: "src/core/qualification.ts",
+    change: (source: string) => source.replace("checkedActions.has(item.actionId) &&", ""),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "suite files from an unchecked action|test suite baseline failures|correctly bound passing suite baselines",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "physical-workspace-attribution",
     target: "src/engine/qualification.ts",
     change: (source: string) =>
