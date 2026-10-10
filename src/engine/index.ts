@@ -1606,6 +1606,13 @@ export async function initializeRepository(
     reasonCodes,
   };
   if (adapter === undefined) return initTerminalResult("BLOCKED", detections, reasonCodes);
+  if (
+    (adapter.kind === "node-test" || adapter.kind === "bun-test") &&
+    adapter.baseTestFiles.length > 1_000
+  ) {
+    const code = "BASE_TEST_FILES_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   await options.afterEvidenceSnapshot?.();
 
   const bunBuiltIn = adapter.kind === "bun-test";
@@ -1622,6 +1629,10 @@ export async function initializeRepository(
     ? parseRepositoryInitConfigV2(configValue)
     : parseRepositoryInitConfig(configValue);
   const configContent = initJsonBytes(config);
+  if (configContent.length > 16 * 1024 * 1024) {
+    const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   const configDigest =
     config.schemaVersion === "2.0.0"
       ? repositoryInitConfigV2Digest(config)
@@ -1629,6 +1640,10 @@ export async function initializeRepository(
   const evidenceFiles = inScopeFiles.filter((file) => initEvidenceKind(file) !== undefined);
   if (adapterEvidencePath !== undefined && !evidenceFiles.includes(adapterEvidencePath))
     evidenceFiles.push(adapterEvidencePath);
+  if (evidenceFiles.some((file) => file.length > 1_024)) {
+    const code = "INIT_EVIDENCE_PATH_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   evidenceFiles.sort(comparePortablePaths);
   const evidence: RepositoryInitLock["evidence"] = [];
   for (const file of evidenceFiles) {
@@ -1670,6 +1685,10 @@ export async function initializeRepository(
     });
   }
   const lockContent = initJsonBytes(lock);
+  if (lockContent.length > 16 * 1024 * 1024) {
+    const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   const plannedFiles: RepositoryInitResult["files"] = [
     { path: INIT_CONFIG_FILE, digest: rawSha256(configContent), content: configContent },
     { path: INIT_LOCK_FILE, digest: rawSha256(lockContent), content: lockContent },
