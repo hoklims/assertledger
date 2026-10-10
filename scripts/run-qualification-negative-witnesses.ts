@@ -41,10 +41,7 @@ const cases: Witness[] = [
     id: "native-discovery-count-concordance",
     target: "src/core/qualification.ts",
     change: (source: string) =>
-      source.replace(
-        "issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);",
-        "void 0;",
-      ),
+      source.replace("issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);", "void 0;"),
     args: [
       "--test",
       "--test-name-pattern",
