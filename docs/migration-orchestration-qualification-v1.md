@@ -57,3 +57,10 @@ failure. The inner Bun exit remains in the report and must agree with its test o
 outer exit, missing completion or operational failure cannot establish assertion attribution.
 Windows observations preserve declared case and use POSIX paths; ambiguous file aliases are refused.
 These changes apply to the separate qualification capability, not frozen verification v1–v4.
+
+Completed native Node/Bun observations now require a positive safe-integer discovery count and
+a nonempty, canonical, unique started-file inventory. The count must be at least the number of started files;
+every assertion owner must belong to that inventory. Missing or inconsistent counts, duplicate or
+noncanonical files, and completed zero-test reports are rejected, including after recomputing receipt
+digests. Operational states retain their unsatisfied obligations. Recollect qualification receipts
+under the updated mechanism; frozen verification schemas and digest projections remain unchanged.

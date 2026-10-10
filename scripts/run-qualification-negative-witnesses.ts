@@ -38,6 +38,38 @@ type Witness = {
 };
 const cases: Witness[] = [
   {
+    id: "native-discovery-count-concordance",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        "issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);",
+        "/* faulty acceptance */",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "native discovery and started-file inventories remain concordant during receipt creation and replay",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "native-started-file-inventory",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        "if (!canonicalTestFiles) issues.push(`INVALID_TEST_FILES:${key}`);",
+        "/* faulty acceptance */",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "native discovery and started-file inventories remain concordant during receipt creation and replay",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "witness-report-freshness",
     target: "scripts/run-qualification-negative-witnesses.ts",
     change: (source: string) =>
