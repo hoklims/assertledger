@@ -91,13 +91,26 @@ for (const framework of ["node:test", "bun:test"] as const) {
   });
 }
 
-it("returns a structured conflict when an inventory evidence path exceeds its schema limit", async () => {
+it("returns a structured conflict when an inventory evidence path exceeds its schema limit", async (context) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-path-limit-"));
   try {
     await fixture(root, "node:test", 1);
     const relative = `${Array.from({ length: 7 }, (_, i) => `${i}-${"x".repeat(150)}`).join("/")}/test_extra.py`;
     assert(relative.length > 1_024);
-    await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    try {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    } catch (error) {
+      if (
+        process.platform !== "darwin" ||
+        (error as NodeJS.ErrnoException).code !== "ENAMETOOLONG"
+      ) {
+        throw error;
+      }
+      context.skip(
+        "macOS refuses this path before inventory; Windows and Linux exercise the 1,024-character schema bound",
+      );
+      return;
+    }
     await writeFile(path.join(root, relative), "");
     for (const command of ["doctor", "init"] as const) {
       const output = capture(root);
@@ -121,9 +134,10 @@ it("returns a structured conflict when the canonical inventory lock exceeds the 
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-content-limit-"));
   try {
     await fixture(root, "node:test", 1);
-    const relativeDirectory = `.github/workflows/${Array.from({ length: 5 }, (_, i) => `${i}-${"x".repeat(188)}`).join("/")}`;
+    const relativeDirectory = `.github/workflows/${Array.from({ length: 5 }, (_, i) => `${i}-${"x".repeat(140)}`).join("/")}`;
+    assert(Buffer.byteLength(path.join(root, relativeDirectory, "ci-21000.yml")) < 1_024);
     await mkdir(path.join(root, relativeDirectory), { recursive: true });
-    for (let offset = 0; offset < 16_000; offset += 100) {
+    for (let offset = 0; offset < 21_000; offset += 100) {
       await Promise.all(
         Array.from({ length: 100 }, (_, i) =>
           writeFile(path.join(root, relativeDirectory, `ci-${offset + i}.yml`), ""),

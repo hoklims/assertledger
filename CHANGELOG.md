@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 2.0.0 — 2026-10-10
+
+- Breaking producer change: `audit()` and the audit CLI emit schema v2 with the applied exclusion
+  names and their source (`request`, `config`, `defaults`). Strict consumers expecting v1 output
+  must select the v2 schema/parser. Historical v1 schemas, parsers and artifacts remain supported.
+  See the [audit migration guide](docs/repository-audit-v2-migration.md).
+- With a verification request, audit inventories exactly the request exclusions plus defaults,
+  matching campaign copying and cost projection. Without a request, a valid initialization
+  configuration supplies exclusions. Configuration never hides files from a campaign audit.
+- Return structured `CONFLICT` results for doctor/init inventory limits instead of validation
+  exceptions: base-test count, evidence path length and generated plan content. The 1,000-test
+  limit remains unchanged, and conflicts install no managed files.
+- Explain all static doctor/init reason codes with actionable guidance, including explicit
+  framework selection for ambiguous repositories. Campaign outcome and digest policies are unchanged.
+
 ## 1.5.0 — 2026-10-10
 
 - Add obligation-based qualification through CLI, SDK and MCP, with plans sealed before execution,

@@ -22,9 +22,13 @@ frameworks or limit/count metadata; this change does not add those fields to fro
 
 Regression tests exercise all three CLI entry points on synthetic 1,001-test Bun and Node
 repositories, the valid 1,000-test boundary, an oversized evidence path, and a canonical lock above
-the planned-file limit. The same tests fail with attributed assertions on the 1.5.0 source baseline.
+the planned-file limit. macOS cannot construct a repository path above 1,024 characters and reports
+an explicit skip for that single fixture after `ENAMETOOLONG`; Windows/Linux execute it. The lock-size
+fixture uses shorter paths and more entries so it runs on all three systems. The same behavioral
+tests fail with attributed assertions on the 1.5.0 source baseline.
 Catalogue coverage tests enumerate the initialization codes, require `known: true` and actionable
 guidance, and detect newly introduced codes in the static initialization source.
 
-This correction does not change npm/package versions, campaign outcome taxonomy, symbolic-link
-policy, `.gitignore` handling, or release authority.
+The correction preserves campaign outcome taxonomy, symbolic-link policy, `.gitignore` handling
+and release authority. Its initialization schemas remain unchanged; the audit producer migration
+is published separately as part of AssertLedger 2.0.0.

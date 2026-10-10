@@ -1,6 +1,7 @@
 # Repository audit v2
 
-Audit now emits `schemaVersion: "2.0.0"`. The npm package version is unchanged.
+AssertLedger 2.0.0 audit emits `schemaVersion: "2.0.0"`. This is a package major release because
+the existing audit producer's output is incompatible with consumers expecting the v1 literal.
 The strict v1 schema, `RepositoryAuditSchema`, `parseRepositoryAudit`, and
 `repositoryAuditJsonSchema()` remain available unchanged for historical artifacts.
 Use `RepositoryAuditV2Schema`, `parseRepositoryAuditV2`, and
