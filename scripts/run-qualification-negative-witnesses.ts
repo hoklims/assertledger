@@ -126,6 +126,22 @@ const cases = [
     diagnostic: "ERR_ASSERTION",
   },
   {
+    id: "bun-per-test-timeout",
+    target: "integrations/bun-native/driver.mjs",
+    change: (source: string) =>
+      source.replace(
+        'if (junit.timeouts > 0) return infrastructureFailure("BUN_TEST_TIMEOUT");',
+        "",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "Bun per-test timeout preceding a late matcher failure cannot earn detection",
+      "tests/bun-native-qualification.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "matcher-getter-crash",
     target: "integrations/bun-native/preload.mjs",
     change: (source: string) =>

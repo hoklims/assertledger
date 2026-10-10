@@ -34,7 +34,9 @@ they do not authenticate the producer or cause test reexecution.
 The existing `verify` CLI, SDK `verify`/`verifyV2`/`verifyV3`/`verifyV4`, MCP verification tools and versioned
 manifest replay remain available. Node uses its owned reporter and shallow `ERR_ASSERTION`
 attribution. The frozen Bun v3 profile admits only errors issued by `assertledger/bun` helpers.
-The integrated v4 baseline also supports designated Bun tests and imported witness execution.
+The integrated v4 baseline also supports designated Bun tests with native expectations and imported
+witness execution. Its controls load/register a selected test without executing it; this qualification
+profile executes its declared complete suites in the reference and neutral worlds.
 Those paths prove their declared test campaign; they do not supply Turbo, wrapper or hosted-CI
 qualification. The native qualification collector retains a separate event/JUnit protocol and
 passive matcher boundary, and reuses the v4 parser's per-test timeout refusal rule.
