@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,8 +9,10 @@ import { collectBunNative } from "../src/engine/adapters/bun-native.js";
 async function collect(files: Record<string, string>, rewrite = "") {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-file-attribution-"));
   try {
-    for (const [file, source] of Object.entries(files))
+    for (const [file, source] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(cwd, file)), { recursive: true });
       await writeFile(path.join(cwd, file), source);
+    }
     const helper =
       'import {expect} from "bun:test"; export function check(value){expect(value).toBe(1);}';
     await writeFile(path.join(cwd, "helper.ts"), helper);
@@ -75,6 +77,32 @@ test("failure files are sorted unique test owners and exclude helpers", async ()
   const result = await collect({ "b.test.ts": repeated, "a.test.ts": repeated });
   assert.equal(result.facts.testOutcome, "ASSERTION_FAILURE");
   assert.deepEqual(result.facts.assertionFailureFiles, ["a.test.ts", "b.test.ts"]);
+});
+
+for (const failingFile of ["Nested/Alpha.test.ts", "Nested/Beta.test.ts"]) {
+  test(`nested mixed-case failure owner remains canonical ${failingFile}`, async () => {
+    const files = ["Nested/Alpha.test.ts", "Nested/Beta.test.ts"];
+    const result = await collect(
+      Object.fromEntries(
+        files.map((file) => [
+          file,
+          bunTest(file === failingFile ? 2 : 1).replace('"./helper"', '"../helper"'),
+        ]),
+      ),
+    );
+    assert.equal(result.state, "COMPLETED");
+    assert.equal(result.facts.testOutcome, "ASSERTION_FAILURE");
+    assert.deepEqual(result.facts.testFiles, files);
+    assert.deepEqual(result.facts.assertionFailureFiles, [failingFile]);
+    assert.ok(result.facts.assertionFailureFiles.every((file) => !file.includes("\\")));
+  });
+}
+
+test("aliased declarations cannot claim distinct test owners", async () => {
+  const result = await collect({ "a.test.ts": bunTest(2), "./a.test.ts": bunTest(2) });
+  assert.equal(result.state, "INFRA_ERROR");
+  assert.equal(result.facts.attributed, false);
+  assert.deepEqual(result.facts.assertionFailureFiles, []);
 });
 
 test("passing and mixed operational runs cannot name assertion failure files", async () => {

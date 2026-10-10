@@ -103,6 +103,14 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
     runtime.executable = await realpath(identity.execPath);
     runtime.executableDigest = digest(await readFile(runtime.executable));
     if (input.files.length === 0) return empty("NO_TESTS");
+    const declaredFileNames = new Map<string, string>();
+    for (const file of input.files) {
+      const normalized = path.normalize(file);
+      const key = process.platform === "win32" ? normalized.toLowerCase() : normalized;
+      const canonical = normalized.split(path.sep).join("/");
+      if (declaredFileNames.has(key) || canonical.includes("\\")) return empty("INFRA_ERROR");
+      declaredFileNames.set(key, canonical);
+    }
     const execution = await runProcess({
       executable: process.execPath,
       args: [fileURLToPath(driver), runtime.executable, ...input.files],
@@ -156,10 +164,7 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
     const testFiles = row.testFiles;
     const assertionFailureFiles = row.assertionFailureFiles;
     const completed = row.outcome === "PASS" || row.outcome === "ASSERTION_FAILURE";
-    const declaredFiles = input.files.map((file) => {
-      const normalized = path.normalize(file);
-      return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-    });
+    const declaredFiles = [...declaredFileNames.keys()];
     if (
       assertionFailureFiles.some((file) => !testFiles.includes(file)) ||
       testFiles.some((file) => !declaredFiles.includes(file)) ||
@@ -177,6 +182,19 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
         : row.attributed)
     )
       return empty("INFRA_ERROR");
+    const canonicalTestFiles = testFiles.flatMap((file) => {
+      const declared = declaredFileNames.get(file);
+      return declared === undefined ? [] : [declared];
+    });
+    const canonicalFailureFiles = assertionFailureFiles.flatMap((file) => {
+      const declared = declaredFileNames.get(file);
+      return declared === undefined ? [] : [declared];
+    });
+    if (
+      canonicalTestFiles.length !== testFiles.length ||
+      canonicalFailureFiles.length !== assertionFailureFiles.length
+    )
+      return empty("INFRA_ERROR");
     return {
       state: states[row.outcome] as BunNativeCollection["state"],
       facts: {
@@ -184,8 +202,8 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
         testsDiscovered: row.testsDiscovered as number,
         testOutcome: row.outcome,
         attributed: row.attributed,
-        testFiles,
-        assertionFailureFiles,
+        testFiles: canonicalTestFiles.sort(),
+        assertionFailureFiles: canonicalFailureFiles.sort(),
         stdoutDigest: execution.stdout.digest,
         stderrDigest: execution.stderr.digest,
       },

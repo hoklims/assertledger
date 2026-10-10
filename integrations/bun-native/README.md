@@ -27,6 +27,13 @@ a passing suite. This is an additive migration of the unreleased native profile;
 old native reports without this field are refused. Frozen v1-v4 helper reports
 and their schema versions are unchanged.
 
+The collector translates driver filesystem keys back to the declared test-file
+names before returning `testFiles` and `assertionFailureFiles`. These outward
+facts use sorted, unique POSIX relative paths and preserve declared case, such as
+`Nested/Example.test.ts`, on every host. Aliased declarations that normalize to
+the same filesystem key, or observations without an unambiguous declared name,
+invalidate collection. Internal driver path normalization remains host-specific.
+
 The qualified forms are TypeScript tests importing `bun:test`, `test`, `it`,
 `describe`, async functions, helper-module imports, `test.each`, native `expect`
 matchers and `not`/`resolves`/`rejects` chains. The qualified matcher names are
