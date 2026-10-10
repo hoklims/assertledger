@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 1.5.0 — 2026-10-10
+
+- Add obligation-based qualification through CLI, SDK and MCP, with plans sealed before execution,
+  strict receipts and deterministic replay. Receipts name covered and open guarantees; omitted or
+  unsupported suites remain open. See the [qualification guide](docs/orchestration-qualification.md)
+  and [additive contract migration](docs/migration-orchestration-qualification-v1.md).
+- Qualify the anonymous `public-turbo-orchestration-2.11.7-bun-1.4.2` profile for seven local
+  obligations, using isolated cold, warm and invalidation caches, physical task execution and output
+  restoration, uncached-task repetitions, end-to-end failure propagation and local CI routing.
+  Its fifteen declared faults are checked against reference and neutral worlds. The nine private
+  consumer obligations, including independent observation of real Bitbucket CI, remain open.
+- Attribute native Node and Bun assertions to their owning test files. Fresh structured-command
+  completion and terminal observations distinguish expected nonzero exits from crashes, timeouts,
+  collection failures and exceptions after a report. Opaque zero-exit commands cover only that
+  exit-code check and cannot supply a fault discriminant.
+- Refuse incomplete or contradictory test inventories, stale reports, unknown adapter versions,
+  altered receipts and evidence reused outside its bound domain. Replay verifies integrity and
+  decision semantics; it neither reruns tests nor authenticates the observation producer.
+
 Verification request and evidence manifest v4 verify existing Bun tests by name, judge repository
 links against the tests that run, and declare every isolation level. V1 to v3 schemas, parsers and
 manifests are unchanged. See the [v4 migration guide](docs/migration-verification-v4.md).
