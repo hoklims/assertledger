@@ -41,7 +41,7 @@ const cases: Witness[] = [
     id: "witness-report-freshness",
     target: "scripts/run-qualification-negative-witnesses.ts",
     change: (source: string) =>
-      source.replace(/^[ \t]*if \(isTest\) await rm\(reportPath, \{ force: true \}\);$/mu, ""),
+      source.replace(/^[ \t]*if \(isTest\) await rm\(reportPath, \{ force: true \}\);\r?$/mu, ""),
     args: [
       "--test",
       "--test-name-pattern",
