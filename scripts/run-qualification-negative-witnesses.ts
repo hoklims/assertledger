@@ -38,6 +38,61 @@ type Witness = {
 };
 const cases: Witness[] = [
   {
+    id: "adapter-version-admission",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        "globalIssues.push(`UNSUPPORTED_ADAPTER_VERSION:${adapter}:${version}`);",
+        "void 0;",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "unknown adapter versions reject creation and fully resealed replay",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "post-report-terminal-collection",
+    target: "src/engine/qualification.ts",
+    change: (source: string) =>
+      source.replace('throw new Error("QUALIFICATION_COMMAND_TERMINAL_INVALID");', "void 0;"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "node fresh structured completion cannot mask ordinary",
+      "tests/qualification-command-ci.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "terminal-observation-replay",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace("issues.push(`INVALID_COMMAND_TERMINAL:${key}`);", "void 0;"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "missing contradictory altered and reused terminal observations reject resealed replay",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "opaque-success-scope",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace("issues.push(`INVALID_OPAQUE_COMMAND_COMPLETION:${key}`);", "void 0;"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "opaque zero completion is bounded to exit-zero checks and cannot become semantic evidence",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "runtime-tool-provenance-concordance",
     target: "src/core/qualification.ts",
     change: (source: string) =>

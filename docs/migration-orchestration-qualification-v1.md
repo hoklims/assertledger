@@ -81,3 +81,29 @@ rehashed replay. Operational states keep their unsatisfied obligations; Bun does
 invented Node counters. Recollect earlier qualification receipts rather than filling old facts.
 The additive qualification v1 receipt schema and its own lock change; frozen verification v1–v4
 schemas, canonical decision projections and artifact digest projections remain unchanged.
+
+Qualification adapter versions now come from one deterministic supported-version registry.
+Unknown versions and unknown adapter entries are rejected during receipt creation and replay,
+including when every digest and the caller's expected domain have been resealed consistently.
+
+Command completion additionally requires an engine-owned runtime lifecycle observation,
+separate from the command's structured result. The Node/Bun preload records a fresh nonce,
+runtime version, natural completion or an explicit exit, the final exit code, and monitored
+uncaught exceptions. The engine reads the bounded terminal artifact after process closure.
+Ordinary exceptions, rejected promises, or exceptions in beforeExit/exit callbacks cannot
+be credited merely because a previously written result advertises the same numeric exit.
+Missing, contradictory, altered or reused terminal records reject completed evidence and
+resealed replay. Expected numeric failures, including natural and explicit exit 7, remain
+admissible. Runtime versions must agree with the pinned executable's provenance.
+
+Opaque executables such as native pnpm retain a narrower `PROCESS_EXIT_ZERO` observation:
+successful process exit and bounded stdout/stderr digests only. These observations support
+only checks that require exit code zero; they collect no reports, outputs or trace evidence
+and cannot establish a fault discriminant. Nonzero exits and requested semantic collection
+remain operational failures. A package installation can therefore satisfy a preparation
+step without claiming qualified semantic failure propagation.
+
+Recollect earlier qualification receipts under this mechanism. This changes the additive
+qualification completion contract without changing frozen verification v1–v4 or digest
+projections. The lifecycle observation improves collection provenance; trusted-local remains
+unsandboxed, and neither a terminal record nor replay authenticates a malicious producer.

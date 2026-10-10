@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, verify } from "node:crypto";
 import {
   parseQualificationPlan,
+  QUALIFICATION_ADAPTER_VERSIONS,
   QualificationObservationSchema,
   QualificationProvenanceSchema,
   QualificationCiObservationSchema,
@@ -65,6 +66,7 @@ function observationIssues(
       for (const action of plan.actions) expected.add(`${world.id}/${attempt}/${action.id}`);
   const seen = new Set<string>();
   const reportNonces = new Set<string>();
+  const terminalNonces = new Set<string>();
   for (const observation of observations) {
     const key = `${observation.worldId}/${observation.attempt}/${observation.actionId}`;
     if (!expected.has(key)) issues.push(`UNEXPECTED_OBSERVATION:${key}`);
@@ -133,6 +135,62 @@ function observationIssues(
           (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode) || exitCode <= 0))
       )
         issues.push(`CONTRADICTORY_COMMAND_FACTS:${key}`);
+    }
+    if (observation.state === "COMPLETED" && action?.adapter === "command") {
+      const { terminal, terminalDigest, terminalProvenance, exitCode, reportNonce } =
+        observation.facts;
+      if (terminalProvenance === "PROCESS_EXIT_ZERO") {
+        if (
+          Object.keys(observation.facts).sort().join(",") !==
+            "commandOutcome,exitCode,stderrDigest,stdoutDigest,terminalProvenance" ||
+          exitCode !== 0 ||
+          observation.facts.commandOutcome !== "PASS" ||
+          ![observation.facts.stdoutDigest, observation.facts.stderrDigest].every(
+            (value) => typeof value === "string" && /^sha256:[a-f0-9]{64}$/u.test(value),
+          ) ||
+          action.observe.trace ||
+          action.observe.outputs.length !== 0 ||
+          action.observe.report !== null ||
+          plan.obligations
+            .flatMap((item) => item.checks)
+            .some(
+              (check) =>
+                check.actionId === action.id &&
+                (check.field !== "exitCode" || check.expected !== 0),
+            )
+        )
+          issues.push(`INVALID_OPAQUE_COMMAND_COMPLETION:${key}`);
+      } else if (
+        terminal === null ||
+        typeof terminal !== "object" ||
+        Array.isArray(terminal) ||
+        Object.keys(terminal).sort().join(",") !==
+          "exceptional,exitCode,explicit,natural,nonce,protocolVersion,ready,runtime,runtimeVersion" ||
+        terminal.protocolVersion !== "1.0.0" ||
+        terminal.ready !== true ||
+        terminal.exceptional !== false ||
+        typeof terminal.explicit !== "boolean" ||
+        typeof terminal.natural !== "boolean" ||
+        (!terminal.explicit && !terminal.natural) ||
+        terminal.exitCode !== exitCode ||
+        typeof terminal.nonce !== "string" ||
+        terminal.nonce.length === 0 ||
+        (reportNonce !== undefined && terminal.nonce !== reportNonce) ||
+        (terminal.runtime !== "node" && terminal.runtime !== "bun") ||
+        typeof terminal.runtimeVersion !== "string" ||
+        terminal.runtimeVersion.length === 0 ||
+        terminalProvenance !== "ENGINE_LIFECYCLE_OBSERVED" ||
+        terminalDigest !==
+          `sha256:${createHash("sha256")
+            .update(`${canonicalize(terminal)}\n`)
+            .digest("hex")}`
+      )
+        issues.push(`INVALID_COMMAND_TERMINAL:${key}`);
+      else {
+        if (terminalNonces.has(terminal.nonce as string))
+          issues.push(`DUPLICATE_TERMINAL_NONCE:${key}`);
+        terminalNonces.add(terminal.nonce as string);
+      }
     }
     if (
       observation.state === "COMPLETED" &&
@@ -362,11 +420,33 @@ export function createQualificationReceipt(
     observations,
   );
   globalIssues.push(...runtimeIssues(plan, provenance));
+  for (const observation of observations) {
+    const action = plan.actions.find((item) => item.id === observation.actionId);
+    if (action?.adapter !== "command" || observation.state !== "COMPLETED") continue;
+    const terminal = observation.facts.terminal;
+    if (
+      terminal !== null &&
+      typeof terminal === "object" &&
+      !Array.isArray(terminal) &&
+      !Object.values(provenance.runtime.tools).some(
+        (tool) => tool.executable === action.executable && tool.version === terminal.runtimeVersion,
+      )
+    )
+      globalIssues.push(`COMMAND_TERMINAL_RUNTIME_CONCORDANCE:${observation.actionId}`);
+  }
   const missingAdapterVersions = plan.actions.filter(
     (action) => !Object.hasOwn(provenance.adapterVersions, action.adapter),
   );
   for (const action of missingAdapterVersions)
     globalIssues.push(`MISSING_ADAPTER_VERSION:${action.adapter}`);
+  for (const [adapter, version] of Object.entries(provenance.adapterVersions)) {
+    if (
+      !Object.hasOwn(QUALIFICATION_ADAPTER_VERSIONS, adapter) ||
+      version !==
+        QUALIFICATION_ADAPTER_VERSIONS[adapter as keyof typeof QUALIFICATION_ADAPTER_VERSIONS]
+    )
+      globalIssues.push(`UNSUPPORTED_ADAPTER_VERSION:${adapter}:${version}`);
+  }
   const assessments: QualificationReceipt["assessments"] = plan.obligations.map((obligation) => {
     const reasons: string[] = [...globalIssues];
     for (const suite of plan.suites) {

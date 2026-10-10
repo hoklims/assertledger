@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import {
   parseQualificationPlan,
+  QUALIFICATION_ADAPTER_VERSIONS,
   QualificationExecutionRequestSchema,
   QUALIFICATION_SNAPSHOT_EXCLUDES,
   type QualificationPlan,
@@ -23,14 +24,28 @@ import {
 import { canonicalize, sha256Canonical } from "../core/index.js";
 import { createQualificationReceipt, qualificationBinding } from "../core/qualification.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
-import { collectBunNative, BUN_NATIVE_ADAPTER_VERSION } from "./adapters/bun-native.js";
+import { collectBunNative } from "./adapters/bun-native.js";
 import { runProcess, type ProcessResult } from "./index.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 
-export const ORCHESTRATION_ADAPTER_VERSION = "1.0.0";
+export const ORCHESTRATION_ADAPTER_VERSION = QUALIFICATION_ADAPTER_VERSIONS.command;
 const EXCLUDED_ROOTS: ReadonlySet<string> = new Set(QUALIFICATION_SNAPSHOT_EXCLUDES);
 const MAXIMUM_INPUT_BYTES = 32 * 1024 * 1024;
 const MAXIMUM_FILES = 10_000;
+const COMMAND_TERMINAL_OBSERVER = `import { writeFileSync } from 'node:fs';
+const output = process.env.ASSERTLEDGER_QUALIFICATION_TERMINAL_FILE;
+const nonce = process.env.ASSERTLEDGER_QUALIFICATION_NONCE;
+const runtime = process.versions.bun ? 'bun' : 'node';
+const runtimeVersion = process.versions.bun || process.versions.node;
+let exceptional = false, natural = false, explicit = false, code = null;
+const persist = () => writeFileSync(output, JSON.stringify({exceptional,exitCode:code,explicit,natural,nonce,protocolVersion:'1.0.0',ready:true,runtime,runtimeVersion})+'\\n');
+process.on('uncaughtExceptionMonitor', () => { exceptional = true; persist(); });
+process.on('beforeExit', () => { natural = true; });
+process.on('exit', value => { code = value; persist(); });
+const originalExit = process.exit.bind(process);
+process.exit = value => { explicit = true; return originalExit(value); };
+persist();
+`;
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Facts = Record<string, Json>;
 type Action = QualificationPlan["actions"][number];
@@ -342,6 +357,7 @@ async function executeAction(
   });
   const structuredResult = path.join(control, `${nonce}.result.json`);
   environment.ASSERTLEDGER_QUALIFICATION_RESULT_FILE = structuredResult;
+  const terminalResult = path.join(control, `${nonce}.terminal.json`);
   let facts: Facts = {};
   let state: State;
   let tapReport: string | undefined;
@@ -359,7 +375,50 @@ async function executeAction(
   } else {
     let args = action.arguments.map(replace);
     let report: string | undefined;
-    if (action.adapter === "node-test") {
+    let opaqueCommand = false;
+    if (action.adapter === "command") {
+      const probe = await runProcess({
+        executable: action.executable,
+        args: ["-e", "console.log(JSON.stringify({runtime:process.versions.bun?'bun':'node'}))"],
+        cwd: root,
+        environment: {},
+        timeoutMs: plan.timeoutMs,
+        maximumOutputBytes: plan.maximumOutputBytes,
+      });
+      let runtime: string | undefined;
+      try {
+        runtime = JSON.parse(probe.stdout.text).runtime;
+      } catch {
+        /* Unsupported runtime. */
+      }
+      if (
+        completedState(probe) !== "COMPLETED" ||
+        probe.exitCode !== 0 ||
+        probe.stdout.truncated ||
+        probe.stderr.truncated ||
+        (runtime !== "node" && runtime !== "bun")
+      ) {
+        opaqueCommand = true;
+        if (
+          action.observe.trace ||
+          action.observe.outputs.length !== 0 ||
+          action.observe.report !== null
+        )
+          return {
+            state: "COLLECTION_ERROR",
+            facts: { terminalOutcome: "UNSUPPORTED_OBSERVATION" },
+          };
+      } else {
+        const observer = path.join(control, "command-terminal.mjs");
+        await writeFile(observer, COMMAND_TERMINAL_OBSERVER);
+        environment.ASSERTLEDGER_QUALIFICATION_TERMINAL_FILE = terminalResult;
+        args = [
+          runtime === "node" ? "--import" : "--preload",
+          runtime === "node" ? pathToFileURL(observer).href : observer,
+          ...args,
+        ];
+      }
+    } else if (action.adapter === "node-test") {
       report = path.join(control, `${nonce}.node.json`);
       tapReport = path.join(control, `${nonce}.tap`);
       const reporter = path.join(control, "node-reporter.mjs");
@@ -426,6 +485,11 @@ async function executeAction(
       facts.commandOutcome = "PASS";
     if (processResult.stdout.truncated || processResult.stderr.truncated)
       state = "COLLECTION_ERROR";
+    if (opaqueCommand) {
+      if (state === "COMPLETED" && processResult.exitCode === 0)
+        return { state, facts: { ...facts, terminalProvenance: "PROCESS_EXIT_ZERO" } };
+      return { state: state === "COMPLETED" ? "COLLECTION_ERROR" : state, facts };
+    }
     if (state === "COMPLETED") {
       try {
         if (report !== undefined) {
@@ -504,6 +568,22 @@ async function executeAction(
   }
   if (state === "COMPLETED") {
     try {
+      if (action.adapter === "command") {
+        const terminalRaw = await boundedFile(terminalResult, plan.maximumOutputBytes);
+        const terminal = JSON.parse(terminalRaw);
+        facts.terminal = terminal;
+        facts.terminalDigest = `sha256:${createHash("sha256").update(terminalRaw).digest("hex")}`;
+        facts.terminalProvenance = "ENGINE_LIFECYCLE_OBSERVED";
+        if (
+          terminalRaw !== `${canonicalize(terminal)}\n` ||
+          terminal.nonce !== nonce ||
+          terminal.ready !== true ||
+          terminal.exceptional !== false ||
+          (terminal.natural !== true && terminal.explicit !== true) ||
+          terminal.exitCode !== facts.exitCode
+        )
+          throw new Error("QUALIFICATION_COMMAND_TERMINAL_INVALID");
+      }
       if (
         action.observe.report !== null ||
         (action.adapter === "command" && facts.exitCode !== 0)
@@ -697,13 +777,7 @@ export async function qualifyOrchestration(
       observations,
       provenance: {
         engineVersion: ASSERTLEDGER_VERSION,
-        adapterVersions: {
-          command: ORCHESTRATION_ADAPTER_VERSION,
-          turbo: ORCHESTRATION_ADAPTER_VERSION,
-          "node-test": ORCHESTRATION_ADAPTER_VERSION,
-          "ci-config": ORCHESTRATION_ADAPTER_VERSION,
-          "bun-native": BUN_NATIVE_ADAPTER_VERSION,
-        },
+        adapterVersions: { ...QUALIFICATION_ADAPTER_VERSIONS },
         runtime: {
           mechanismDigest,
           platform: process.platform,
@@ -713,6 +787,7 @@ export async function qualifyOrchestration(
           collectorDigest: sha256Canonical({
             ciParser: CI_PARSER,
             nodeReporter: NODE_TEST_REPORTER_SOURCE,
+            commandTerminalObserver: COMMAND_TERMINAL_OBSERVER,
           }),
           snapshotExcludes: [...QUALIFICATION_SNAPSHOT_EXCLUDES],
           dependencySnapshot: "EXCLUDED_NODE_MODULES",

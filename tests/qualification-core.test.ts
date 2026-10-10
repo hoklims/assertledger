@@ -91,6 +91,21 @@ function retainReport(
   record.facts.reportDigest = `sha256:${createHash("sha256")
     .update(`${canonicalize({ facts: report, nonce, protocolVersion: "1.0.0" })}\n`)
     .digest("hex")}`;
+  record.facts.terminal = {
+    exitCode: record.facts.exitCode ?? null,
+    explicit: true,
+    exceptional: false,
+    natural: false,
+    nonce,
+    protocolVersion: "1.0.0",
+    ready: true,
+    runtime: "node",
+    runtimeVersion: "22.15.0",
+  };
+  record.facts.terminalDigest = `sha256:${createHash("sha256")
+    .update(`${canonicalize(record.facts.terminal)}\n`)
+    .digest("hex")}`;
+  record.facts.terminalProvenance = "ENGINE_LIFECYCLE_OBSERVED";
 }
 
 function observations(plan: QualificationPlan): QualificationObservation[] {
@@ -625,6 +640,116 @@ function reseal(value: QualificationReceipt): QualificationReceipt {
   value.artifactDigest = sha256Canonical(artifact);
   return value;
 }
+
+test("unknown adapter versions reject creation and fully resealed replay", () => {
+  for (const [adapter, version] of [
+    ...["command", "turbo", "node-test", "bun-native", "ci-config"].flatMap((adapter) =>
+      ["999.0.0", "garbage"].map((version) => [adapter, version] as const),
+    ),
+    ["unknown-collector", "1.0.0"],
+  ] as const) {
+    const value = receipt();
+    value.provenance.adapterVersions[adapter] = version;
+    const recreated = core.createQualificationReceipt({
+      ...core.sealQualificationPlan(value.plan),
+      candidateDigest: value.candidateDigest,
+      observations: value.observations,
+      provenance: value.provenance,
+      externalCi: null,
+    });
+    assert.equal(recreated.decision, "REJECTED");
+    const forged = reseal(value);
+    assert.equal(core.replayQualificationReceipt(forged).valid, false);
+    assert.equal(
+      core.replayQualificationReceipt(forged, {
+        planDigest: forged.planDigest,
+        candidateDigest: forged.candidateDigest,
+        inputDigest: forged.plan.subject.inputDigest,
+        commit: forged.plan.subject.commit,
+        baseCommit: forged.plan.subject.baseCommit,
+        mechanismDigest: forged.provenance.runtime.mechanismDigest,
+      }).valid,
+      false,
+    );
+  }
+});
+
+test("missing contradictory altered and reused terminal observations reject resealed replay", () => {
+  for (const mutate of [
+    (facts: QualificationObservation["facts"]) => {
+      delete facts.terminal;
+    },
+    (facts: QualificationObservation["facts"]) => {
+      facts.terminalDigest = sha256Canonical("tamper");
+    },
+    (facts: QualificationObservation["facts"]) => {
+      facts.terminalProvenance = "STRUCTURED_ADAPTER_REPORTED";
+    },
+    (facts: QualificationObservation["facts"]) => {
+      const terminal = facts.terminal as Record<string, never>;
+      Object.assign(terminal, { exceptional: true });
+      facts.terminalDigest = `sha256:${createHash("sha256")
+        .update(`${canonicalize(terminal)}\n`)
+        .digest("hex")}`;
+    },
+    (facts: QualificationObservation["facts"]) => {
+      const terminal = facts.terminal as Record<string, never>;
+      Object.assign(terminal, { exitCode: 9 });
+      facts.terminalDigest = `sha256:${createHash("sha256")
+        .update(`${canonicalize(terminal)}\n`)
+        .digest("hex")}`;
+    },
+    (facts: QualificationObservation["facts"]) => {
+      const terminal = facts.terminal as Record<string, never>;
+      Object.assign(terminal, { runtimeVersion: "999.0.0" });
+      facts.terminalDigest = `sha256:${createHash("sha256")
+        .update(`${canonicalize(terminal)}\n`)
+        .digest("hex")}`;
+    },
+  ]) {
+    const value = receipt();
+    mutate(present(value.observations[0]).facts);
+    assert.equal(core.createQualificationReceipt(value).decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(reseal(value)).valid, false);
+  }
+  const reused = receipt();
+  const first = present(reused.observations[0]).facts;
+  const second = present(reused.observations[1]).facts;
+  second.terminal = present(first.terminal);
+  second.terminalDigest = present(first.terminalDigest);
+  assert.equal(core.replayQualificationReceipt(reseal(reused)).valid, false);
+});
+
+test("opaque zero completion is bounded to exit-zero checks and cannot become semantic evidence", () => {
+  const plan = fixture();
+  present(plan.actions[0]).observe.trace = false;
+  present(present(plan.obligations[0]).checks[0]).expected = 0;
+  const records = observations(plan);
+  for (const record of records)
+    record.facts = {
+      exitCode: 0,
+      commandOutcome: "PASS",
+      stdoutDigest: sha256Canonical("stdout"),
+      stderrDigest: sha256Canonical("stderr"),
+      terminalProvenance: "PROCESS_EXIT_ZERO",
+    };
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "OPEN");
+  assert.equal(core.replayQualificationReceipt(evidence).valid, true);
+  for (const extra of [
+    { exitCode: 1 },
+    { report: {} },
+    { outputs: {} },
+    { terminal: {} },
+    { commandOutcome: "EXPECTED_FAILURE" },
+  ]) {
+    const altered = structuredClone(records);
+    Object.assign(present(altered[0]).facts, extra);
+    assert.equal(receipt(plan, altered).decision, "REJECTED");
+  }
+  present(present(plan.obligations[0]).checks[0]).expected = 7;
+  assert.equal(receipt(plan, records).decision, "REJECTED");
+});
 
 test("resealed contradictory nested command reports invalidate replay", () => {
   const evidence = receipt();

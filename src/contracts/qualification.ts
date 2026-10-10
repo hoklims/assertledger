@@ -1,5 +1,14 @@
 import * as z from "zod";
 
+/** Supported collector contracts; package/runtime versions are separate identities. */
+export const QUALIFICATION_ADAPTER_VERSIONS = Object.freeze({
+  command: "1.0.0",
+  turbo: "1.0.0",
+  "node-test": "1.0.0",
+  "bun-native": "1.0.0",
+  "ci-config": "1.0.0",
+});
+
 export const QualificationJsonSchema = z.json();
 export type QualificationJson = z.infer<typeof QualificationJsonSchema>;
 const Id = z

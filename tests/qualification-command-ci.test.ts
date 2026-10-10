@@ -22,18 +22,21 @@ async function execute(
   targets: Array<{ id: string; content: string }>,
   adapter: "command" | "ci-config" | "turbo" = "command",
   expected: QualificationPlan["obligations"][number]["checks"][number]["expected"] = 7,
+  commandExecutable = process.execPath,
+  commandArguments?: string[],
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "qualification-command-ci-"));
   try {
     const file = adapter === "ci-config" ? "pipeline.yml" : "action.mjs";
     await writeFile(path.join(root, file), reference);
+    await writeFile(path.join(root, "original.mjs"), reference);
     const bunProbe =
-      adapter === "ci-config"
+      adapter === "ci-config" || commandExecutable === "bun"
         ? spawnSync("bun", ["-e", "console.log(process.execPath)"], { encoding: "utf8" })
         : null;
     if (bunProbe !== null)
       assert.equal(bunProbe.status, 0, "Bun runtime is required by CI configuration witnesses");
-    const executable = bunProbe?.stdout.trim() ?? process.execPath;
+    const executable = bunProbe?.stdout.trim() ?? commandExecutable;
     const plan: QualificationPlan = {
       schemaVersion: "1.0.0",
       profileId: "completion-witness",
@@ -79,7 +82,7 @@ async function execute(
           arguments:
             adapter === "turbo"
               ? [file, "--summarize", "--cache=local:rw", "--cache-dir={cache}"]
-              : [file],
+              : (commandArguments ?? [file]),
           environment: {},
           prepareFiles: [],
           removePaths: [],
@@ -127,6 +130,57 @@ for (const [id, content] of [
   });
 }
 
+for (const runtime of ["node", "bun"] as const) {
+  for (const [id, termination] of [
+    ["late-exception", "throw new Error('after fresh report');"],
+    ["late-rejection", "Promise.reject(new Error('after fresh report'));"],
+    ["late-async-exception", "setImmediate(() => {throw new Error('after fresh report');});"],
+    ["late-before-exit", "process.on('beforeExit',()=>{throw new Error('after fresh report');});"],
+    [
+      "late-exit",
+      "process.on('exit',()=>{throw new Error('after fresh report');});process.exitCode=1;",
+    ],
+  ] as const) {
+    test(`${runtime} fresh structured completion cannot mask ${id}`, async () => {
+      const advertisedFailure = completion.replace("const exitCode=7;", "const exitCode=1;");
+      const faulty = advertisedFailure.replace("process.exit(exitCode);", termination);
+      const executable = runtime === "node" ? process.execPath : "bun";
+      const receipt = await execute(
+        advertisedFailure,
+        [{ id, content: faulty }],
+        "command",
+        1,
+        executable,
+      );
+      for (const observation of receipt.observations.filter((item) => item.worldId !== id))
+        assert.equal(observation.state, "COMPLETED", `${runtime} healthy baseline must complete`);
+      assert.equal(
+        receipt.observations.find((item) => item.worldId === id)?.state,
+        "COLLECTION_ERROR",
+      );
+      assert.equal(receipt.decision, "OPEN");
+    });
+  }
+  for (const mode of ["explicit", "natural"] as const) {
+    test(`${runtime} ${mode} expected numeric failure remains admissible`, async () => {
+      const script =
+        mode === "explicit"
+          ? completion
+          : completion.replace("process.exit(exitCode);", "process.exitCode=exitCode;");
+      const receipt = await execute(
+        script,
+        [{ id: "swallow", content: "process.exit(0);" }],
+        "command",
+        7,
+        runtime === "node" ? process.execPath : "bun",
+      );
+      assert.equal(receipt.decision, "QUALIFIED");
+      assert.equal(receipt.observations[0]?.facts.commandOutcome, "EXPECTED_FAILURE");
+      assert.equal(receipt.observations[0]?.facts.terminalProvenance, "ENGINE_LIFECYCLE_OBSERVED");
+    });
+  }
+}
+
 test("completed expected nonzero and swallowed semantic zero remain distinguishable", async () => {
   const receipt = await execute(completion, [{ id: "swallow", content: "process.exit(0);\n" }]);
   assert.equal(receipt.decision, "QUALIFIED");
@@ -135,6 +189,35 @@ test("completed expected nonzero and swallowed semantic zero remain distinguisha
     receipt.observations.find((item) => item.worldId === "swallow")?.facts.commandOutcome,
     "PASS",
   );
+});
+
+test("opaque successful process exit remains scoped and opaque nonzero never detects a fault", async () => {
+  const locate = spawnSync(process.platform === "win32" ? "where.exe" : "which", ["git"], {
+    encoding: "utf8",
+  });
+  assert.equal(locate.status, 0);
+  const executable = locate.stdout.trim().split(/\r?\n/u)[0];
+  assert.ok(executable);
+  const receipt = await execute(
+    "same\n",
+    [{ id: "opaque-failure", content: "different\n" }],
+    "command",
+    0,
+    executable,
+    ["diff", "--no-index", "action.mjs", "original.mjs"],
+  );
+  assert.equal(receipt.decision, "OPEN");
+  for (const observation of receipt.observations) {
+    assert.equal(
+      observation.state,
+      observation.worldId === "opaque-failure" ? "COLLECTION_ERROR" : "COMPLETED",
+    );
+    if (observation.state === "COMPLETED") {
+      assert.equal(observation.facts.terminalProvenance, "PROCESS_EXIT_ZERO");
+      assert.equal(observation.facts.exitCode, 0);
+      assert.equal(observation.facts.report, undefined);
+    }
+  }
 });
 
 test("numeric Turbo failure with a summary but no qualified completion stays operational", async () => {

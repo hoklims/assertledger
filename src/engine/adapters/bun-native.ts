@@ -3,8 +3,9 @@ import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runProcess } from "../index.js";
+import { QUALIFICATION_ADAPTER_VERSIONS } from "../../contracts/qualification.js";
 
-export const BUN_NATIVE_ADAPTER_VERSION = "1.0.0";
+export const BUN_NATIVE_ADAPTER_VERSION = QUALIFICATION_ADAPTER_VERSIONS["bun-native"];
 const revision = "1.4.2+744846f84";
 const driver = new URL("../../../integrations/bun-native/driver.mjs", import.meta.url);
 const preload = new URL("../../../integrations/bun-native/preload.mjs", import.meta.url);
