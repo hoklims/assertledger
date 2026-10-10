@@ -61,7 +61,7 @@ const cases: Witness[] = [
     args: [
       "--test",
       "--test-name-pattern",
-      "node fresh structured completion cannot mask ordinary",
+      "node fresh structured completion cannot mask late-exception",
       "tests/qualification-command-ci.test.ts",
     ],
     diagnostic: "ERR_ASSERTION",
