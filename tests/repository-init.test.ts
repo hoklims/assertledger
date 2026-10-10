@@ -696,7 +696,10 @@ describe("repository init v1", () => {
   });
 
   it("binds the real repository controls to its tests glob", async () => {
-    const result = await initializeRepository(process.cwd(), { dryRun: true });
+    const result = await initializeRepository(process.cwd(), {
+      dryRun: true,
+      framework: "node:test",
+    });
     assert.equal(result.status, "WOULD_CREATE");
     const configFile = result.files.find((file) => file.path === "assertledger.config.json");
     assert(configFile);

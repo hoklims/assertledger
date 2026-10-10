@@ -1,0 +1,12 @@
+{
+  "name": "@public/app",
+  "version": "1.0.0",
+  "dependencies": {
+    "@public/leaf": "workspace:*"
+  },
+  "scripts": {
+    "build": "bun ../../task.mjs build",
+    "check": "bun ../../task.mjs check",
+    "fail": "bun ../../task.mjs fail"
+  }
+}

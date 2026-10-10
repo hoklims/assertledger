@@ -45,6 +45,7 @@ describe("static conformance v1 oracle", () => {
     assert.deepStrictEqual(dependencies.sort(), [
       "../src/index.js",
       "./conformance-v1-lock.js",
+      "./qualification-schema-lock.js",
       "node:assert/strict",
       "node:crypto",
       "node:fs/promises",
@@ -55,6 +56,22 @@ describe("static conformance v1 oracle", () => {
       "./generate-conformance-v1.js",
     ]);
     assert.equal(importDeclarationCount(hostileSideEffectImport), 1);
+  });
+
+  it("keeps the qualification schema lock limited to constant artifact digest declarations", async () => {
+    const source = await readFile("scripts/qualification-schema-lock.ts", "utf8");
+    const declaration = source.replace(/^\s*\/\/[^\r\n]*(?:\r?\n|$)/gmu, "");
+    const entry = String.raw`\{\s*path:\s*"(schemas/qualification-[a-z-]+\.v1\.json)",\s*rawSha256:\s*"sha256:[a-f0-9]{64}",\s*\$id:\s*"(https://testforge\.dev/schemas/qualification-[a-z-]+\.v1\.json)",\s*\},\s*`;
+    const literalDeclaration = new RegExp(
+      String.raw`^\s*export const QUALIFICATION_SCHEMA_LOCK\s*=\s*\[\s*(?:${entry}){4}\]\s*as const;\s*$`,
+      "u",
+    );
+    assert.match(declaration, literalDeclaration);
+    for (const artifact of declaration.matchAll(new RegExp(entry, "gu"))) {
+      assert.equal(artifact[2], `https://testforge.dev/${artifact[1]}`);
+    }
+    assert.equal(literalDeclaration.test(`${declaration}\nimport "./generate-schemas.js";`), false);
+    assert.equal(literalDeclaration.test(declaration.replace("[", "loadSchemas([")), false);
   });
 
   it("keeps generation outside pnpm check and requires an explicit canonical-write flag", async () => {

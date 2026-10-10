@@ -156,8 +156,26 @@ import {
 } from "../evaluation/agentic-corpus.js";
 import { importWitness, type WitnessImportOptions } from "../engine/witness-import.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
+import {
+  QualificationExecutionRequestSchema,
+  qualificationExecutionRequestJsonSchema,
+  qualificationPlanJsonSchema,
+  qualificationReceiptJsonSchema,
+  qualificationReplayResultJsonSchema,
+} from "../contracts/qualification.js";
+import {
+  sealQualificationPlan,
+  replayQualificationReceipt,
+  type QualificationExpectedDomain,
+  admitQualificationCi,
+} from "../core/qualification.js";
+import { qualifyOrchestration, type QualifyOrchestrationOptions } from "../engine/qualification.js";
 
 export type SchemaName =
+  | "qualification-plan"
+  | "qualification-execution-request"
+  | "qualification-receipt"
+  | "qualification-replay-result"
   | "agentic-corpus-allocation-request"
   | "agentic-corpus-allocation"
   | "agentic-corpus-allocation-replay-result"
@@ -209,6 +227,22 @@ export type AgenticCorpusExperimentReplayOptions = Omit<
 
 /** Provider-neutral programmatic facade over AssertLedger's deterministic components. */
 export class AssertLedger {
+  sealQualificationPlan(plan: unknown) {
+    return sealQualificationPlan(plan);
+  }
+
+  async qualifyOrchestration(request: unknown, options: QualifyOrchestrationOptions = {}) {
+    return qualifyOrchestration(QualificationExecutionRequestSchema.parse(request), options);
+  }
+
+  replayQualification(receipt: unknown, expectedDomain?: QualificationExpectedDomain) {
+    return replayQualificationReceipt(receipt, expectedDomain);
+  }
+
+  admitQualificationCi(receipt: unknown, observation: unknown) {
+    return admitQualificationCi(receipt, observation);
+  }
+
   explain(codes: readonly string[]) {
     return explainReasonCodes(codes);
   }
@@ -499,6 +533,14 @@ export class AssertLedger {
 
   schema(name: SchemaName): Record<string, unknown> {
     switch (name) {
+      case "qualification-plan":
+        return qualificationPlanJsonSchema();
+      case "qualification-execution-request":
+        return qualificationExecutionRequestJsonSchema();
+      case "qualification-receipt":
+        return qualificationReceiptJsonSchema();
+      case "qualification-replay-result":
+        return qualificationReplayResultJsonSchema();
       case "agentic-corpus-allocation-request":
         return agenticCorpusAllocationRequestJsonSchema();
       case "agentic-corpus-allocation":

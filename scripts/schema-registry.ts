@@ -48,9 +48,19 @@ import {
   verificationRequestV4JsonSchema,
   witnessImportRequestJsonSchema,
 } from "../src/contracts/index.js";
+import {
+  qualificationPlanJsonSchema,
+  qualificationExecutionRequestJsonSchema,
+  qualificationReceiptJsonSchema,
+  qualificationReplayResultJsonSchema,
+} from "../src/contracts/qualification.js";
 
 /** Schemas published after the frozen conformance v1 set; they are locked additively. */
 export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
+  "qualification-plan.v1.json",
+  "qualification-execution-request.v1.json",
+  "qualification-receipt.v1.json",
+  "qualification-replay-result.v1.json",
   "evidence-provider-manifest.v1.json",
   "evidence-export-request.v1.json",
   "evidence-export.v1.json",
@@ -73,6 +83,10 @@ export function conformanceV1Schemas(): ReadonlyArray<readonly [string, Record<s
 
 export function publishedSchemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
   return [
+    ["qualification-plan.v1.json", qualificationPlanJsonSchema()],
+    ["qualification-execution-request.v1.json", qualificationExecutionRequestJsonSchema()],
+    ["qualification-receipt.v1.json", qualificationReceiptJsonSchema()],
+    ["qualification-replay-result.v1.json", qualificationReplayResultJsonSchema()],
     ["agentic-corpus-trust-policy.v1.json", agenticCorpusTrustPolicyJsonSchema()],
     ["agentic-corpus-provenance.v1.json", agenticCorpusProvenanceJsonSchema()],
     ["agentic-benchmark-request.v1.json", agenticBenchmarkRequestJsonSchema()],

@@ -1105,11 +1105,15 @@ describe("MCP facade", () => {
     }
   });
 
-  it("publishes strict output schemas and all thirty-two facade schema names", async () => {
+  it("publishes strict output schemas and the exhaustive facade schema names", async () => {
     const { client } = await connectServer({ allowUnsafeExecution: true });
     const server = integration.createTestForgeServer({ allowUnsafeExecution: true });
     const listed = await client.listTools();
     for (const tool of [
+      "assertledger_qualification_plan",
+      "assertledger_qualification_ci",
+      "assertledger_qualification_replay",
+      "assertledger_qualify",
       "testforge_analyze",
       "testforge_doctor",
       "testforge_verify",
@@ -1137,6 +1141,10 @@ describe("MCP facade", () => {
 
     const schemaInput = server.toolInputSchemaJson("testforge_schema");
     assert.deepEqual(schemaInput.properties.name.enum, [
+      "qualification-plan",
+      "qualification-execution-request",
+      "qualification-receipt",
+      "qualification-replay-result",
       "agentic-corpus-allocation-request",
       "agentic-corpus-allocation",
       "agentic-corpus-allocation-replay-result",

@@ -20,6 +20,14 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import type { QualificationReceipt } from "../src/contracts/qualification.js";
+import {
+  exerciseQualificationHandlers,
+  smokeQualificationPlan,
+  smokeTestSource,
+} from "./qualification-smoke.js";
 
 const ROOT = realpathSync(path.resolve(fileURLToPath(import.meta.url), "..", ".."));
 const runId = randomUUID();
@@ -61,6 +69,12 @@ const required = [
   "integrations/bun/assertions.d.mts",
   "integrations/bun/driver.mjs",
   "integrations/bun/preload.mjs",
+  "integrations/bun-native/driver.mjs",
+  "integrations/bun-native/preload.mjs",
+  "dist/engine/qualification.js",
+  "dist/engine/adapters/bun-native.js",
+  "dist/contracts/qualification.js",
+  "dist/core/qualification.js",
   "benchmarks/agentic-profile/public/README.md",
   ...readdirSync(path.join(ROOT, "schemas"))
     .filter((name) => name.endsWith(".json"))
@@ -238,7 +252,7 @@ function npmEntry(): string {
   return realpathSync(entry);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   for (const directory of [path.join(ROOT, ".testforge"), artifactRoot]) {
     if (existsSync(directory))
       assert.ok(inside(ROOT, realpathSync(directory)), "ARTIFACT_PATH_ESCAPE");
@@ -500,6 +514,122 @@ function main(): void {
     writeFileSync(sdkScript, sdkSource);
     const sdk = parse(run([sdkScript], consumer, env));
     assert.equal(sdk.status, "PASS");
+
+    const qualificationRoot = path.join(consumer, "public qualification with spaces");
+    mkdirSync(qualificationRoot);
+    writeFileSync(path.join(qualificationRoot, "public.test.mjs"), smokeTestSource);
+    const qualificationPlanPath = path.join(consumer, "qualification-plan.json");
+    const qualificationRequestPath = path.join(consumer, "qualification-request.json");
+    const qualificationSdkPath = path.join(consumer, "qualification-sdk.mjs");
+    const qualificationSdkReceiptPath = path.join(consumer, "qualification-sdk-receipt.json");
+    jsonFile(qualificationPlanPath, smokeQualificationPlan());
+    writeFileSync(
+      qualificationSdkPath,
+      [
+        'import assert from "node:assert/strict";',
+        'import { readFileSync, writeFileSync } from "node:fs";',
+        'import { AssertLedger, qualificationRepositoryDigest, qualificationFileDigest, qualificationMechanismDigest, sha256Canonical } from "assertledger";',
+        `const root = ${JSON.stringify(qualificationRoot)};`,
+        `const plan = JSON.parse(readFileSync(${JSON.stringify(qualificationPlanPath)}, "utf8"));`,
+        "plan.subject.inputDigest = await qualificationRepositoryDigest(root);",
+        "plan.subject.candidateDigest = sha256Canonical([]);",
+        "plan.tools[0].digest = await qualificationFileDigest(process.execPath);",
+        "const ledger = new AssertLedger();",
+        "const sealed = ledger.sealQualificationPlan(plan);",
+        "const request = { root, ...sealed, candidate: { files: [] } };",
+        `writeFileSync(${JSON.stringify(qualificationRequestPath)}, JSON.stringify(request));`,
+        `writeFileSync(${JSON.stringify(qualificationPlanPath)}, JSON.stringify(plan));`,
+        "await assert.rejects(ledger.qualifyOrchestration(request), /UNSAFE_EXECUTION/u);",
+        "const receipt = await ledger.qualifyOrchestration(request, { allowUnsafeExecution: true });",
+        `writeFileSync(${JSON.stringify(qualificationSdkReceiptPath)}, JSON.stringify(receipt));`,
+        `writeFileSync(${JSON.stringify(path.join(artifacts, "qualification-sdk-receipt.json"))}, JSON.stringify(receipt));`,
+        'assert.equal(receipt.decision, "QUALIFIED", "PACKAGED_QUALIFICATION_NOT_EXECUTED");',
+        "assert.equal(receipt.observations.length, 6);",
+        'assert.ok(receipt.observations.every(row => row.state === "COMPLETED"));',
+        'assert.ok(receipt.observations.filter(row => row.worldId === "assertion-fault").every(row => row.facts.testOutcome === "ASSERTION_FAILURE" && row.facts.attributed === true));',
+        "const mechanismDigest = await qualificationMechanismDigest();",
+        "assert.match(mechanismDigest, /^sha256:[a-f0-9]{64}$/u);",
+        "assert.equal(receipt.provenance.runtime.mechanismDigest, mechanismDigest);",
+        "assert.equal(ledger.replayQualification(receipt).valid, true);",
+        'const forged = structuredClone(receipt); forged.observations[0].facts.testOutcome = "ASSERTION_FAILURE";',
+        "assert.equal(ledger.replayQualification(forged).valid, false);",
+        "console.log(JSON.stringify({ decision: receipt.decision, mechanismDigest, replayValid: true, observations: receipt.observations.length }));",
+        "",
+      ].join("\n"),
+    );
+    const qualificationSdk = parse(run([qualificationSdkPath], consumer, env));
+    const qualificationRequest = JSON.parse(readFileSync(qualificationRequestPath, "utf8"));
+    const sealedPlan = parse(runBin("assertledger", ["qualification-plan", qualificationPlanPath]));
+    assert.equal(sealedPlan.planDigest, qualificationRequest.planDigest);
+    const qualificationDenied = runBin("assertledger", ["qualify", qualificationRequestPath]);
+    assert.equal(qualificationDenied.status, 4);
+    assert.match(qualificationDenied.stderr, /UNSANDBOXED/u);
+    const qualificationCli = parse(
+      runBin("assertledger", ["qualify", qualificationRequestPath, "--allow-unsafe-execution"]),
+    );
+    assert.equal(qualificationCli.decision, "QUALIFIED");
+    assert.equal(qualificationCli.observations.length, 6);
+    assert.equal(
+      qualificationCli.provenance.runtime.mechanismDigest,
+      qualificationSdk.mechanismDigest,
+    );
+    const qualificationReceiptPath = path.join(consumer, "qualification-cli-receipt.json");
+    jsonFile(qualificationReceiptPath, qualificationCli);
+    assert.equal(
+      parse(runBin("assertledger", ["qualification-replay", qualificationReceiptPath])).valid,
+      true,
+    );
+
+    async function qualificationClient(allowExecution: boolean) {
+      const client = new Client({ name: "installed-qualification-smoke", version: "1.0.0" });
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [
+          path.join(installed, "dist/cli.js"),
+          "mcp",
+          "--root",
+          qualificationRoot,
+          ...(allowExecution ? ["--allow-unsafe-execution"] : []),
+        ],
+        cwd: consumer,
+        env: Object.fromEntries(
+          Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+        ),
+        stderr: "pipe",
+      });
+      await client.connect(transport);
+      return client;
+    }
+    const safeClient = await qualificationClient(false);
+    try {
+      await assert.rejects(
+        safeClient.callTool({
+          name: "assertledger_qualify",
+          arguments: { request: qualificationRequest },
+        }),
+        /not found|unknown|not available/u,
+      );
+    } finally {
+      await safeClient.close();
+    }
+    const executingClient = await qualificationClient(true);
+    let qualificationMcp: QualificationReceipt;
+    try {
+      qualificationMcp = await exerciseQualificationHandlers(executingClient, qualificationRequest);
+      assert.equal(
+        (qualificationMcp.provenance.runtime as Record<string, unknown>).mechanismDigest,
+        qualificationSdk.mechanismDigest,
+      );
+    } finally {
+      await executingClient.close();
+    }
+    for (const [name, receipt] of [
+      ["sdk", JSON.parse(readFileSync(qualificationSdkReceiptPath, "utf8"))],
+      ["cli", qualificationCli],
+      ["mcp", qualificationMcp],
+    ]) {
+      jsonFile(path.join(artifacts, `qualification-${name}-receipt.json`), receipt);
+    }
 
     const installedCli = realpathSync(path.join(installed, "dist", "cli.js"));
     const setupFixture = path.join(consumer, "setup fixture");
@@ -1156,6 +1286,19 @@ function main(): void {
       successful,
     );
 
+    const nativeDriver = path.join(installed, "integrations/bun-native/driver.mjs");
+    witness(
+      "missing-qualification-mechanism-asset",
+      nativeDriver,
+      () => rmSync(nativeDriver),
+      () => run([qualificationSdkPath], consumer, env),
+      (result) => {
+        assert.match(result.stderr, /ENOENT/u);
+        assert.ok(result.stderr.includes("driver.mjs"), "WITNESS_WRONG_FAILURE");
+      },
+      (result) => assert.deepEqual(parse(result), qualificationSdk),
+    );
+
     const report = {
       status: "PASS",
       tool: { node: process.version, npm: npmVersion.stdout.trim(), platform: process.platform },
@@ -1166,6 +1309,20 @@ function main(): void {
       replay,
       bun: { decision: bunManifest.decision, replayValid: bunReplay.valid },
       sdk,
+      qualification: {
+        sdk: qualificationSdk,
+        cli: {
+          decision: qualificationCli.decision,
+          observations: qualificationCli.observations.length,
+          replayValid: true,
+        },
+        mcp: {
+          decision: qualificationMcp.decision,
+          observations: qualificationMcp.observations.length,
+          replayValid: true,
+        },
+        safeExecutionDenied: true,
+      },
       typescript: JSON.parse(
         readFileSync(path.join(ROOT, "node_modules/typescript/package.json"), "utf8"),
       ).version,
@@ -1206,7 +1363,7 @@ function main(): void {
   }
 }
 try {
-  main();
+  await main();
 } catch (error) {
   console.error(
     JSON.stringify({
