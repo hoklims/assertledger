@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, readdir, writeFile, symlink } from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { runProcess } from "../src/engine/index.js";
 import { qualificationMechanismDigest } from "../src/engine/qualification.js";
 import { NODE_TEST_REPORTER_SOURCE } from "../src/engine/node-test-reporter.js";
@@ -379,7 +380,7 @@ for (const witness of selected) {
         "--test-reporter-destination",
         "stdout",
         "--test-reporter",
-        reporterPath,
+        pathToFileURL(reporterPath).href,
         "--test-reporter-destination",
         reportPath,
         ...witness.args,
@@ -411,9 +412,10 @@ for (const witness of selected) {
     const result = await runProcess(input);
     const diagnostic = `${result.stdout.text}\n${result.stderr.text}`;
     const reporter = isTest
-      ? (await readFile(reportPath, "utf8"))
+      ? (await readFile(reportPath, "utf8").catch(() => ""))
           .trim()
           .split("\n")
+          .filter(Boolean)
           .map((line) => JSON.parse(line))
       : [];
     const summary = reporter.at(-1);
