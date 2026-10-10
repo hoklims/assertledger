@@ -139,6 +139,84 @@ function receipt(plan = fixture(), records = observations(plan)): QualificationR
   });
 }
 
+function twoSuiteActions(): QualificationPlan {
+  const plan = fixture();
+  const first = present(plan.actions[0]);
+  first.adapter = "node-test";
+  first.arguments = ["tests/sample.test.js"];
+  plan.actions.push({ ...structuredClone(first), id: "other", arguments: ["tests/other.test.js"] });
+  present(plan.obligations[0]).checks = [
+    { id: "outcome", actionId: "other", field: "testOutcome", expected: "PASS" },
+  ];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["outcome"] }];
+  return plan;
+}
+
+function suiteRecords(plan: QualificationPlan): QualificationObservation[] {
+  const records = observations(plan);
+  for (const record of records) {
+    const failed = record.actionId === "gate" || record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.testFiles =
+      record.actionId === "gate" ? ["tests/sample.test.js"] : ["tests/other.test.js"];
+  }
+  return records;
+}
+
+test("suite files from an unchecked action cannot qualify another action's obligation", () => {
+  const plan = twoSuiteActions();
+  const evidence = receipt(plan, suiteRecords(plan));
+  assert.equal(evidence.decision, "OPEN");
+  assert.ok(
+    present(evidence.assessments[0]).reasons.some((reason: string) =>
+      reason.startsWith("SUITE_FILE_NOT_OBSERVED:"),
+    ),
+  );
+});
+
+test("test suite baseline failures cannot hide behind passing discovery count checks", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks.push({ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 });
+  const evidence = receipt(plan, suiteRecords(plan));
+  assert.equal(evidence.decision, "REJECTED");
+});
+
+test("test plans require checked native test actions routed to every declared suite file", () => {
+  const plan = twoSuiteActions();
+  present(plan.obligations[0]).kind = "tests";
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Test suite requires a checked test action/u,
+  );
+});
+
+test("correctly bound passing suite baselines and owned assertion faults qualify independently", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks = [{ id: "outcome", actionId: "gate", field: "testOutcome", expected: "PASS" }];
+  const records = suiteRecords(plan);
+  for (const record of records) {
+    const failed = record.actionId === "other" || record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+  }
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "QUALIFIED");
+  assert.equal(core.replayQualificationReceipt(evidence).valid, true);
+  for (const state of ["COLLECTION_ERROR", "NO_TESTS"] as const) {
+    const failedRecords = structuredClone(records);
+    for (const record of failedRecords.filter(
+      (item) => item.actionId === "gate" && item.worldId === "fault",
+    ))
+      record.state = state;
+    assert.equal(receipt(plan, failedRecords).decision, "OPEN");
+  }
+});
+
 test("replay refuses reuse under a changed proof mechanism", () => {
   const evidence = receipt();
   const domain = {
@@ -511,10 +589,17 @@ test("reference or neutral mismatches reject the candidate", () => {
 test("zero discovered tests cannot be misrepresented as completed target evidence", () => {
   const plan = fixture();
   present(plan.actions[0]).adapter = "node-test";
+  present(plan.actions[0]).arguments = ["tests/sample.test.js"];
   present(plan.obligations[0]).kind = "tests";
+  present(present(plan.obligations[0]).checks[0]).expected = 0;
   present(plan.obligations[0]).suiteIds = ["tests"];
   const records = observations(plan);
-  for (const record of records) if (record.worldId === "fault") record.facts.testsDiscovered = 0;
+  for (const record of records) {
+    const failed = record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    if (failed) record.facts.testsDiscovered = 0;
+  }
   assert.equal(receipt(plan, records).decision, "OPEN");
 });
 

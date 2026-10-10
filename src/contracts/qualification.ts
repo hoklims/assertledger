@@ -235,6 +235,22 @@ export function parseQualificationPlan(value: unknown): QualificationPlan {
       throw new Error("Unknown obligation reference");
     if (obligation.kind === "tests" && obligation.suiteIds.length === 0)
       throw new Error("Test obligation requires a suite");
+    if (obligation.kind === "tests") {
+      const checkedActions = plan.actions.filter(
+        (action) =>
+          (action.adapter === "node-test" || action.adapter === "bun-native") &&
+          obligation.checks.some((check) => check.actionId === action.id),
+      );
+      for (const suiteId of obligation.suiteIds) {
+        const suite = plan.suites.find((item) => item.id === suiteId);
+        if (
+          suite?.files.some(
+            (file) => !checkedActions.some((action) => action.arguments.includes(file)),
+          )
+        )
+          throw new Error(`Test suite requires a checked test action:${suiteId}`);
+      }
+    }
   }
   for (const action of plan.actions) {
     unique(

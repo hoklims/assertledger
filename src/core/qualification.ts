@@ -302,6 +302,7 @@ export function createQualificationReceipt(
         reasons.push(`UNASSIGNED_SUITE:${suite.id}`);
     }
     const mismatches = new Set<string>();
+    const checkedActions = new Set(obligation.checks.map((check) => check.actionId));
     let rejected = globalIssues.length > 0;
     for (const suiteId of obligation.suiteIds) {
       const suite = plan.suites.find((item) => item.id === suiteId);
@@ -319,6 +320,7 @@ export function createQualificationReceipt(
                 (item) =>
                   item.worldId === world.id &&
                   item.attempt === attempt &&
+                  checkedActions.has(item.actionId) &&
                   item.state === "COMPLETED" &&
                   typeof item.facts.testsDiscovered === "number" &&
                   item.facts.testsDiscovered > 0,
@@ -373,6 +375,16 @@ export function createQualificationReceipt(
             action?.adapter === "node-test" ||
             action?.adapter === "bun-native" ||
             obligation.kind === "tests";
+          if (
+            obligation.kind === "tests" &&
+            world.kind !== "TARGET" &&
+            (action?.adapter === "node-test" || action?.adapter === "bun-native") &&
+            observation.state === "COMPLETED" &&
+            (observation.facts.testOutcome !== "PASS" || observation.facts.exitCode !== 0)
+          ) {
+            rejected = true;
+            reasons.push(`TEST_BASELINE_NOT_PASS:${world.id}:${attempt}:${check.actionId}`);
+          }
           if (
             observation.state !== "COMPLETED" ||
             ((action?.adapter === "command" || action?.adapter === "turbo") &&
