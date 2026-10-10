@@ -13,7 +13,7 @@ import {
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
 import { runFixtureDemo } from "./engine/demo.js";
-import type { RepositoryLinkAssessment } from "./engine/index.js";
+import { RepositoryAuditInventoryError, type RepositoryLinkAssessment } from "./engine/index.js";
 import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
@@ -71,7 +71,7 @@ Commands:
                                                Detect and write portable initialization files
   audit [repository] [--verification-request PATH] [--emit-verification-request] [--no-git]
                                                Produce a static audit and campaign cost projection
-  schema <verification-request|verification-request-v2|verification-request-v3|repository-analysis|repository-audit|
+  schema <verification-request|verification-request-v2|verification-request-v3|repository-analysis|repository-audit|repository-audit-v2|
           repository-init-config|repository-init-lock|repository-init-result|
           evidence-manifest|evidence-manifest-v2|evidence-manifest-v3|replay-result|
           agentic-profile-request|agentic-profile-report|agentic-profile-replay-result|
@@ -1302,6 +1302,7 @@ export async function runCli(
           name !== "verification-request-v3" &&
           name !== "repository-analysis" &&
           name !== "repository-audit" &&
+          name !== "repository-audit-v2" &&
           name !== "repository-init-config" &&
           name !== "repository-init-config-v2" &&
           name !== "repository-init-lock" &&
@@ -1676,6 +1677,9 @@ export async function runCli(
     }
   } catch (error) {
     io.writeStderr(`${errorMessage(error)}\n`);
+    if (error instanceof RepositoryAuditInventoryError) {
+      io.writeStderr(`Audit exclusions: ${JSON.stringify(error.appliedExcludes)}\n`);
+    }
     if (error instanceof Error && /^(?:CONTAINER|ISOLATION)_[A-Z_]+$/u.test(error.message)) {
       if (typeof error.cause === "string" && error.cause.length > 0) {
         io.writeStderr(`Runtime detail: ${error.cause}\n`);

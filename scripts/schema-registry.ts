@@ -36,6 +36,7 @@ import {
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
+  repositoryAuditV2JsonSchema,
   repositoryInitConfigJsonSchema,
   repositoryInitConfigV2JsonSchema,
   repositoryInitLockJsonSchema,
@@ -75,6 +76,7 @@ export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
   "repository-init-config.v2.json",
   "repository-init-lock.v2.json",
   "repository-init-result.v2.json",
+  "repository-audit.v2.json",
 ]);
 
 export function conformanceV1Schemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
@@ -114,6 +116,7 @@ export function publishedSchemas(): ReadonlyArray<readonly [string, Record<strin
     ["witness-import-request.v1.json", witnessImportRequestJsonSchema()],
     ["repository-analysis.v1.json", repositoryAnalysisJsonSchema()],
     ["repository-audit.v1.json", repositoryAuditJsonSchema()],
+    ["repository-audit.v2.json", repositoryAuditV2JsonSchema()],
     ["repository-init-config.v1.json", repositoryInitConfigJsonSchema()],
     ["repository-init-config.v2.json", repositoryInitConfigV2JsonSchema()],
     ["repository-init-lock.v1.json", repositoryInitLockJsonSchema()],

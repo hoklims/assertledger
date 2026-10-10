@@ -34,7 +34,7 @@ import {
   parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
   parseEvidenceManifest,
-  parseRepositoryAudit,
+  parseRepositoryAuditV2,
   parseRepositoryInitConfig,
   parseRepositoryInitConfigV2,
   parseRepositoryInitLock,
@@ -45,7 +45,7 @@ import {
   parseVersionedRepositoryInitConfig,
   parseVersionedRepositoryInitLock,
   parseVersionedVerificationRequest,
-  type RepositoryAudit,
+  type RepositoryAuditV2,
   type RepositoryInitConfigV2,
   type RepositoryInitDetections,
   RepositoryInitDetectionsSchema,
@@ -1606,6 +1606,13 @@ export async function initializeRepository(
     reasonCodes,
   };
   if (adapter === undefined) return initTerminalResult("BLOCKED", detections, reasonCodes);
+  if (
+    (adapter.kind === "node-test" || adapter.kind === "bun-test") &&
+    adapter.baseTestFiles.length > 1_000
+  ) {
+    const code = "BASE_TEST_FILES_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   await options.afterEvidenceSnapshot?.();
 
   const bunBuiltIn = adapter.kind === "bun-test";
@@ -1622,6 +1629,10 @@ export async function initializeRepository(
     ? parseRepositoryInitConfigV2(configValue)
     : parseRepositoryInitConfig(configValue);
   const configContent = initJsonBytes(config);
+  if (configContent.length > 16 * 1024 * 1024) {
+    const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   const configDigest =
     config.schemaVersion === "2.0.0"
       ? repositoryInitConfigV2Digest(config)
@@ -1629,6 +1640,10 @@ export async function initializeRepository(
   const evidenceFiles = inScopeFiles.filter((file) => initEvidenceKind(file) !== undefined);
   if (adapterEvidencePath !== undefined && !evidenceFiles.includes(adapterEvidencePath))
     evidenceFiles.push(adapterEvidencePath);
+  if (evidenceFiles.some((file) => file.length > 1_024)) {
+    const code = "INIT_EVIDENCE_PATH_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   evidenceFiles.sort(comparePortablePaths);
   const evidence: RepositoryInitLock["evidence"] = [];
   for (const file of evidenceFiles) {
@@ -1670,6 +1685,10 @@ export async function initializeRepository(
     });
   }
   const lockContent = initJsonBytes(lock);
+  if (lockContent.length > 16 * 1024 * 1024) {
+    const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   const plannedFiles: RepositoryInitResult["files"] = [
     { path: INIT_CONFIG_FILE, digest: rawSha256(configContent), content: configContent },
     { path: INIT_LOCK_FILE, digest: rawSha256(lockContent), content: lockContent },
@@ -2261,8 +2280,10 @@ async function resolveRepositoryRoot(rootInput: unknown): Promise<string> {
 }
 
 export interface RepositoryAnalysisOptions {
-  /** Also skip a valid configuration's names; campaign and audit inventories never pass this. */
+  /** Also skip a valid configuration's names; campaign inventories never pass this. */
   configuredExcludes?: boolean;
+  /** Explicit snapshotted names override configuration for audit inventory consistency. */
+  excludes?: readonly string[];
 }
 
 export async function analyzeRepository(
@@ -2271,7 +2292,8 @@ export async function analyzeRepository(
 ): Promise<unknown> {
   const root = await resolveRepositoryRoot(rootInput);
   const declaredExcludes =
-    options.configuredExcludes === true ? await configuredRepositoryExcludes(root) : [];
+    options.excludes ??
+    (options.configuredExcludes === true ? await configuredRepositoryExcludes(root) : []);
   const { files } = await walkFiles(root, effectiveExcludes(declaredExcludes));
   const digest = createHash("sha256");
   const languageCounts = new Map<string, number>();
@@ -2310,7 +2332,18 @@ export interface RepositoryAuditOptions {
   afterInitialInventory?: () => Promise<void>;
 }
 
-type AuditFile = RepositoryAudit["files"][number];
+export class RepositoryAuditInventoryError extends Error {
+  constructor(
+    message: string,
+    readonly appliedExcludes: RepositoryAuditV2["appliedExcludes"],
+    cause: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "RepositoryAuditInventoryError";
+  }
+}
+
+type AuditFile = RepositoryAuditV2["files"][number];
 type WeakAssertionCategory =
   | "TRUTHINESS_ONLY"
   | "CONSTANT_BOOLEAN_EQUALITY"
@@ -2439,9 +2472,55 @@ function auditModulePrefix(file: string): string {
 export async function auditRepository(
   rootInput: string,
   options: RepositoryAuditOptions = {},
-): Promise<RepositoryAudit> {
+): Promise<RepositoryAuditV2> {
   const root = await resolveRepositoryRoot(rootInput);
-  const initial = (await analyzeRepository(root)) as { repositoryDigest: string; files: string[] };
+  let verificationRequest: VerificationRequestContract | null = null;
+  let declaredExcludes: readonly string[] = [];
+  let source: RepositoryAuditV2["appliedExcludes"]["source"] = "defaults";
+  if (options.verificationRequest !== undefined) {
+    verificationRequest = parseVerificationRequest(options.verificationRequest);
+    const requestRoot = await resolveRepositoryRoot(
+      path.isAbsolute(verificationRequest.repository.root)
+        ? verificationRequest.repository.root
+        : path.resolve(root, verificationRequest.repository.root),
+    );
+    if (requestRoot !== root) throw new TypeError("VERIFICATION_REQUEST_REPOSITORY_MISMATCH");
+    verificationRequest = {
+      ...verificationRequest,
+      repository: { ...verificationRequest.repository, root },
+      isolation: { ...verificationRequest.isolation, acknowledgedUnsafeExecution: false },
+    };
+    declaredExcludes = verificationRequest.repository.exclude;
+    source = "request";
+  } else {
+    try {
+      const configPath = path.join(root, INIT_CONFIG_FILE);
+      if ((await lstat(configPath)).isFile()) {
+        const config = parseVersionedRepositoryInitConfig(
+          JSON.parse(await readFile(configPath, "utf8")),
+        );
+        declaredExcludes = config.repository.exclude;
+        source = "config";
+      }
+    } catch {
+      /* Invalid configurations retain the default inventory. */
+    }
+  }
+  const appliedExcludes = { source, entries: [...effectiveExcludes(declaredExcludes)].sort() };
+  const inventory = async () => {
+    try {
+      return (await analyzeRepository(root, { excludes: appliedExcludes.entries })) as {
+        repositoryDigest: string;
+        files: string[];
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNSUPPORTED_REPOSITORY_SYMLINK") {
+        throw new RepositoryAuditInventoryError(error.message, appliedExcludes, error.cause);
+      }
+      throw error;
+    }
+  };
+  const initial = await inventory();
   const fileContents = new Map<string, Buffer>();
   let repositoryBytes = 0;
   for (const file of initial.files) {
@@ -2622,21 +2701,7 @@ export async function auditRepository(
     })
     .map((module, index) => ({ ...module, rank: index + 1 }));
 
-  let verificationRequest: VerificationRequestContract | null = null;
-  if (options.verificationRequest !== undefined) {
-    verificationRequest = parseVerificationRequest(options.verificationRequest);
-    const requestRoot = await resolveRepositoryRoot(
-      path.isAbsolute(verificationRequest.repository.root)
-        ? verificationRequest.repository.root
-        : path.resolve(root, verificationRequest.repository.root),
-    );
-    if (requestRoot !== root) throw new TypeError("VERIFICATION_REQUEST_REPOSITORY_MISMATCH");
-    verificationRequest = {
-      ...verificationRequest,
-      repository: { ...verificationRequest.repository, root },
-      isolation: { ...verificationRequest.isolation, acknowledgedUnsafeExecution: false },
-    };
-  } else reasonCodes.add("VERIFICATION_REQUEST_UNAVAILABLE");
+  if (verificationRequest === null) reasonCodes.add("VERIFICATION_REQUEST_UNAVAILABLE");
 
   const candidates = verificationRequest?.candidates.length ?? 0;
   const worlds = verificationRequest?.worlds.length ?? 0;
@@ -2660,11 +2725,12 @@ export async function auditRepository(
     ) ?? 0,
   );
   const overlayBytes = A * ((C + 1n) * sumWorldBytes + W * sumCandidateBytes);
-  const final = (await analyzeRepository(root)) as { repositoryDigest: string };
+  const final = await inventory();
   if (final.repositoryDigest !== initial.repositoryDigest)
     throw new Error("REPOSITORY_CHANGED_DURING_AUDIT");
-  return parseRepositoryAudit({
-    schemaVersion: "1.0.0",
+  return parseRepositoryAuditV2({
+    schemaVersion: "2.0.0",
+    appliedExcludes,
     root,
     repositoryDigest: initial.repositoryDigest,
     fileCount: initial.files.length,

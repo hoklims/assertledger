@@ -22,6 +22,7 @@ import {
   parseRepositoryInitConfig,
   parseRepositoryInitLock,
   parseRepositoryInitResult,
+  parseVerificationRequest,
   repositoryInitConfigJsonSchema,
   repositoryInitLockDigest,
   repositoryInitLockJsonSchema,
@@ -285,7 +286,7 @@ describe("repository init v1", () => {
     await assert.rejects(ledger.analyze(root), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
   });
 
-  it("keeps campaign and audit inventories independent of the configured exclusions", async () => {
+  it("keeps request campaign audits independent of config while standalone audits follow it", async () => {
     const roots = await Promise.all(
       ["export const value = 1;\n", "export const value = 2;\n"].map((source) =>
         fixture(nodePackage, {
@@ -303,7 +304,31 @@ describe("repository init v1", () => {
       const campaignInventory = parseRepositoryAnalysis(await analyzeRepository(root));
       assert.equal(campaignInventory.files.includes("src/value.js"), true);
       const audit = await ledger.audit(root, { noGit: true });
-      assert.equal(audit.repositoryDigest, campaignInventory.repositoryDigest);
+      assert.equal(audit.appliedExcludes.source, "config");
+      assert.equal(
+        audit.files.some((file) => file.path === "src/value.js"),
+        false,
+      );
+      assert.equal(audit.repositoryDigest, (await ledger.analyze(root)).repositoryDigest);
+      const example = parseVerificationRequest(
+        JSON.parse(
+          await readFile(new URL("../examples/node-test/request.json", import.meta.url), "utf8"),
+        ),
+      );
+      const campaignAudit = await ledger.audit(root, {
+        noGit: true,
+        verificationRequest: {
+          ...example,
+          repository: { root, exclude: [] },
+          adapter: { kind: "node-test", executable: "node", baseTestFiles: ["test/base.test.js"] },
+        },
+      });
+      assert.equal(campaignAudit.appliedExcludes.source, "request");
+      assert.equal(
+        campaignAudit.files.some((file) => file.path === "src/value.js"),
+        true,
+      );
+      assert.equal(campaignAudit.repositoryDigest, campaignInventory.repositoryDigest);
       digests.push(campaignInventory.repositoryDigest);
     }
     assert.notEqual(digests[0], digests[1]);

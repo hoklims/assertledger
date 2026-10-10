@@ -21,6 +21,7 @@ import {
   PUBLISHED_SCHEMA_EXTENSIONS_DIGEST,
 } from "./conformance-v1-lock.js";
 import { QUALIFICATION_SCHEMA_LOCK } from "./qualification-schema-lock.js";
+import { AUDIT_SCHEMA_LOCK } from "./audit-schema-lock.js";
 
 const ROOT = path.resolve("conformance", "v1");
 const SCHEMA_DIRECTORY = path.resolve("schemas");
@@ -224,6 +225,12 @@ async function verifySchemas(): Promise<void> {
     "QUALIFICATION_SCHEMA_DUPLICATE",
   );
   expectedNames.push(...qualificationNames);
+  const auditNames: string[] = [];
+  await verifyLockedSchemaEntries(AUDIT_SCHEMA_LOCK, "AUDIT_SCHEMA", auditNames);
+  assert.equal(auditNames.length, 1, "AUDIT_SCHEMA_COUNT_MISMATCH");
+  for (const name of auditNames)
+    assert.equal(expectedNames.includes(name), false, `AUDIT_SCHEMA_OVERLAPS_FROZEN: ${name}`);
+  expectedNames.push(...auditNames);
   expectedNames.sort();
   const actualNames = (await readdir(SCHEMA_DIRECTORY))
     .filter((name) => name.endsWith(".json"))

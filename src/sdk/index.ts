@@ -76,7 +76,7 @@ import {
   parseEvidenceProviderManifest,
   parseReplayResult,
   parseRepositoryAnalysis,
-  parseRepositoryAudit,
+  parseRepositoryAuditV2,
   parseVersionedRepositoryInitResult,
   parseEvidenceManifest,
   parseEvidenceManifestV2,
@@ -89,12 +89,13 @@ import {
   parseVersionedEvidenceManifest,
   type ReplayResult,
   type RepositoryAnalysis,
-  type RepositoryAudit,
+  type RepositoryAuditV2,
   type RepositoryInitResult,
   type RepositoryInitResultV2,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
+  repositoryAuditV2JsonSchema,
   repositoryInitConfigJsonSchema,
   repositoryInitConfigV2JsonSchema,
   repositoryInitLockJsonSchema,
@@ -205,6 +206,7 @@ export type SchemaName =
   | "verification-request-v3"
   | "repository-analysis"
   | "repository-audit"
+  | "repository-audit-v2"
   | "repository-init-config"
   | "repository-init-config-v2"
   | "repository-init-lock"
@@ -251,8 +253,8 @@ export class AssertLedger {
     return parseRepositoryAnalysis(await analyzeRepository(root, { configuredExcludes: true }));
   }
 
-  async audit(root: string, options: RepositoryAuditOptions = {}): Promise<RepositoryAudit> {
-    return parseRepositoryAudit(await auditRepository(root, options));
+  async audit(root: string, options: RepositoryAuditOptions = {}): Promise<RepositoryAuditV2> {
+    return parseRepositoryAuditV2(await auditRepository(root, options));
   }
 
   async init(
@@ -599,6 +601,8 @@ export class AssertLedger {
         return repositoryAnalysisJsonSchema();
       case "repository-audit":
         return repositoryAuditJsonSchema();
+      case "repository-audit-v2":
+        return repositoryAuditV2JsonSchema();
       case "repository-init-config":
         return repositoryInitConfigJsonSchema();
       case "repository-init-config-v2":

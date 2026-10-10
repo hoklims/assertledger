@@ -422,6 +422,61 @@ export const RepositoryAuditSchema = z
     description: "A deterministic static repository audit and campaign cost projection.",
   });
 
+export const RepositoryAuditV2Schema = RepositoryAuditSchema.extend({
+  schemaVersion: z.literal("2.0.0"),
+  appliedExcludes: z.strictObject({
+    source: z.enum(["request", "config", "defaults"]),
+    entries: z.array(z.string().min(1)),
+  }),
+}).meta({
+  id: "https://testforge.dev/schemas/repository-audit.v2.json",
+  title: "AssertLedger repository audit v2",
+  description: "A deterministic static audit disclosing its effective inventory exclusions.",
+});
+
+export type RepositoryAuditV2 = z.infer<typeof RepositoryAuditV2Schema>;
+
+export function parseRepositoryAuditV2(value: unknown): RepositoryAuditV2 {
+  const parsed = RepositoryAuditV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REPOSITORY_AUDIT_INVALID", z.prettifyError(parsed.error));
+  }
+  const { appliedExcludes, ...facts } = parsed.data;
+  parseRepositoryAudit({ ...facts, schemaVersion: "1.0.0" });
+  const entries = appliedExcludes.entries;
+  const expected = [
+    ...new Set(
+      [
+        ".git",
+        ".testforge",
+        "node_modules",
+        ...(facts.verificationRequest?.repository.exclude ?? []),
+      ].map(repositoryAuditPortableKey),
+    ),
+  ].sort();
+  if (
+    entries.some(
+      (entry, index) =>
+        entry !== repositoryAuditPortableKey(entry) ||
+        (index > 0 && (entries[index - 1] ?? "") >= entry),
+    ) ||
+    ![".git", ".testforge", "node_modules"].every((entry) => entries.includes(entry)) ||
+    (appliedExcludes.source === "request") !== (facts.verificationRequest !== null) ||
+    ((appliedExcludes.source === "request" || appliedExcludes.source === "defaults") &&
+      JSON.stringify(entries) !== JSON.stringify(expected))
+  ) {
+    throw new ContractError("REPOSITORY_AUDIT_EXCLUSIONS_INCONSISTENT");
+  }
+  return parsed.data;
+}
+
+export function repositoryAuditV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    RepositoryAuditV2Schema,
+    "https://testforge.dev/schemas/repository-audit.v2.json",
+  );
+}
+
 const RepositoryInitEvidenceSchema = z.strictObject({
   path: z.string().min(1).max(1_024),
   digest: Sha256DigestSchema,

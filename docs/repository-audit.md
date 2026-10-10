@@ -1,8 +1,15 @@
-# Repository audit v1
+# Repository audit
 
 `assertledger audit` inventories a repository without executing tests, adapters, candidates, or
 campaigns. Its output is descriptive: it contains no score, note, quality label, coverage claim, or
 verification verdict.
+
+Current output uses [audit v2](repository-audit-v2-migration.md), which preserves the factual
+measurements and adds `appliedExcludes: { source, entries }`. With a verification request, its
+exclusions plus defaults define the inventory, matching the campaign copy; configuration adds no
+exclusions. Without a request, audit uses a valid initialization configuration, otherwise defaults.
+Both inventories reuse the same exclusion snapshot. Historical v1 artifacts remain readable with
+the unchanged v1 parser and schema.
 
 ```sh
 assertledger audit . --json
