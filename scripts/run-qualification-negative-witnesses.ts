@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, readdir, writeFile, symlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile, symlink } from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -37,6 +37,19 @@ type Witness = {
   frozen?: boolean;
 };
 const cases: Witness[] = [
+  {
+    id: "witness-report-freshness",
+    target: "scripts/run-qualification-negative-witnesses.ts",
+    change: (source: string) =>
+      source.replace("if (isTest) await rm(reportPath, { force: true });", ""),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "the real witness runner refuses an interrupted repeated red without a fresh test report",
+      "tests/qualification-witness-runner.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
   {
     id: "bun-driver-completion-transport",
     target: "integrations/bun-native/driver.mjs",
@@ -544,6 +557,7 @@ for (const witness of selected) {
     maximumOutputBytes: 1024 * 1024,
   };
   async function observe(phase: string, expectRed: boolean) {
+    if (isTest) await rm(reportPath, { force: true });
     const result = await runProcess(input);
     const diagnostic = `${result.stdout.text}\n${result.stderr.text}`;
     const reporter = isTest
