@@ -423,7 +423,29 @@ export function createQualificationReceipt(
           reasons.push(`BASELINE_MISMATCH:${world.id}:${attempt}`);
         }
         if (world.kind === "TARGET") {
-          const discriminating = discriminant?.checkIds.some((id) => failed.has(id));
+          const discriminating = discriminant?.checkIds.some((id) => {
+            if (!failed.has(id)) return false;
+            if (obligation.kind !== "tests") return true;
+            const check = obligation.checks.find((item) => item.id === id);
+            const action = plan.actions.find((item) => item.id === check?.actionId);
+            const observation = observations.find(
+              (item) =>
+                item.worldId === world.id &&
+                item.attempt === attempt &&
+                item.actionId === check?.actionId,
+            );
+            return (
+              (action?.adapter === "node-test" || action?.adapter === "bun-native") &&
+              action.arguments.some((file) =>
+                plan.suites.some(
+                  (suite) => obligation.suiteIds.includes(suite.id) && suite.files.includes(file),
+                ),
+              ) &&
+              observation?.state === "COMPLETED" &&
+              observation.facts.testOutcome === "ASSERTION_FAILURE" &&
+              observation.facts.attributed === true
+            );
+          });
           if (!discriminating) reasons.push(`FAULT_NOT_DETECTED:${world.id}:${attempt}`);
           if ([...failed].some((id) => !discriminant?.checkIds.includes(id)))
             reasons.push(`UNDECLARED_MISMATCH:${world.id}:${attempt}`);

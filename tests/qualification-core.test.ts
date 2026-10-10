@@ -217,6 +217,82 @@ test("correctly bound passing suite baselines and owned assertion faults qualify
   }
 });
 
+test("passing test targets cannot receive detection credit from discovery-count mismatches", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks = [{ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 }];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["count"] }];
+  const records = suiteRecords(plan);
+  for (const record of records.filter((item) => item.actionId === "gate")) {
+    record.facts.exitCode = 0;
+    record.facts.testOutcome = "PASS";
+    record.facts.testsDiscovered = record.worldId === "fault" ? 2 : 1;
+  }
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "OPEN");
+  assert.ok(present(evidence.assessments[0]).reasons.includes("FAULT_NOT_DETECTED:fault:1"));
+  obligation.kind = "selection";
+  const { planDigest } = core.sealQualificationPlan(plan);
+  for (const record of records)
+    record.bindingDigest = core.qualificationBinding(
+      planDigest,
+      plan.subject.candidateDigest,
+      record.worldId,
+      record.attempt,
+      record.actionId,
+    );
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
+});
+
+test("test target detection requires its own complete attributed assertion report", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks = [{ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 }];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["count"] }];
+  const records = suiteRecords(plan);
+  for (const record of records.filter((item) => item.actionId === "gate")) {
+    record.facts.exitCode = record.worldId === "fault" ? 1 : 0;
+    record.facts.testOutcome = record.worldId === "fault" ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.testsDiscovered = record.worldId === "fault" ? 2 : 1;
+  }
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
+  for (const mutation of [
+    "TIMEOUT",
+    "COLLECTION_ERROR",
+    "UNATTRIBUTED",
+    "MISSING_REPORT",
+    "ZERO_TESTS",
+  ] as const) {
+    const altered = structuredClone(records);
+    for (const record of altered.filter(
+      (item) => item.actionId === "gate" && item.worldId === "fault",
+    )) {
+      if (mutation === "UNATTRIBUTED") record.facts.attributed = false;
+      else if (mutation === "MISSING_REPORT") delete record.facts.testOutcome;
+      else if (mutation === "ZERO_TESTS") record.facts.testsDiscovered = 0;
+      else record.state = mutation;
+    }
+    const evidence = receipt(plan, altered);
+    assert.notEqual(evidence.decision, "QUALIFIED", mutation);
+    assert.deepEqual(evidence.coveredGuaranteeIds, []);
+  }
+});
+
+test("an assertion in another suite cannot satisfy a checked passing suite's test discriminant", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks.push({ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 });
+  const records = suiteRecords(plan);
+  for (const record of records.filter((item) => item.actionId === "gate")) {
+    record.facts.exitCode = 0;
+    record.facts.testOutcome = "PASS";
+  }
+  assert.equal(receipt(plan, records).decision, "OPEN");
+});
+
 test("replay refuses reuse under a changed proof mechanism", () => {
   const evidence = receipt();
   const domain = {
