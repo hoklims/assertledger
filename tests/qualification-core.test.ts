@@ -107,6 +107,8 @@ function observations(plan: QualificationPlan): QualificationObservation[] {
           commandOutcome: world.kind === "TARGET" ? "PASS" : "EXPECTED_FAILURE",
           testsDiscovered: 1,
           testFiles: plan.suites.flatMap((suite) => suite.files),
+          assertionFailureFiles:
+            world.kind === "TARGET" ? [] : plan.suites.flatMap((suite) => suite.files),
           attributed: true,
           testOutcome: world.kind === "TARGET" ? "PASS" : "ASSERTION_FAILURE",
         },
@@ -160,6 +162,7 @@ function suiteRecords(plan: QualificationPlan): QualificationObservation[] {
     record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
     record.facts.testFiles =
       record.actionId === "gate" ? ["tests/sample.test.js"] : ["tests/other.test.js"];
+    record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
   }
   return records;
 }
@@ -203,6 +206,7 @@ test("correctly bound passing suite baselines and owned assertion faults qualify
     const failed = record.actionId === "other" || record.worldId === "fault";
     record.facts.exitCode = failed ? 1 : 0;
     record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
   }
   const evidence = receipt(plan, records);
   assert.equal(evidence.decision, "QUALIFIED");
@@ -227,6 +231,7 @@ test("passing test targets cannot receive detection credit from discovery-count 
   for (const record of records.filter((item) => item.actionId === "gate")) {
     record.facts.exitCode = 0;
     record.facts.testOutcome = "PASS";
+    record.facts.assertionFailureFiles = [];
     record.facts.testsDiscovered = record.worldId === "fault" ? 2 : 1;
   }
   const evidence = receipt(plan, records);
@@ -255,6 +260,8 @@ test("test target detection requires its own complete attributed assertion repor
   for (const record of records.filter((item) => item.actionId === "gate")) {
     record.facts.exitCode = record.worldId === "fault" ? 1 : 0;
     record.facts.testOutcome = record.worldId === "fault" ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles =
+      record.worldId === "fault" ? (record.facts.testFiles ?? []) : [];
     record.facts.testsDiscovered = record.worldId === "fault" ? 2 : 1;
   }
   assert.equal(receipt(plan, records).decision, "QUALIFIED");
@@ -289,8 +296,34 @@ test("an assertion in another suite cannot satisfy a checked passing suite's tes
   for (const record of records.filter((item) => item.actionId === "gate")) {
     record.facts.exitCode = 0;
     record.facts.testOutcome = "PASS";
+    record.facts.assertionFailureFiles = [];
   }
   assert.equal(receipt(plan, records).decision, "OPEN");
+});
+
+test("rehashed missing and contradictory assertion owning-file reports invalidate replay", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  const baseline = receipt(plan);
+  assert.equal(baseline.decision, "QUALIFIED");
+  for (const files of [
+    null,
+    [],
+    ["unobserved.test.js"],
+    ["tests/sample.test.js", "tests/sample.test.js"],
+    ["../tests/sample.test.js"],
+  ]) {
+    const altered = structuredClone(baseline);
+    const record = present(altered.observations[0]);
+    if (files === null) delete record.facts.assertionFailureFiles;
+    else record.facts.assertionFailureFiles = files;
+    assert.equal(core.createQualificationReceipt(altered).decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+  }
+  const altered = structuredClone(baseline);
+  const passing = present(altered.observations.find((item) => item.worldId === "fault"));
+  passing.facts.assertionFailureFiles = ["tests/sample.test.js"];
+  assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
 });
 
 test("replay refuses reuse under a changed proof mechanism", () => {
@@ -674,6 +707,7 @@ test("zero discovered tests cannot be misrepresented as completed target evidenc
     const failed = record.worldId === "fault";
     record.facts.exitCode = failed ? 1 : 0;
     record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
     if (failed) record.facts.testsDiscovered = 0;
   }
   assert.equal(receipt(plan, records).decision, "OPEN");

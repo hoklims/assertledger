@@ -148,6 +148,26 @@ function observationIssues(
         issues.push(`CONTRADICTORY_TEST_FACTS:${key}`);
       if (testOutcome === "ASSERTION_FAILURE" && attributed !== true)
         issues.push(`UNATTRIBUTED_TEST_ASSERTION:${key}`);
+      const { assertionFailureFiles, testFiles } = observation.facts;
+      if (
+        !Array.isArray(assertionFailureFiles) ||
+        !Array.isArray(testFiles) ||
+        !assertionFailureFiles.every(
+          (file) =>
+            typeof file === "string" &&
+            file.length > 0 &&
+            !file.includes("\\") &&
+            !file.startsWith("/") &&
+            !/^[A-Za-z]:/u.test(file) &&
+            !file.split("/").some((part) => part === "" || part === "." || part === "..") &&
+            testFiles.includes(file),
+        ) ||
+        canonicalize(assertionFailureFiles) !==
+          canonicalize([...new Set(assertionFailureFiles)].sort()) ||
+        (testOutcome === "ASSERTION_FAILURE" && assertionFailureFiles.length === 0) ||
+        (testOutcome === "PASS" && assertionFailureFiles.length !== 0)
+      )
+        issues.push(`INVALID_ASSERTION_FAILURE_FILES:${key}`);
       if (
         typeof testsDiscovered === "number" &&
         (!Number.isInteger(testsDiscovered) || testsDiscovered < 0)
@@ -436,10 +456,14 @@ export function createQualificationReceipt(
             );
             return (
               (action?.adapter === "node-test" || action?.adapter === "bun-native") &&
-              action.arguments.some((file) =>
-                plan.suites.some(
-                  (suite) => obligation.suiteIds.includes(suite.id) && suite.files.includes(file),
-                ),
+              Array.isArray(observation?.facts.assertionFailureFiles) &&
+              observation.facts.assertionFailureFiles.some(
+                (file) =>
+                  typeof file === "string" &&
+                  action.arguments.includes(file) &&
+                  plan.suites.some(
+                    (suite) => obligation.suiteIds.includes(suite.id) && suite.files.includes(file),
+                  ),
               ) &&
               observation?.state === "COMPLETED" &&
               observation.facts.testOutcome === "ASSERTION_FAILURE" &&

@@ -288,6 +288,7 @@ import path from "node:path";
 import baseReporter from "./node-base.mjs";
 export default async function* reporter(source) {
   const files = new Set();
+  const assertionFailureFiles = new Set();
   async function* observed() {
     for await (const event of source) {
       const data = event?.data;
@@ -295,11 +296,16 @@ export default async function* reporter(source) {
           (typeof data.name !== "string" || path.resolve(data.name) !== path.resolve(data.file))) {
         files.add(path.relative(process.env.ASSERTLEDGER_QUALIFICATION_WORKSPACE, data.file).split(path.sep).join("/"));
       }
+      if (event?.type === "test:fail" && typeof data?.file === "string" &&
+          data.details?.error?.failureType === "testCodeFailure" &&
+          data.details.error.cause?.code === "ERR_ASSERTION") {
+        assertionFailureFiles.add(path.relative(process.env.ASSERTLEDGER_QUALIFICATION_WORKSPACE, data.file).split(path.sep).join("/"));
+      }
       yield event;
     }
   }
   for await (const chunk of baseReporter(observed())) {
-    yield JSON.stringify({ ...JSON.parse(chunk), testFiles: [...files].sort() }) + "\n";
+    yield JSON.stringify({ ...JSON.parse(chunk), testFiles: [...files].sort(), assertionFailureFiles: [...assertionFailureFiles].sort() }) + "\n";
   }
 }
 `;
@@ -438,6 +444,20 @@ async function executeAction(
           )
             throw new Error("QUALIFICATION_NODE_FILE_REPORT_INVALID");
           facts.testFiles = document.testFiles;
+          if (
+            !Array.isArray(document.assertionFailureFiles) ||
+            !document.assertionFailureFiles.every(
+              (file: unknown) => typeof file === "string" && document.testFiles.includes(file),
+            ) ||
+            canonicalize(document.assertionFailureFiles) !==
+              canonicalize([...new Set(document.assertionFailureFiles)].sort()) ||
+            (document.candidateFailureCount > 0 &&
+              document.candidateFailuresAllAssertions &&
+              document.assertionFailureFiles.length === 0) ||
+            (document.candidateFailureCount === 0 && document.assertionFailureFiles.length !== 0)
+          )
+            throw new Error("QUALIFICATION_NODE_ASSERTION_FILE_REPORT_INVALID");
+          facts.assertionFailureFiles = document.assertionFailureFiles;
           facts.testsDiscovered = document.candidateTestsDiscovered;
           if (action.arguments.some((file) => !document.testFiles.includes(file)))
             state = "NO_TESTS";

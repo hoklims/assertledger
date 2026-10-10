@@ -67,6 +67,49 @@ test("node:test qualification preserves suite attribution through a temporary-di
   }
 });
 
+test("a two-file native action attributes assertion failures to the required suite's owning file", async () => {
+  const engine = await capability();
+  const root = await mkdtemp(path.join(os.tmpdir(), "qualification-suite-owner-"));
+  const passing = "import {test} from 'node:test'; test('pass', () => {});\n";
+  const failing =
+    "import {test} from 'node:test'; import {fail} from './assertion-helper.mjs'; test('failure', fail);\n";
+  try {
+    await writeFile(path.join(root, "public.test.mjs"), passing);
+    await writeFile(path.join(root, "other.test.mjs"), passing);
+    await writeFile(
+      path.join(root, "assertion-helper.mjs"),
+      "import assert from 'node:assert/strict'; export function fail() { assert.equal(1, 2); }\n",
+    );
+    for (const owningFile of ["other.test.mjs", "public.test.mjs"]) {
+      const plan = smokeQualificationPlan();
+      const action = plan.actions[0];
+      const fault = plan.worlds.find((world) => world.kind === "TARGET");
+      const nodeTool = plan.tools[0];
+      assert.ok(action && fault && nodeTool);
+      action.arguments = ["public.test.mjs", "other.test.mjs"];
+      fault.files = [{ path: owningFile, content: failing }];
+      nodeTool.digest = await engine.qualificationFileDigest(process.execPath);
+      plan.subject.inputDigest = await engine.qualificationRepositoryDigest(root);
+      plan.subject.candidateDigest = sha256Canonical([]);
+      const receipt = await engine.qualifyOrchestration(
+        { root, plan, planDigest: sha256Canonical(plan), candidate: { files: [] } },
+        { allowUnsafeExecution: true },
+      );
+      assert.equal(receipt.decision, owningFile === "public.test.mjs" ? "QUALIFIED" : "OPEN");
+      for (const row of receipt.observations) {
+        assert.deepEqual(
+          row.facts.assertionFailureFiles,
+          row.worldId === fault.id ? [owningFile] : [],
+        );
+        assert.deepEqual(row.facts.testFiles, ["other.test.mjs", "public.test.mjs"]);
+      }
+      assert.equal(new AssertLedger().replayQualification(receipt).valid, true);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("qualification keeps expected nonzero exits as command facts and executes isolated worlds", async () => {
   const engine = await capability();
   const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-qualification-"));
