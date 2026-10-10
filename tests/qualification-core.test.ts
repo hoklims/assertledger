@@ -373,6 +373,7 @@ test("native discovery and started-file inventories remain concordant during rec
       );
     }
     for (const files of [
+      [],
       ["tests/a.test.js", "tests/a.test.js", "tests/b.test.js"],
       ["tests/b.test.js", "tests/a.test.js"],
       ["../tests/a.test.js", "tests/b.test.js"],

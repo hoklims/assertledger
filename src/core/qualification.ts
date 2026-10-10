@@ -151,6 +151,7 @@ function observationIssues(
       const { assertionFailureFiles, testFiles } = observation.facts;
       const canonicalTestFiles =
         Array.isArray(testFiles) &&
+        testFiles.length > 0 &&
         testFiles.every(
           (file) =>
             typeof file === "string" &&
