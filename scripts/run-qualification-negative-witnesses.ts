@@ -38,6 +38,64 @@ type Witness = {
 };
 const cases: Witness[] = [
   {
+    id: "bun-driver-completion-transport",
+    target: "integrations/bun-native/driver.mjs",
+    change: (source: string) =>
+      source.replace(
+        "process.exitCode = 0;",
+        'process.exitCode = outcome.outcome === "PASS" ? 0 : 1;',
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "normal outer completion preserves ASSERTION_FAILURE",
+      "tests/bun-native-termination.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "bun-driver-termination",
+    target: "src/engine/adapters/bun-native.ts",
+    change: (source: string) =>
+      source.replace('execution.exitCode !== 0 || execution.outcome !== "PASS"', "false"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "outer exit-seven|outer inconsistent-exit|outer signal",
+      "tests/bun-native-termination.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "test-target-assertion-attribution",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace('if (obligation.kind !== "tests") return true;', "return true;"),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "passing test targets cannot receive detection credit from discovery-count mismatches|test target detection requires its own complete attributed assertion report",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
+    id: "test-discriminant-suite-attribution",
+    target: "src/core/qualification.ts",
+    change: (source: string) =>
+      source.replace(
+        /action\.arguments\.some\(\(file\) =>\s*plan\.suites\.some\(\s*\(suite\) => obligation\.suiteIds\.includes\(suite\.id\) && suite\.files\.includes\(file\),\s*\),\s*\) &&/u,
+        "true &&",
+      ),
+    args: [
+      "--test",
+      "--test-name-pattern",
+      "an assertion in another suite cannot satisfy a checked passing suite",
+      "tests/qualification-core.test.ts",
+    ],
+    diagnostic: "ERR_ASSERTION",
+  },
+  {
     id: "suite-action-binding",
     target: "src/core/qualification.ts",
     change: (source: string) => source.replace("checkedActions.has(item.actionId) &&", ""),
