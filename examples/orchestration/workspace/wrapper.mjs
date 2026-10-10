@@ -1,5 +1,6 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { complete, execute } from "./completion.mjs";
+import { failCommandArgs, wrapperCommandArgs } from "./commands.mjs";
 const faults = JSON.parse(readFileSync("faults.json", "utf8"));
 const emit = (task, event) =>
   appendFileSync(
@@ -21,14 +22,10 @@ if (layer === "orchestrator") {
     emit("mandatory-stage", "finish");
     status = execute(
       process.env.PUBLIC_TURBO_EXECUTABLE,
-      [
-        "run",
-        "fail",
-        faults.emptySelection ? "--filter=!@public/*" : "--filter=@public/app...",
-        "--cache=local:rw",
-        `--cache-dir=${process.env.ASSERTLEDGER_QUALIFICATION_CACHE}`,
-        "--summarize",
-      ],
+      failCommandArgs({
+        emptySelection: faults.emptySelection,
+        cacheDirectory: process.env.ASSERTLEDGER_QUALIFICATION_CACHE,
+      }),
       "leaf",
     );
     if (faults.swallow) status = 0;
@@ -41,7 +38,7 @@ if (layer === "orchestrator") {
   // A prior success is deliberately seeded by a separate, ordered action.
   status = JSON.parse(readFileSync("success-receipt.json", "utf8")).exitCode;
 } else {
-  status = execute(process.execPath, [import.meta.filename, "orchestrator"], "orchestrator");
+  status = execute(process.execPath, wrapperCommandArgs(import.meta.filename), "orchestrator");
 }
 emit(layer, status === 0 ? "finish" : "fail");
 complete(status);

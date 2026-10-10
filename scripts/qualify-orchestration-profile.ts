@@ -273,10 +273,10 @@ const worlds: World[] = [
     "shape-assertion",
     [
       {
-        path: "command-shape.test.mjs",
-        content: (await fixture("command-shape.test.mjs")).replace(
-          'assert.deepEqual(["wrapper.mjs"], ["wrapper.mjs"])',
-          'assert.deepEqual(["wrapper.mjs"], ["wrong.mjs"])',
+        path: "commands.mjs",
+        content: (await fixture("commands.mjs")).replace(
+          '"--filter=@public/app..."',
+          '"--filter=@public/leaf..."',
         ),
       },
     ],
