@@ -6,6 +6,8 @@ The strict v1 schema, `RepositoryAuditSchema`, `parseRepositoryAudit`, and
 Use `RepositoryAuditV2Schema`, `parseRepositoryAuditV2`, and
 `repositoryAuditV2JsonSchema()` for current audit output. The SDK schema selector
 `repository-audit` retains v1; `repository-audit-v2` selects v2.
+The additive raw-digest lock in `scripts/audit-schema-lock.ts` admits the new
+schema to the existing conformance rail without regenerating any frozen lock.
 
 V2 adds `appliedExcludes: { source, entries }`. Entries are sorted, unique portable
 entry names, including the defaults `.git`, `.testforge`, and `node_modules`.
@@ -21,6 +23,9 @@ The initial and final inventories reuse one snapshot of the exclusion list.
 that inventory. Symlinks remain forbidden wherever that inventory includes them.
 An inventory symlink refusal carries the same `appliedExcludes` disclosure in
 `RepositoryAuditInventoryError`. Init and doctor can continue proposing audit.
+The CLI retains refusal exit code 4 and its stable reason on stderr, followed by
+`Audit exclusions: {"source":...,"entries":[...]}` and the safely quoted link path.
+Successful `--json` output uses the v2 schema; a refusal retains empty stdout.
 
 This changes the audited inventory and may change its digest, byte count, and
 campaign cost projection compared with v1. Campaign execution and its manifest

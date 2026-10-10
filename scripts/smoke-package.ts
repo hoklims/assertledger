@@ -475,7 +475,11 @@ async function main(): Promise<void> {
     assert.equal(demo.temporaryWorkspaceRemoved, true);
     assert.match(demo.limitation, /does not prove.*user repository/iu);
     const audit = parse(runBin("assertledger", ["audit", fixture, "--no-git", "--json"]));
-    assert.equal(audit.schemaVersion, "1.0.0");
+    assert.equal(audit.schemaVersion, "2.0.0");
+    assert.deepEqual(audit.appliedExcludes, {
+      source: "defaults",
+      entries: [".git", ".testforge", "node_modules"],
+    });
     assert.equal(audit.fileCount, 2);
     assert.ok(Array.isArray(audit.files));
     assert.match(audit.repositoryDigest, /^sha256:[a-f0-9]{64}$/);
@@ -506,7 +510,8 @@ async function main(): Promise<void> {
         JSON.stringify(fixture) +
         ', { dryRun: true })).status, "WOULD_CREATE");',
       `  const audit = await instance.audit(${JSON.stringify(fixture)}, { noGit: true });`,
-      '  assert.equal(audit.schemaVersion, "1.0.0"); assert.equal(audit.fileCount, 2);',
+      '  assert.equal(audit.schemaVersion, "2.0.0"); assert.equal(audit.fileCount, 2);',
+      '  assert.equal(audit.appliedExcludes.source, "defaults");',
       "}",
       'console.log(JSON.stringify({ status: "PASS", exports: ["assertledger", "assertledger/core", "assertledger/bun"], aliases: ["AssertLedger", "TestForge"] }));',
       "",

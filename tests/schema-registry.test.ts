@@ -31,6 +31,7 @@ it("checks every generated public schema for staleness", () => {
       "witness-import-request.v1.json",
       "repository-analysis.v1.json",
       "repository-audit.v1.json",
+      "repository-audit.v2.json",
       "repository-init-config.v1.json",
       "repository-init-config.v2.json",
       "repository-init-lock.v1.json",

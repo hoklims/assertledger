@@ -2336,8 +2336,9 @@ export class RepositoryAuditInventoryError extends Error {
   constructor(
     message: string,
     readonly appliedExcludes: RepositoryAuditV2["appliedExcludes"],
+    cause: unknown,
   ) {
-    super(message);
+    super(message, { cause });
     this.name = "RepositoryAuditInventoryError";
   }
 }
@@ -2514,7 +2515,7 @@ export async function auditRepository(
       };
     } catch (error) {
       if (error instanceof Error && error.message === "UNSUPPORTED_REPOSITORY_SYMLINK") {
-        throw new RepositoryAuditInventoryError(error.message, appliedExcludes);
+        throw new RepositoryAuditInventoryError(error.message, appliedExcludes, error.cause);
       }
       throw error;
     }

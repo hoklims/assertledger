@@ -44,6 +44,7 @@ describe("static conformance v1 oracle", () => {
     assert.equal(dependencies.length, importDeclarationCount(source));
     assert.deepStrictEqual(dependencies.sort(), [
       "../src/index.js",
+      "./audit-schema-lock.js",
       "./conformance-v1-lock.js",
       "./qualification-schema-lock.js",
       "node:assert/strict",
@@ -56,6 +57,19 @@ describe("static conformance v1 oracle", () => {
       "./generate-conformance-v1.js",
     ]);
     assert.equal(importDeclarationCount(hostileSideEffectImport), 1);
+  });
+
+  it("keeps the audit schema lock limited to one constant artifact digest declaration", async () => {
+    const source = await readFile("scripts/audit-schema-lock.ts", "utf8");
+    const declaration = source.replace(/^\s*\/\/[^\r\n]*(?:\r?\n|$)/gmu, "");
+    const entry = String.raw`\{\s*path:\s*"schemas/repository-audit\.v2\.json",\s*rawSha256:\s*"sha256:[a-f0-9]{64}",\s*\$id:\s*"https://testforge\.dev/schemas/repository-audit\.v2\.json",\s*\},\s*`;
+    const literalDeclaration = new RegExp(
+      String.raw`^\s*export const AUDIT_SCHEMA_LOCK\s*=\s*\[\s*${entry}\]\s*as const;\s*$`,
+      "u",
+    );
+    assert.match(declaration, literalDeclaration);
+    assert.equal(literalDeclaration.test(`${declaration}\nimport "./generate-schemas.js";`), false);
+    assert.equal(literalDeclaration.test(declaration.replace("[", "loadSchemas([")), false);
   });
 
   it("keeps the qualification schema lock limited to constant artifact digest declarations", async () => {

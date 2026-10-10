@@ -19,6 +19,22 @@ const temporaryDirectories: string[] = [];
 const execFileAsync = promisify(execFile);
 
 describe("audit exclusions", () => {
+  it("exposes the new audit schema in the CLI and retains the v1 selector", async () => {
+    const ledger = new AssertLedger();
+    for (const name of ["repository-audit", "repository-audit-v2"] as const) {
+      let stdout = "";
+      const exit = await runCli(["schema", name], {
+        cwd: process.cwd(),
+        readStdin: async () => "",
+        writeStdout: (text) => {
+          stdout += text;
+        },
+        writeStderr: () => {},
+      });
+      assert.equal(exit, 0, name);
+      assert.deepEqual(JSON.parse(stdout), ledger.schema(name));
+    }
+  });
   async function excludedLinkFixture(configExcludes: string[]) {
     const root = await fixture();
     await writeFile(
@@ -84,6 +100,7 @@ describe("audit exclusions", () => {
       auditRepository(root, { noGit: true, verificationRequest: request(root) }),
       (error: unknown) => {
         assert.match(String(error), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+        assert.equal((error as Error).cause, ".claude/link");
         assert.deepEqual((error as { appliedExcludes?: unknown }).appliedExcludes, {
           source: "request",
           entries: [".git", ".testforge", "node_modules"],
@@ -91,6 +108,33 @@ describe("audit exclusions", () => {
         return true;
       },
     );
+  });
+
+  it("discloses request exclusions and the refused link through the CLI", async () => {
+    const root = await excludedLinkFixture([".claude"]);
+    await writeFile(path.join(root, "assertledger.request.json"), JSON.stringify(request(root)));
+    let stdout = "";
+    let stderr = "";
+    const exit = await runCli(["audit", ".", "--no-git", "--json"], {
+      cwd: root,
+      readStdin: async () => "",
+      writeStdout: (text) => {
+        stdout += text;
+      },
+      writeStderr: (text) => {
+        stderr += text;
+      },
+    });
+    assert.equal(exit, 4);
+    assert.equal(stdout, "");
+    assert.match(stderr, /^UNSUPPORTED_REPOSITORY_SYMLINK\n/u);
+    const disclosure = stderr.split("\n").find((line) => line.startsWith("Audit exclusions: "));
+    assert(disclosure, stderr);
+    assert.deepEqual(JSON.parse(disclosure.slice("Audit exclusions: ".length)), {
+      source: "request",
+      entries: [".git", ".testforge", "node_modules"],
+    });
+    assert.match(stderr, /Link detail: "\.claude\/link"/u);
   });
 
   it("discloses defaults when no valid configuration or request exists", async () => {
