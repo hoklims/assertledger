@@ -79,7 +79,7 @@ not admission. Receipts list `coveredGuaranteeIds`, `openGuaranteeIds`, reasons 
 | Hosted CI | Independently signed external observation | Pinned observer, exact commit/base/plan/input, executed steps and terminal success | Bad signature, wrong domain, missing/skipped step, failed terminal |
 | Receipt/replay | Strict parsing, recomputed bindings, decisions, digests and external domain | Complete evidence matches its actual validity domain | Tamper, resealed summary forgery, duplicate/missing/rebound report, changed mechanism |
 
-The public campaign executes fourteen fault worlds, reference and neutral twice. Cache directories
+The public campaign executes fifteen fault worlds, reference and neutral twice. Cache directories
 are distinct for each world/attempt and reused only between that attempt's ordered phases. Task
 traces use a fresh nonce and a file outside the cache on every action. A cached log is never an
 execution observation. Configurations, tool binaries, environments and source inputs are sealed;
