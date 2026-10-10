@@ -84,14 +84,14 @@ const cases: Witness[] = [
     target: "src/core/qualification.ts",
     change: (source: string) =>
       source.replace(
-        /action\.arguments\.some\(\(file\) =>\s*plan\.suites\.some\(\s*\(suite\) => obligation\.suiteIds\.includes\(suite\.id\) && suite\.files\.includes\(file\),\s*\),\s*\) &&/u,
-        "true &&",
+        /observation\.facts\.assertionFailureFiles\.some\(\s*\(file\) =>\s*typeof file === "string" &&\s*action\.arguments\.includes\(file\) &&\s*plan\.suites\.some\(\s*\(suite\) => obligation\.suiteIds\.includes\(suite\.id\) && suite\.files\.includes\(file\),\s*\),\s*\) &&/u,
+        "action.arguments.some((file) => plan.suites.some((suite) => obligation.suiteIds.includes(suite.id) && suite.files.includes(file))) &&",
       ),
     args: [
       "--test",
       "--test-name-pattern",
-      "an assertion in another suite cannot satisfy a checked passing suite",
-      "tests/qualification-core.test.ts",
+      "a two-file native action attributes assertion failures to the required suite's owning file",
+      "tests/qualification-engine.test.ts",
     ],
     diagnostic: "ERR_ASSERTION",
   },
@@ -315,6 +315,46 @@ const testCase = (
   diagnostic: "ATTRIBUTED_ASSERTION_FAILURE",
 });
 cases.push(
+  testCase(
+    "assertion-owning-file-report-integrity",
+    "src/core/qualification.ts",
+    (source) =>
+      source.replace(
+        "issues.push(`INVALID_ASSERTION_FAILURE_FILES:${key}`);",
+        "/* faulty acceptance */",
+      ),
+    "rehashed missing and contradictory assertion owning-file reports invalidate replay",
+    "tests/qualification-core.test.ts",
+  ),
+  testCase(
+    "bun-driver-assertion-file-attribution",
+    "integrations/bun-native/driver.mjs",
+    (source) =>
+      source.replace(
+        "[...new Set(candidateFailures.map((entry) => found.get(entry.id)))].sort()",
+        "testFiles",
+      ),
+    "attributes only",
+    "tests/bun-native-file-attribution.test.ts",
+  ),
+  testCase(
+    "bun-native-assertion-file-concordance",
+    "src/engine/adapters/bun-native.ts",
+    (source) =>
+      source.replace(
+        /row\.outcome === "ASSERTION_FAILURE"\s*\? assertionFailureFiles\.length === 0\s*: assertionFailureFiles\.length !== 0/u,
+        "false",
+      ),
+    "native adapter refuses empty assertion failure files|native adapter refuses failure files in a passing report",
+    "tests/bun-native-file-attribution.test.ts",
+  ),
+  testCase(
+    "bun-native-canonical-file-attribution",
+    "src/engine/adapters/bun-native.ts",
+    (source) => source.replace("declaredFileNames.get(file)", "file"),
+    "nested mixed-case failure owner remains canonical",
+    "tests/bun-native-file-attribution.test.ts",
+  ),
   testCase(
     "fixture-package-manager-pin",
     "examples/orchestration/workspace/package.json",

@@ -43,3 +43,17 @@ manual/automatic triggers. Update externally sealed CI check expectations to tha
 rerun the campaign; do not reseal earlier receipts. Unsupported execution fields fail collection.
 The qualification wire schema major version and existing frozen verification projections remain
 unchanged; this collector change invalidates the previous mechanism domain.
+
+Native Node and Bun observations now retain `facts.assertionFailureFiles`: sorted, unique,
+repository-relative POSIX paths naming the files that registered the failed assertions. An error
+stack in a shared helper does not make that helper the test owner. A fault can satisfy a required
+test suite only when an actual assertion owner belongs to that suite and its checked action.
+Running another failing file in the same action is insufficient. Missing, contradictory or
+noncanonical ownership reports invalidate replay, even when artifact digests are recomputed.
+Recollect qualification receipts under the updated mechanism; do not add ownership to old reports.
+
+The native Bun driver exits zero after normal report transport, including a reported assertion
+failure. The inner Bun exit remains in the report and must agree with its test outcome. An abnormal
+outer exit, missing completion or operational failure cannot establish assertion attribution.
+Windows observations preserve declared case and use POSIX paths; ambiguous file aliases are refused.
+These changes apply to the separate qualification capability, not frozen verification v1–v4.
