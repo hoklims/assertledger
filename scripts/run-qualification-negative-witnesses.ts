@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile, symlink } from "node:fs/promises";
-import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { runProcess } from "../src/engine/index.js";
-import { qualificationMechanismDigest } from "../src/engine/qualification.js";
 import { NODE_TEST_REPORTER_SOURCE } from "../src/engine/node-test-reporter.js";
+import { qualificationMechanismDigest } from "../src/engine/qualification.js";
 
 // Separate copies execute semantic mutants. Neither the frozen candidate nor its tests are edited.
 const root = process.cwd();
@@ -328,6 +328,61 @@ const testCase = (
   diagnostic: "ATTRIBUTED_ASSERTION_FAILURE",
 });
 cases.push(
+  testCase(
+    "cli-qualification-open-exit",
+    "src/cli.ts",
+    (source) =>
+      source.replace(
+        'return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 2;',
+        'return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 0 : 2;',
+      ),
+    "real CLI qualification and CI import preserve OPEN and REJECTED exits and reject forged replay",
+    "tests/qualification-facades.test.ts",
+  ),
+  testCase(
+    "cli-qualification-rejected-exit",
+    "src/cli.ts",
+    (source) =>
+      source.replace(
+        'return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 2;',
+        'return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 0;',
+      ),
+    "real CLI qualification and CI import preserve OPEN and REJECTED exits and reject forged replay",
+    "tests/qualification-facades.test.ts",
+  ),
+  testCase(
+    "cli-ci-open-exit",
+    "src/cli.ts",
+    (source) =>
+      source.replace(
+        /(case "qualification-ci":[\s\S]*?)return result.decision === "QUALIFIED" \? 0 : result.decision === "OPEN" \? 3 : 2;/u,
+        '$1return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 0 : 2;',
+      ),
+    "real CLI qualification and CI import preserve OPEN and REJECTED exits and reject forged replay",
+    "tests/qualification-facades.test.ts",
+  ),
+  testCase(
+    "cli-ci-rejected-exit",
+    "src/cli.ts",
+    (source) =>
+      source.replace(
+        /(case "qualification-ci":[\s\S]*?)return result.decision === "QUALIFIED" \? 0 : result.decision === "OPEN" \? 3 : 2;/u,
+        '$1return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 0;',
+      ),
+    "real CLI qualification and CI import preserve OPEN and REJECTED exits and reject forged replay",
+    "tests/qualification-facades.test.ts",
+  ),
+  testCase(
+    "cli-invalid-replay-exit",
+    "src/cli.ts",
+    (source) =>
+      source.replace(
+        /(case "qualification-replay":[\s\S]*?)return result.valid \? 0 : 4;/u,
+        "$1return result.valid ? 0 : 0;",
+      ),
+    "real CLI qualification and CI import preserve OPEN and REJECTED exits and reject forged replay",
+    "tests/qualification-facades.test.ts",
+  ),
   testCase(
     "assertion-owning-file-report-integrity",
     "src/core/qualification.ts",
