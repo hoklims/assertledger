@@ -64,3 +64,20 @@ every assertion owner must belong to that inventory. Missing or inconsistent cou
 noncanonical files, and completed zero-test reports are rejected, including after recomputing receipt
 digests. Operational states retain their unsatisfied obligations. Recollect qualification receipts
 under the updated mechanism; frozen verification schemas and digest projections remain unchanged.
+
+Runtime provenance is now a required structured contract: mechanism and collector digests,
+platform, architecture, engine Node version, complete tool identities and version probes, and
+the exact snapshot exclusions and dependency policy. Tool IDs, versions, digests and declared
+version commands must agree with the sealed plan. Identity paths remain captured identities;
+replay cannot resolve aliases or authenticate their producer. Missing or malformed provenance,
+missing or additional tools, and contradictory tool facts cannot qualify or replay, even after
+resealing. Default replay checks captured completeness; the caller's expected current domain
+remains a separate check and replay still neither executes nor authenticates observations.
+
+Completed Node observations additionally require `skippedTests`, `cancelledTests` and
+`todoTests` to be exactly zero, matching the Node collector's completion contract. Missing,
+malformed, negative or nonzero counters invalidate PASS and assertion-failure evidence and
+rehashed replay. Operational states keep their unsatisfied obligations; Bun does not acquire
+invented Node counters. Recollect earlier qualification receipts rather than filling old facts.
+The additive qualification v1 receipt schema and its own lock change; frozen verification v1–v4
+schemas, canonical decision projections and artifact digest projections remain unchanged.

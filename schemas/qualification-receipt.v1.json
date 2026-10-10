@@ -568,7 +568,114 @@
           }
         },
         "runtime": {
-          "$ref": "#/$defs/__schema0"
+          "type": "object",
+          "properties": {
+            "mechanismDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "platform": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "architecture": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "node": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$"
+            },
+            "tools": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "executable": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "identityPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}$"
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "versionArguments": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 8192
+                    }
+                  }
+                },
+                "required": ["executable", "identityPath", "digest", "version", "versionArguments"],
+                "additionalProperties": false
+              }
+            },
+            "collectorDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "snapshotExcludes": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": ".git"
+                },
+                {
+                  "type": "string",
+                  "const": ".testforge"
+                },
+                {
+                  "type": "string",
+                  "const": ".turbo"
+                },
+                {
+                  "type": "string",
+                  "const": "coverage"
+                },
+                {
+                  "type": "string",
+                  "const": "node_modules"
+                }
+              ]
+            },
+            "dependencySnapshot": {
+              "type": "string",
+              "const": "EXCLUDED_NODE_MODULES"
+            }
+          },
+          "required": [
+            "mechanismDigest",
+            "platform",
+            "architecture",
+            "node",
+            "tools",
+            "collectorDigest",
+            "snapshotExcludes",
+            "dependencySnapshot"
+          ],
+          "additionalProperties": false
         },
         "executionTrust": {
           "type": "string",

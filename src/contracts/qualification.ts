@@ -290,10 +290,52 @@ export function parseQualificationPlan(value: unknown): QualificationPlan {
   return plan;
 }
 
+const RuntimePath = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine(
+    (value) =>
+      /^(?:[A-Za-z]:[\\/]|\/|\\\\[^\\]+\\[^\\]+)/.test(value) &&
+      [...value].every((character) => character.charCodeAt(0) >= 32),
+    "Runtime tool identity must name an absolute path",
+  );
+export const QUALIFICATION_SNAPSHOT_EXCLUDES = [
+  ".git",
+  ".testforge",
+  ".turbo",
+  "coverage",
+  "node_modules",
+] as const;
+export const QualificationRuntimeSchema = z.strictObject({
+  mechanismDigest: Digest,
+  platform: z.string().min(1).max(128),
+  architecture: z.string().min(1).max(128),
+  node: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/),
+  tools: z.record(
+    Id,
+    z.strictObject({
+      executable: RuntimePath,
+      identityPath: RuntimePath,
+      digest: Digest,
+      version: z.string().min(1).max(128),
+      versionArguments: z.array(z.string().max(8192)).max(100),
+    }),
+  ),
+  collectorDigest: Digest,
+  snapshotExcludes: z.tuple([
+    z.literal(".git"),
+    z.literal(".testforge"),
+    z.literal(".turbo"),
+    z.literal("coverage"),
+    z.literal("node_modules"),
+  ]),
+  dependencySnapshot: z.literal("EXCLUDED_NODE_MODULES"),
+});
 export const QualificationProvenanceSchema = z.strictObject({
   engineVersion: z.string().min(1),
   adapterVersions: z.record(z.string(), z.string().min(1)),
-  runtime: QualificationJsonSchema,
+  runtime: QualificationRuntimeSchema,
   executionTrust: z.literal("TRUSTED_LOCAL_UNSANDBOXED"),
 });
 export const QualificationCiObservationSchema = z.strictObject({

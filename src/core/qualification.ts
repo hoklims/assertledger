@@ -189,6 +189,13 @@ function observationIssues(
         (Array.isArray(testFiles) && testsDiscovered < testFiles.length)
       )
         issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);
+      if (
+        action.adapter === "node-test" &&
+        ["skippedTests", "cancelledTests", "todoTests"].some(
+          (field) => observation.facts[field] !== 0,
+        )
+      )
+        issues.push(`INVALID_NODE_TEST_COMPLETION:${key}`);
     }
     if (
       observation.bindingDigest !==
@@ -210,6 +217,34 @@ export type CreateQualificationReceiptInput = Pick<
   QualificationReceipt,
   "plan" | "planDigest" | "candidateDigest" | "observations" | "provenance" | "externalCi"
 >;
+
+function runtimeIssues(
+  plan: QualificationPlan,
+  provenance: QualificationReceipt["provenance"],
+): string[] {
+  const issues: string[] = [];
+  const tools = provenance.runtime.tools;
+  if (
+    canonicalize(Object.keys(tools).sort()) !==
+    canonicalize(plan.tools.map((tool) => tool.id).sort())
+  )
+    issues.push("RUNTIME_TOOL_INVENTORY_MISMATCH");
+  for (const tool of plan.tools) {
+    const observed = tools[tool.id];
+    const executable = tool.versionCommand?.executable ?? observed?.executable;
+    if (
+      !observed ||
+      observed.digest !== tool.digest ||
+      observed.version !== tool.version ||
+      observed.executable !== executable ||
+      !plan.actions.some((action) => action.executable === observed.executable) ||
+      canonicalize(observed.versionArguments) !==
+        canonicalize(tool.versionCommand?.arguments ?? ["--version"])
+    )
+      issues.push(`RUNTIME_TOOL_CONCORDANCE:${tool.id}`);
+  }
+  return issues;
+}
 
 export function verifyQualificationCiObservation(
   plan: QualificationPlan,
@@ -326,6 +361,7 @@ export function createQualificationReceipt(
     input.candidateDigest,
     observations,
   );
+  globalIssues.push(...runtimeIssues(plan, provenance));
   const missingAdapterVersions = plan.actions.filter(
     (action) => !Object.hasOwn(provenance.adapterVersions, action.adapter),
   );
@@ -576,8 +612,10 @@ export function replayQualificationReceipt(
         });
     const computed = createQualificationReceipt(receipt);
     result.semanticsValid =
+      runtimeIssues(receipt.plan, receipt.provenance).length === 0 &&
       observationIssues(receipt.plan, planDigest, candidateDigest, receipt.observations).length ===
-        0 && canonicalize(computed) === canonicalize(receipt);
+        0 &&
+      canonicalize(computed) === canonicalize(receipt);
     result.domainValid =
       expectedDomain === undefined ||
       (expectedDomain.planDigest === planDigest &&

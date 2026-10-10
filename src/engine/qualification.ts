@@ -16,7 +16,9 @@ import { createRequire } from "node:module";
 import {
   parseQualificationPlan,
   QualificationExecutionRequestSchema,
+  QUALIFICATION_SNAPSHOT_EXCLUDES,
   type QualificationPlan,
+  type QualificationReceipt,
 } from "../contracts/qualification.js";
 import { canonicalize, sha256Canonical } from "../core/index.js";
 import { createQualificationReceipt, qualificationBinding } from "../core/qualification.js";
@@ -26,7 +28,7 @@ import { runProcess, type ProcessResult } from "./index.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 
 export const ORCHESTRATION_ADAPTER_VERSION = "1.0.0";
-const EXCLUDED_ROOTS = new Set([".git", "node_modules", ".testforge", ".turbo", "coverage"]);
+const EXCLUDED_ROOTS: ReadonlySet<string> = new Set(QUALIFICATION_SNAPSHOT_EXCLUDES);
 const MAXIMUM_INPUT_BYTES = 32 * 1024 * 1024;
 const MAXIMUM_FILES = 10_000;
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -590,7 +592,7 @@ export async function qualifyOrchestration(
   );
   if (inputDigest !== plan.subject.inputDigest)
     throw new Error("QUALIFICATION_INPUT_DIGEST_MISMATCH");
-  const executableFacts: Record<string, Json> = {};
+  const executableFacts: QualificationReceipt["provenance"]["runtime"]["tools"] = {};
   const actionExecutables = new Map<string, string>();
   for (const executable of new Set(plan.actions.map((action) => action.executable))) {
     if (!path.isAbsolute(executable)) throw new Error("QUALIFICATION_EXECUTABLE_NOT_ABSOLUTE");
@@ -712,7 +714,7 @@ export async function qualifyOrchestration(
             ciParser: CI_PARSER,
             nodeReporter: NODE_TEST_REPORTER_SOURCE,
           }),
-          snapshotExcludes: [...EXCLUDED_ROOTS].sort(),
+          snapshotExcludes: [...QUALIFICATION_SNAPSHOT_EXCLUDES],
           dependencySnapshot: "EXCLUDED_NODE_MODULES",
         },
         executionTrust: "TRUSTED_LOCAL_UNSANDBOXED",
