@@ -43,7 +43,7 @@ const cases: Witness[] = [
     change: (source: string) =>
       source.replace(
         "issues.push(`INVALID_TEST_DISCOVERY_COUNT:${key}`);",
-        "/* faulty acceptance */",
+        "void 0;",
       ),
     args: [
       "--test",
