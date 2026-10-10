@@ -5,6 +5,16 @@ Bun 1.4.2, revision 744846f844374847c902b5e7fd59b4342a51ef99.
 The outer Node process runs the driver with argument arrays and a bounded process
 tree; the driver loads the signed-pipe preload and checks complete JUnit evidence.
 
+The outer Node driver exits 0 whenever it emits a complete report, including
+reports of assertion failures or operational inner Bun failures. The report's
+`exitCode` retains the inner Bun exit code and its `outcome` retains the semantic
+classification. Driver exceptions, nonzero or missing outer exit codes, signals,
+process errors, timeouts and truncated output invalidate collection regardless
+of a previously emitted report. This separates transport completion from test
+outcome, including on Windows where forced termination may appear as exit 1
+without a signal. This internal native profile contract does not change the
+frozen helper adapter protocols.
+
 The qualified forms are TypeScript tests importing `bun:test`, `test`, `it`,
 `describe`, async functions, helper-module imports, `test.each`, native `expect`
 matchers and `not`/`resolves`/`rejects` chains. The qualified matcher names are

@@ -380,7 +380,8 @@ async function main() {
         : infrastructureFailure("MISSING_OR_INVALID_REPORT");
   }
   process.stdout.write(`${JSON.stringify({ ...outcome, exitCode: execution.exitCode })}\n`);
-  process.exitCode = outcome.outcome === "PASS" ? 0 : 1;
+  // Transport completion is independent of the inner Bun semantic outcome.
+  process.exitCode = 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

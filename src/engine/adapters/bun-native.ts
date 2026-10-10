@@ -91,6 +91,12 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
       maximumOutputBytes: input.maximumOutputBytes,
     });
     if (execution.timedOut) return empty("TIMEOUT");
+    if (execution.outcome === "INFRA_ERROR" || execution.error !== undefined)
+      return empty("INFRA_ERROR");
+    if (execution.signal !== null || execution.exitCode === null) return empty("CRASH");
+    // The driver's transport exits 0 for every complete report. Inner Bun status
+    // remains in the report; an abnormal driver exit cannot establish attribution.
+    if (execution.exitCode !== 0 || execution.outcome !== "PASS") return empty("CRASH");
     if (execution.stdout.truncated || execution.stderr.truncated) return empty("INFRA_ERROR");
     let report: unknown;
     try {
