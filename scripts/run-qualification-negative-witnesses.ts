@@ -323,7 +323,10 @@ for (const name of [
   cases.push({
     id: `${name}-regeneration`,
     target: `schemas/${name}.v1.json`,
-    change: (source) => source.replace('"const": "1.0.0"', '"const": "9.0.0"'),
+    change: (source) =>
+      name === "qualification-replay-result"
+        ? source.replace('"type": "boolean"', '"type": "string"')
+        : source.replace('"const": "1.0.0"', '"const": "9.0.0"'),
     args: ["scripts/check-schemas.ts"],
     diagnostic: "STALE_JSON_SCHEMAS",
   });
