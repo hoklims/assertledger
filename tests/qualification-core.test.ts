@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { test } from "node:test";
 import type {
   QualificationObservation,
@@ -77,9 +77,25 @@ function fixture(): QualificationPlan {
   };
 }
 
+function retainReport(
+  record: QualificationObservation,
+  report: QualificationObservation["facts"] = {
+    exitCode: record.facts.exitCode ?? null,
+    commandOutcome: record.facts.commandOutcome ?? null,
+  },
+): void {
+  const nonce = `${record.worldId}/${record.attempt}/${record.actionId}`;
+  record.facts.report = report;
+  record.facts.reportNonce = nonce;
+  record.facts.reportProvenance = "STRUCTURED_ADAPTER_REPORTED";
+  record.facts.reportDigest = `sha256:${createHash("sha256")
+    .update(`${canonicalize({ facts: report, nonce, protocolVersion: "1.0.0" })}\n`)
+    .digest("hex")}`;
+}
+
 function observations(plan: QualificationPlan): QualificationObservation[] {
   const { planDigest } = core.sealQualificationPlan(plan);
-  return plan.worlds.flatMap((world) =>
+  const records = plan.worlds.flatMap((world) =>
     Array.from({ length: plan.requiredAttempts }, (_, index) =>
       plan.actions.map((action) => ({
         worldId: world.id,
@@ -104,6 +120,8 @@ function observations(plan: QualificationPlan): QualificationObservation[] {
       })),
     ).flat(),
   );
+  for (const record of records) retainReport(record);
+  return records;
 }
 
 function receipt(plan = fixture(), records = observations(plan)): QualificationReceipt {
@@ -190,6 +208,75 @@ function reseal(value: QualificationReceipt): QualificationReceipt {
   return value;
 }
 
+test("resealed contradictory nested command reports invalidate replay", () => {
+  const evidence = receipt();
+  const record = present(evidence.observations[0]);
+  const report = { commandOutcome: "PASS", exitCode: 0 };
+  record.facts.report = report;
+  record.facts.reportDigest = `sha256:${createHash("sha256")
+    .update(
+      `${canonicalize({ facts: report, nonce: record.facts.reportNonce, protocolVersion: "1.0.0" })}\n`,
+    )
+    .digest("hex")}`;
+  assert.equal(core.replayQualificationReceipt(reseal(evidence)).valid, false);
+  assert.equal(core.createQualificationReceipt(evidence).decision, "REJECTED");
+});
+
+test("missing altered and duplicate retained reports invalidate resealed replay", () => {
+  for (const mutate of [
+    (evidence: QualificationReceipt) => {
+      delete present(evidence.observations[0]).facts.report;
+    },
+    (evidence: QualificationReceipt) => {
+      delete present(evidence.observations[0]).facts.reportNonce;
+    },
+    (evidence: QualificationReceipt) => {
+      present(evidence.observations[0]).facts.reportDigest = sha256Canonical("altered");
+    },
+    (evidence: QualificationReceipt) => {
+      Object.assign(present(evidence.observations[1]).facts, {
+        reportNonce: present(evidence.observations[0]).facts.reportNonce,
+        reportDigest: present(evidence.observations[0]).facts.reportDigest,
+      });
+    },
+  ]) {
+    const evidence = receipt();
+    mutate(evidence);
+    assert.equal(core.replayQualificationReceipt(reseal(evidence)).valid, false);
+    assert.equal(core.createQualificationReceipt(evidence).decision, "REJECTED");
+  }
+});
+
+test("nonzero command completion requires a retained semantic report", () => {
+  const records = observations(fixture());
+  for (const record of records) {
+    delete record.facts.report;
+    delete record.facts.reportNonce;
+    delete record.facts.reportDigest;
+    delete record.facts.reportProvenance;
+  }
+  assert.equal(receipt(fixture(), records).decision, "REJECTED");
+});
+
+test("successful command reports permit generic facts and require consistent completion pairs", () => {
+  for (const report of [
+    { selected: ["leaf"] },
+    { commandOutcome: "PASS", exitCode: 0 },
+    { commandOutcome: "PASS" },
+    { exitCode: 0 },
+    { commandOutcome: "EXPECTED_FAILURE", exitCode: 7 },
+  ]) {
+    const records = observations(fixture());
+    for (const record of records.filter((item) => item.worldId === "fault"))
+      retainReport(record, report);
+    const evidence = receipt(fixture(), records);
+    const valid =
+      "selected" in report || (report.commandOutcome === "PASS" && report.exitCode === 0);
+    assert.equal(evidence.decision, valid ? "QUALIFIED" : "REJECTED");
+    assert.equal(core.replayQualificationReceipt(evidence).valid, valid);
+  }
+});
+
 test("expected nonzero reference and neutral results qualify a propagated-failure contract", () => {
   const result = receipt();
   assert.equal(result.decision, "QUALIFIED");
@@ -254,12 +341,19 @@ test("ordinary nonzero command results cannot qualify baseline or target evidenc
       for (const record of records) {
         if (worldId === "fault") record.facts.exitCode = record.worldId === "fault" ? 1 : 0;
         record.facts.commandOutcome = record.facts.exitCode === 0 ? "PASS" : "EXPECTED_FAILURE";
-        if (record.worldId === worldId) delete record.facts.commandOutcome;
+        retainReport(record);
+        if (record.worldId === worldId) {
+          delete record.facts.commandOutcome;
+          delete record.facts.report;
+          delete record.facts.reportNonce;
+          delete record.facts.reportDigest;
+          delete record.facts.reportProvenance;
+        }
       }
       const evidence = receipt(plan, records);
-      assert.equal(
+      assert.notEqual(
         evidence.decision,
-        "OPEN",
+        "QUALIFIED",
         `${adapter}/${worldId} ordinary error received credit`,
       );
       assert.ok(
@@ -316,6 +410,7 @@ test("optional target operational failures remain open without contaminating unr
       record.worldId === (record.actionId === "gate" ? "fault" : "optional-fault");
     record.facts.exitCode = assignedTarget ? 0 : 1;
     record.facts.commandOutcome = assignedTarget ? "PASS" : "EXPECTED_FAILURE";
+    retainReport(record);
     if (record.actionId === "optional-gate" && record.worldId === "optional-fault")
       record.state = "COLLECTION_ERROR";
   }
@@ -343,7 +438,10 @@ test("collector semantic completion supports an expected failure code seven", ()
   const plan = fixture();
   present(present(plan.obligations[0]).checks[0]).expected = 7;
   const records = observations(plan);
-  for (const record of records) if (record.worldId !== "fault") record.facts.exitCode = 7;
+  for (const record of records) {
+    if (record.worldId !== "fault") record.facts.exitCode = 7;
+    retainReport(record);
+  }
   assert.equal(receipt(plan, records).decision, "QUALIFIED");
 });
 
@@ -381,6 +479,7 @@ test("unrelated mismatch cannot count as the declared target witness", () => {
   for (const record of records) {
     record.facts.exitCode = 1;
     record.facts.commandOutcome = "EXPECTED_FAILURE";
+    retainReport(record);
     record.facts.selected = record.worldId === "fault" ? [] : ["leaf"];
   }
   assert.equal(receipt(plan, records).decision, "OPEN");
@@ -394,6 +493,7 @@ test("every declared fault must discriminate in every repeat", () => {
   );
   repeated.facts.exitCode = 1;
   repeated.facts.commandOutcome = "EXPECTED_FAILURE";
+  retainReport(repeated);
   const result = receipt(plan, records);
   assert.equal(result.decision, "OPEN");
   assert.ok(present(result.assessments[0]).reasons.includes("UNSTABLE_OBSERVATIONS:fault"));

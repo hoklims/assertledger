@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { smokeQualificationPlan, smokeTestSource } from "../scripts/qualification-smoke.js";
 import { runCli } from "../src/cli.js";
+import type { QualificationPlan } from "../src/contracts/qualification.js";
 import { sha256Canonical } from "../src/core/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
@@ -77,7 +78,7 @@ process.exit(7);\n`;
     const inputDigest = await engine.qualificationRepositoryDigest(root);
     const candidateDigest = sha256Canonical([]);
     const nodeDigest = await engine.qualificationFileDigest(process.execPath);
-    const plan = {
+    const plan: QualificationPlan = {
       schemaVersion: "1.0.0",
       profileId: "nonzero-command-v1",
       subject: {
@@ -138,6 +139,19 @@ process.exit(7);\n`;
     assert.equal(result.decision, "QUALIFIED");
     assert.equal(result.observations.length, 6);
     assert.equal(result.observations[0].state, "COMPLETED");
+    const reported = result.observations.filter((row: { facts: Record<string, unknown> }) =>
+      Object.hasOwn(row.facts, "report"),
+    );
+    assert.equal(
+      new Set(reported.map((row: { facts: Record<string, unknown> }) => row.facts.reportNonce))
+        .size,
+      4,
+    );
+    assert.ok(
+      reported.every(
+        (row: { facts: Record<string, unknown> }) => typeof row.facts.reportNonce === "string",
+      ),
+    );
     const ledger = new AssertLedger();
     assert.equal(ledger.replayQualification(result).valid, true);
     const sdkResult = await ledger.qualifyOrchestration(
@@ -145,6 +159,39 @@ process.exit(7);\n`;
       { allowUnsafeExecution: true },
     );
     assert.equal(sdkResult.decision, "QUALIFIED");
+    for (const [facts, accepted] of [
+      [{ selected: ["leaf"] }, true],
+      [{ commandOutcome: "PASS", exitCode: 0 }, true],
+      [{ commandOutcome: "PASS" }, false],
+      [{ commandOutcome: "EXPECTED_FAILURE", exitCode: 7 }, false],
+    ] as const) {
+      const reportedPlan: QualificationPlan = structuredClone(plan);
+      const reportedAction = reportedPlan.actions[0];
+      const reportedFile = reportedPlan.worlds[1]?.files[0];
+      assert.ok(reportedAction && reportedFile);
+      reportedAction.observe.report = "completion.json";
+      reportedFile.content = `import {writeFileSync} from 'node:fs';
+const document = {facts:${JSON.stringify(facts)},nonce:process.env.ASSERTLEDGER_QUALIFICATION_NONCE,protocolVersion:'1.0.0'};
+writeFileSync(process.env.ASSERTLEDGER_QUALIFICATION_RESULT_FILE, JSON.stringify(document)+'\\n');\n`;
+      const reportedResult = await engine.qualifyOrchestration(
+        {
+          root,
+          plan: reportedPlan,
+          planDigest: sha256Canonical(reportedPlan),
+          candidate: { files: [] },
+        },
+        { allowUnsafeExecution: true },
+      );
+      assert.equal(reportedResult.decision, accepted ? "QUALIFIED" : "OPEN");
+      assert.ok(
+        reportedResult.observations
+          .filter((row: { worldId: string }) => row.worldId === "swallowed")
+          .every(
+            (row: { state: string }) => row.state === (accepted ? "COMPLETED" : "COLLECTION_ERROR"),
+          ),
+      );
+      assert.equal(ledger.replayQualification(reportedResult).valid, true);
+    }
     let cliOutput = "";
     const cliCode = await runCli(["qualify", "-", "--allow-unsafe-execution"], {
       cwd: root,

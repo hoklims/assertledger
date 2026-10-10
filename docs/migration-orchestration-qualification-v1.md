@@ -31,6 +31,12 @@ Nonzero command observations now require a fresh canonical nonce-bound completio
 Unattested numeric failures remain operational. Zero command exits retain compatibility without
 a report. Adapters must emit completion only after normal end-to-end semantic completion and
 refuse child spawn/signal/null-status failures. These trusted-local reports are not authenticated.
+Retain `reportNonce` with the report facts, provenance and raw canonical-envelope digest. Replay
+reconstructs that envelope, rejects missing or altered reports and reused nonces, and requires
+nested command completion facts to agree with collected process facts. Successful command reports
+without completion fields remain compatible; if either completion field is present, both must match.
+Turbo semantic nonzero completion remains unsupported. Recollect older qualification receipts
+that did not retain the nonce; verification v1–v4 artifacts and projections remain unchanged.
 
 Local CI route facts now include full step/stage/parallel ancestry, execution conditions and
 manual/automatic triggers. Update externally sealed CI check expectations to that projection and

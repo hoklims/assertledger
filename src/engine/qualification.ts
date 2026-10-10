@@ -500,16 +500,20 @@ async function executeAction(
           throw new Error("QUALIFICATION_STRUCTURED_REPORT_INVALID");
         }
         facts.report = document.facts as Json;
+        facts.reportNonce = nonce;
         facts.reportDigest = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
         facts.reportProvenance = "STRUCTURED_ADAPTER_REPORTED";
-        if (action.adapter === "command" && facts.exitCode !== 0) {
+        if (action.adapter === "command") {
           const completion = document.facts as Record<string, unknown>;
           if (
-            completion.commandOutcome !== "EXPECTED_FAILURE" ||
-            completion.exitCode !== facts.exitCode
+            (facts.exitCode !== 0 ||
+              Object.hasOwn(completion, "exitCode") ||
+              Object.hasOwn(completion, "commandOutcome")) &&
+            (completion.commandOutcome !== (facts.exitCode === 0 ? "PASS" : "EXPECTED_FAILURE") ||
+              completion.exitCode !== facts.exitCode)
           )
             throw new Error("QUALIFICATION_COMMAND_COMPLETION_INVALID");
-          facts.commandOutcome = "EXPECTED_FAILURE";
+          facts.commandOutcome = facts.exitCode === 0 ? "PASS" : "EXPECTED_FAILURE";
         }
       }
       if (action.observe.trace)

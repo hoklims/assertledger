@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import {
   parseQualificationPlan,
   QualificationObservationSchema,
@@ -64,12 +64,54 @@ function observationIssues(
     for (let attempt = 1; attempt <= plan.requiredAttempts; attempt++)
       for (const action of plan.actions) expected.add(`${world.id}/${attempt}/${action.id}`);
   const seen = new Set<string>();
+  const reportNonces = new Set<string>();
   for (const observation of observations) {
     const key = `${observation.worldId}/${observation.attempt}/${observation.actionId}`;
     if (!expected.has(key)) issues.push(`UNEXPECTED_OBSERVATION:${key}`);
     if (seen.has(key)) issues.push(`DUPLICATE_OBSERVATION:${key}`);
     seen.add(key);
     const action = plan.actions.find((item) => item.id === observation.actionId);
+    if (observation.state === "COMPLETED") {
+      const { report, reportNonce, reportDigest, reportProvenance, exitCode, commandOutcome } =
+        observation.facts;
+      const reportRequired =
+        action?.observe.report !== null ||
+        (action?.adapter === "command" && commandOutcome === "EXPECTED_FAILURE");
+      const reportPresent = ["report", "reportNonce", "reportDigest", "reportProvenance"].some(
+        (field) => Object.hasOwn(observation.facts, field),
+      );
+      if (reportRequired || reportPresent) {
+        if (
+          report === null ||
+          typeof report !== "object" ||
+          Array.isArray(report) ||
+          typeof reportNonce !== "string" ||
+          reportNonce.length === 0 ||
+          reportProvenance !== "STRUCTURED_ADAPTER_REPORTED" ||
+          reportDigest !==
+            `sha256:${createHash("sha256")
+              .update(
+                `${canonicalize({ facts: report, nonce: reportNonce, protocolVersion: "1.0.0" })}\n`,
+              )
+              .digest("hex")}`
+        ) {
+          issues.push(`INVALID_STRUCTURED_REPORT:${key}`);
+        } else {
+          if (reportNonces.has(reportNonce)) issues.push(`DUPLICATE_REPORT_NONCE:${key}`);
+          reportNonces.add(reportNonce);
+          if (
+            action?.adapter === "command" &&
+            (exitCode !== 0 ||
+              Object.hasOwn(report, "exitCode") ||
+              Object.hasOwn(report, "commandOutcome")) &&
+            (report.exitCode !== exitCode || report.commandOutcome !== commandOutcome)
+          )
+            issues.push(`CONTRADICTORY_COMMAND_REPORT:${key}`);
+        }
+      }
+      if (action?.adapter === "turbo" && commandOutcome === "EXPECTED_FAILURE")
+        issues.push(`UNSUPPORTED_TURBO_COMPLETION:${key}`);
+    }
     if (
       observation.state === "COMPLETED" &&
       (typeof observation.facts.exitCode !== "number" ||
