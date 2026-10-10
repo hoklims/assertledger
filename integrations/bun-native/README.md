@@ -15,6 +15,18 @@ outcome, including on Windows where forced termination may appear as exit 1
 without a signal. This internal native profile contract does not change the
 frozen helper adapter protocols.
 
+The internal native report now always includes `assertionFailureFiles`: the
+sorted, unique relative test-file paths owning issued assertions that failed.
+These paths come from controlled test-registration IDs and failure events, never
+from error stacks or helper locations. An attributed `ASSERTION_FAILURE` report
+requires a nonempty subset of `testFiles`; passing and operational reports carry
+an empty array. Counts, declared files, attribution and inner exit status must
+agree with the outcome. Consumers must use these actual failure owners when
+evaluating a required suite, so a failure in another collected file cannot credit
+a passing suite. This is an additive migration of the unreleased native profile;
+old native reports without this field are refused. Frozen v1-v4 helper reports
+and their schema versions are unchanged.
+
 The qualified forms are TypeScript tests importing `bun:test`, `test`, `it`,
 `describe`, async functions, helper-module imports, `test.each`, native `expect`
 matchers and `not`/`resolves`/`rejects` chains. The qualified matcher names are

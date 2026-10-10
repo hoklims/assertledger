@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runProcess } from "../index.js";
 
@@ -24,6 +25,7 @@ export interface BunNativeCollection {
     testOutcome: string;
     attributed: boolean;
     testFiles: string[];
+    assertionFailureFiles: string[];
     stdoutDigest?: string;
     stderrDigest?: string;
   };
@@ -39,6 +41,24 @@ export interface BunNativeCollection {
   };
 }
 const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+
+function isCanonicalFileList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (file, index) =>
+        typeof file === "string" &&
+        file !== "" &&
+        !file.startsWith("-") &&
+        !path.isAbsolute(file) &&
+        file !== ".." &&
+        !file.startsWith(`..${path.sep}`) &&
+        path.normalize(file) === file &&
+        (process.platform !== "win32" || file.toLowerCase() === file) &&
+        (index === 0 || value[index - 1] < file),
+    )
+  );
+}
 
 /** Collects observations only; admission and world comparisons belong to the decision engine. */
 export async function collectBunNative(input: BunNativeInput): Promise<BunNativeCollection> {
@@ -60,6 +80,7 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
       testOutcome: state,
       attributed: false,
       testFiles: [],
+      assertionFailureFiles: [],
     },
     runtime,
   });
@@ -108,14 +129,19 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
     const row = report as Record<string, unknown>;
     if (
       Object.keys(row).sort().join(",") !==
-        "attributed,candidateTestsDiscovered,exitCode,outcome,protocolVersion,testFiles,testsDiscovered" ||
+        "assertionFailureFiles,attributed,candidateTestsDiscovered,exitCode,outcome,protocolVersion,testFiles,testsDiscovered" ||
       row.protocolVersion !== "1.0.0" ||
       !Number.isSafeInteger(row.testsDiscovered) ||
       (row.testsDiscovered as number) < 0 ||
+      !Number.isSafeInteger(row.candidateTestsDiscovered) ||
+      (row.candidateTestsDiscovered as number) < 0 ||
+      (row.candidateTestsDiscovered as number) > (row.testsDiscovered as number) ||
       typeof row.attributed !== "boolean" ||
-      !Array.isArray(row.testFiles) ||
-      row.testFiles.some((file) => typeof file !== "string") ||
-      (row.exitCode !== null && !Number.isInteger(row.exitCode))
+      !isCanonicalFileList(row.testFiles) ||
+      !isCanonicalFileList(row.assertionFailureFiles) ||
+      row.testFiles.length > (row.testsDiscovered as number) ||
+      (row.exitCode !== null &&
+        (!Number.isSafeInteger(row.exitCode) || (row.exitCode as number) < 0))
     )
       return empty("INFRA_ERROR");
     const states: Record<string, BunNativeCollection["state"]> = {
@@ -127,6 +153,30 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
     };
     if (typeof row.outcome !== "string" || states[row.outcome] === undefined)
       return empty("INFRA_ERROR");
+    const testFiles = row.testFiles;
+    const assertionFailureFiles = row.assertionFailureFiles;
+    const completed = row.outcome === "PASS" || row.outcome === "ASSERTION_FAILURE";
+    const declaredFiles = input.files.map((file) => {
+      const normalized = path.normalize(file);
+      return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+    });
+    if (
+      assertionFailureFiles.some((file) => !testFiles.includes(file)) ||
+      testFiles.some((file) => !declaredFiles.includes(file)) ||
+      (row.outcome === "ASSERTION_FAILURE"
+        ? assertionFailureFiles.length === 0
+        : assertionFailureFiles.length !== 0) ||
+      (completed
+        ? !row.attributed ||
+          (row.testsDiscovered as number) === 0 ||
+          row.candidateTestsDiscovered !== row.testsDiscovered ||
+          declaredFiles.some((file) => !testFiles.includes(file)) ||
+          (row.outcome === "PASS"
+            ? row.exitCode !== 0
+            : row.exitCode === null || row.exitCode === 0)
+        : row.attributed)
+    )
+      return empty("INFRA_ERROR");
     return {
       state: states[row.outcome] as BunNativeCollection["state"],
       facts: {
@@ -134,7 +184,8 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
         testsDiscovered: row.testsDiscovered as number,
         testOutcome: row.outcome,
         attributed: row.attributed,
-        testFiles: row.testFiles as string[],
+        testFiles,
+        assertionFailureFiles,
         stdoutDigest: execution.stdout.digest,
         stderrDigest: execution.stderr.digest,
       },

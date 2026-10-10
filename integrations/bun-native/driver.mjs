@@ -17,6 +17,7 @@ function report(
   candidateTestsDiscovered = 0,
   attributed = false,
   testFiles = [],
+  assertionFailureFiles = [],
 ) {
   return {
     protocolVersion: RESULT_VERSION,
@@ -25,6 +26,7 @@ function report(
     candidateTestsDiscovered,
     attributed,
     testFiles,
+    assertionFailureFiles,
   };
 }
 
@@ -229,6 +231,7 @@ export function classifyBunInstrumentedEvidence(
     candidateIds.length,
     attributed,
     testFiles,
+    attributed ? [...new Set(candidateFailures.map((entry) => found.get(entry.id)))].sort() : [],
   );
 }
 
