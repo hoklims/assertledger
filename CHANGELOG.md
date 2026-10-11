@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.0.2 — 2026-10-11
+
+- Preserve the failed Bun preflight probe, expected and observed outcomes, attribution and
+  discovery counts on stderr and in JSON for `verify` and `import-witness` across backends.
+  Unavailable reports retain null observations and separate process facts. The refusal code,
+  exit status and qualification predicates remain unchanged.
+- Create witness output only after verification succeeds, so a refused preflight never writes
+  to `--out`. Exclusive output ownership and manifest-last writes remain intact.
+- Give actionable `explain BUN_TEST_PROFILE_PREFLIGHT_FAILED` guidance. See the
+  [refusal diagnostic migration note](docs/migration-bun-preflight-diagnostics.md).
+
 ## 2.0.1 — 2026-10-11
 
 - Fix audit nontermination on template substitutions followed by `#`. Initialization, audit and
