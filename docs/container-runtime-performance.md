@@ -88,8 +88,11 @@ manifest, including outcomes, attribution, discovery counts, expected failure te
 facts and execution limits. It excludes only top-level `artifactDigest`/`decisionDigest` and each
 observation's `durationMs`/`stdoutDigest`/`stderrDigest`. These are execution-varying fields, not a
 changed digest projection in AssertLedger. Raw manifests, traces, stdout, stderr and load samples
-remain in the output directory. A refused import, invalid replay, changed semantic field or
-incomplete trace stops the series instead of silently retrying.
+remain in the output directory. A refused import, invalid replay, changed semantic field,
+reported trace warning or empty trace stops the series instead of silently retrying. A nonempty
+trace alone does not establish complete phase coverage; compare container and phase counts against
+the executed campaign before accepting a timing comparison. The reference measurements below
+include that comparison.
 
 ## Reference witness measurements
 
