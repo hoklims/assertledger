@@ -19,14 +19,20 @@ import {
   type WitnessImportRequest,
 } from "../contracts/index.js";
 import { assertSafeRelativePath, canonicalize, sealManifestArtifact } from "../core/index.js";
-import { DEFAULT_CONTAINER_LIMITS } from "./container.js";
+import { type ContainerTransport, DEFAULT_CONTAINER_LIMITS } from "./container.js";
 import { verifyCampaign } from "./index.js";
+import { withRuntimeTrace } from "./runtime-trace.js";
 
 /** The backend an operator authorizes for a replay; the witness request never chooses it. */
 export type WitnessImportIsolation =
   | { kind: "trusted-local"; environmentAllowlist: readonly string[] }
   | { kind: "windows-native"; environmentAllowlist: readonly string[] }
-  | { kind: "container"; image: string; runtimeCommand?: readonly string[] };
+  | {
+      kind: "container";
+      image: string;
+      runtimeCommand?: readonly string[];
+      transport?: ContainerTransport;
+    };
 
 export interface WitnessImportOptions {
   /** A new directory outside the repository; manifest.json is written last. */
@@ -233,11 +239,22 @@ export async function importWitness(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const source = parseEvidenceManifestV4(
-    await verifyCampaign(
-      request,
-      options.isolation.kind === "container" && options.isolation.runtimeCommand !== undefined
-        ? { containerRuntime: { command: options.isolation.runtimeCommand } }
-        : {},
+    await withRuntimeTrace([request.repository.root, target], () =>
+      verifyCampaign(
+        request,
+        options.isolation.kind === "container"
+          ? {
+              containerRuntime: {
+                ...(options.isolation.runtimeCommand === undefined
+                  ? {}
+                  : { command: options.isolation.runtimeCommand }),
+                ...(options.isolation.transport === undefined
+                  ? {}
+                  : { transport: options.isolation.transport }),
+              },
+            }
+          : {},
+      ),
     ),
   );
   const manifest = parseEvidenceManifestV4(
