@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.0.3 — 2026-10-11
+
+- Reduce container runtime launches through a qualified generic `system dial-stdio` connection,
+  compress uploads and retain up to 32 MiB of validated immutable archive bytes within a campaign.
+  Every execution still receives a fresh writable workspace and volume. All preflight probes,
+  controls, attempts, isolation settings, image checks and time ceilings remain unchanged.
+- Add optional phase and container timings through `ASSERTLEDGER_RUNTIME_TRACE`, outside proof
+  inputs and outputs. `--container-transport cli|stdio` selects a transport explicitly; automatic
+  fallback is permitted only before mutation. No preflight-result cache or execution concurrency.
+- On the measured Windows/WSL Bun witness, median time falls from 419.722 s to 130.577 s across
+  three runs per producer, with equal semantic observations, `VERIFIED` and valid replay in all
+  six runs. See the [method, limits and raw measurements](docs/container-runtime-performance.md).
+
 ## 2.0.2 — 2026-10-11
 
 - Preserve the failed Bun preflight probe, expected and observed outcomes, attribution and
