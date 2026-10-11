@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.0.1 — 2026-10-11
+
+- Fix audit nontermination on template substitutions followed by `#`. Initialization, audit and
+  test-module closure share a consuming tokenizer that handles nested template continuations.
+- Report unrecoverable scanner faults as `JAVASCRIPT_TOKENIZATION_FAILED`, with the source file
+  and offset, and provide operator guidance through `explain`. Audit output remains schema v2.
+
 ## 2.0.0 — 2026-10-10
 
 - Breaking producer change: `audit()` and the audit CLI emit schema v2 with the applied exclusion
