@@ -24,6 +24,8 @@ import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SyntaxKind } from "typescript/unstable/ast";
+import type { BunPreflightRefusal } from "../contracts/diagnostics.js";
+import { BunPreflightError } from "./bun-preflight.js";
 import {
   AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
@@ -4205,7 +4207,7 @@ type BunDriverExecutor = (
   workspace: string,
   files: readonly string[],
   environment: Record<string, string>,
-) => Promise<StructuredCommandReport | undefined>;
+) => Promise<{ report: StructuredCommandReport | undefined; result: ProcessResult }>;
 
 function localBunDriverExecutor(
   executable: string,
@@ -4213,17 +4215,17 @@ function localBunDriverExecutor(
   timeoutMs: number,
   maximumOutputBytes: number,
 ): BunDriverExecutor {
-  return async (workspace, files, environment) =>
-    readBunDriverReport(
-      await runProcess({
-        executable: process.execPath,
-        args: [BUN_TEST_DRIVER_PATH, executable, BUN_TEST_HELPER_PATH, ...files],
-        cwd: workspace,
-        environment: { ...environmentFromAllowlist(environmentAllowlist), ...environment },
-        timeoutMs: Math.min(timeoutMs, 5_000),
-        maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
-      }),
-    );
+  return async (workspace, files, environment) => {
+    const result = await runProcess({
+      executable: process.execPath,
+      args: [BUN_TEST_DRIVER_PATH, executable, BUN_TEST_HELPER_PATH, ...files],
+      cwd: workspace,
+      environment: { ...environmentFromAllowlist(environmentAllowlist), ...environment },
+      timeoutMs: Math.min(timeoutMs, 5_000),
+      maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+    });
+    return { result, report: readBunDriverReport(result) };
+  };
 }
 
 function containerBunDriverExecutor(
@@ -4233,17 +4235,84 @@ function containerBunDriverExecutor(
   maximumOutputBytes: number,
 ): BunDriverExecutor {
   return async (workspace, files, environment) =>
-    (
-      await runContainerBunDriver(
-        container,
-        workspace,
-        executable,
-        files,
-        environment,
-        Math.min(timeoutMs, 30_000),
-        Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
-      )
-    ).report;
+    runContainerBunDriver(
+      container,
+      workspace,
+      executable,
+      files,
+      environment,
+      Math.min(timeoutMs, 30_000),
+      Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+    );
+}
+
+/** Both Bun modes use the same four qualification predicates and refusal representation. */
+async function qualifyBunProbe(
+  profile: BunPreflightRefusal["profile"],
+  probe: string,
+  expected: BunPreflightRefusal["expected"],
+  execute: () => ReturnType<BunDriverExecutor>,
+): Promise<StructuredCommandReport> {
+  let executed: Awaited<ReturnType<BunDriverExecutor>>;
+  try {
+    executed = await execute();
+  } catch (cause) {
+    throw new BunPreflightError(
+      {
+        schemaVersion: "1.0.0",
+        status: "REFUSED",
+        code: "BUN_TEST_PROFILE_PREFLIGHT_FAILED",
+        profile,
+        probe,
+        failure: "EXECUTION_ERROR",
+        expected,
+        observed: {
+          outcome: null,
+          attributed: null,
+          testsDiscovered: null,
+          candidateTestsDiscovered: null,
+        },
+        process: null,
+        detail: cause instanceof Error ? cause.message : String(cause),
+      },
+      cause,
+    );
+  }
+  const { report, result } = executed;
+  if (
+    report?.outcome !== expected.outcome ||
+    report.attributed !== expected.attributed ||
+    report.testsDiscovered !== expected.testsDiscovered ||
+    report.candidateTestsDiscovered !== expected.candidateTestsDiscovered
+  ) {
+    throw new BunPreflightError(
+      {
+        schemaVersion: "1.0.0",
+        status: "REFUSED",
+        code: "BUN_TEST_PROFILE_PREFLIGHT_FAILED",
+        profile,
+        probe,
+        failure: report === undefined ? "REPORT_UNAVAILABLE" : "REPORT_MISMATCH",
+        expected,
+        observed: {
+          outcome: report?.outcome ?? null,
+          attributed: report?.attributed ?? null,
+          testsDiscovered: report?.testsDiscovered ?? null,
+          candidateTestsDiscovered: report?.candidateTestsDiscovered ?? null,
+        },
+        process: {
+          outcome: result.outcome,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          timedOut: result.timedOut,
+          durationMs: result.durationMs,
+        },
+        detail: result.error ?? null,
+      },
+      probe,
+    );
+  }
+  return report;
 }
 
 interface BunDesignatedProbe {
@@ -4359,31 +4428,34 @@ async function runBunDesignatedPreflight(
   try {
     const recorded: BunTestRuntimePreflight["probes"] = [];
     for (const probe of DESIGNATED_PROBES) {
-      const report = await withEmptyWorkspace(async (workspace) => {
-        await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
-        await writeFile(path.join(workspace, "probe.test.ts"), `${header} ${probe.body}\n`);
-        const test = { file: "probe.test.ts", path: ["probe"] };
-        return executor(workspace, ["probe.test.ts"], {
-          ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(
-            probe.mode === "run"
-              ? {
-                  mode: "run",
-                  test,
-                  expectedFailure: probe.expectedFailure ?? null,
-                  testTimeoutMs: probe.testTimeoutMs ?? null,
-                }
-              : { mode: "load", tests: [test] },
-          ),
-        });
-      });
-      if (
-        report?.outcome !== probe.outcome ||
-        report.attributed !== probe.attributed ||
-        report.testsDiscovered !== probe.testsDiscovered ||
-        report.candidateTestsDiscovered !== probe.candidateTestsDiscovered
-      ) {
-        throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED", { cause: probe.name });
-      }
+      const report = await qualifyBunProbe(
+        "bun-test-designated",
+        probe.name,
+        {
+          outcome: probe.outcome,
+          attributed: probe.attributed,
+          testsDiscovered: probe.testsDiscovered,
+          candidateTestsDiscovered: probe.candidateTestsDiscovered,
+        },
+        () =>
+          withEmptyWorkspace(async (workspace) => {
+            await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
+            await writeFile(path.join(workspace, "probe.test.ts"), `${header} ${probe.body}\n`);
+            const test = { file: "probe.test.ts", path: ["probe"] };
+            return executor(workspace, ["probe.test.ts"], {
+              ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(
+                probe.mode === "run"
+                  ? {
+                      mode: "run",
+                      test,
+                      expectedFailure: probe.expectedFailure ?? null,
+                      testTimeoutMs: probe.testTimeoutMs ?? null,
+                    }
+                  : { mode: "load", tests: [test] },
+              ),
+            });
+          }),
+      );
       recorded.push({
         name: probe.name,
         outcome: report.outcome,
@@ -4394,6 +4466,7 @@ async function runBunDesignatedPreflight(
     }
     return { protocolVersion: "1.0.0", probes: recorded };
   } catch (error) {
+    if (error instanceof BunPreflightError) throw error;
     throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED", { cause: error });
   }
 }
@@ -4475,46 +4548,48 @@ async function runBunTestRuntimePreflight(
   try {
     const probes: BunTestRuntimePreflight["probes"] = [];
     for (const probe of probeSources) {
-      const evidence = await withEmptyWorkspace(async (workspace) => {
-        await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
-        await writeFile(
-          path.join(workspace, "base.test.ts"),
-          'import { test } from "bun:test"; test("control", () => {});\n',
-        );
-        const candidatePath = path.join(workspace, "candidate.test.ts");
-        await writeFile(candidatePath, probe.source);
-        const report = await executor(workspace, ["base.test.ts"], {
-          TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
-        });
-        const expectedCandidateCount =
-          probe.name === "hook-failure"
-            ? 0
-            : probe.name === "replayed-row" ||
-                probe.name === "async-cross-test" ||
-                probe.name === "multi-assertion-rows"
-              ? 2
-              : 1;
-        if (
-          report?.outcome !== probe.outcome ||
-          report.attributed !== probe.attributed ||
-          report.testsDiscovered !==
-            (expectedCandidateCount === 0 ? 0 : expectedCandidateCount + 1) ||
-          report.candidateTestsDiscovered !== expectedCandidateCount
-        ) {
-          throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED");
-        }
-        return {
-          name: probe.name,
-          outcome: report.outcome,
-          attributed: report.attributed,
-          testsDiscovered: report.testsDiscovered,
-          candidateTestsDiscovered: report.candidateTestsDiscovered,
-        };
+      const expectedCandidateCount =
+        probe.name === "hook-failure"
+          ? 0
+          : probe.name === "replayed-row" ||
+              probe.name === "async-cross-test" ||
+              probe.name === "multi-assertion-rows"
+            ? 2
+            : 1;
+      const report = await qualifyBunProbe(
+        "bun-test",
+        probe.name,
+        {
+          outcome: probe.outcome,
+          attributed: probe.attributed,
+          testsDiscovered: expectedCandidateCount === 0 ? 0 : expectedCandidateCount + 1,
+          candidateTestsDiscovered: expectedCandidateCount,
+        },
+        () =>
+          withEmptyWorkspace(async (workspace) => {
+            await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
+            await writeFile(
+              path.join(workspace, "base.test.ts"),
+              'import { test } from "bun:test"; test("control", () => {});\n',
+            );
+            const candidatePath = path.join(workspace, "candidate.test.ts");
+            await writeFile(candidatePath, probe.source);
+            return executor(workspace, ["base.test.ts"], {
+              TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
+            });
+          }),
+      );
+      probes.push({
+        name: probe.name,
+        outcome: report.outcome,
+        attributed: report.attributed,
+        testsDiscovered: report.testsDiscovered,
+        candidateTestsDiscovered: report.candidateTestsDiscovered,
       });
-      probes.push(evidence);
     }
     return { protocolVersion: "1.0.0", probes };
   } catch (error) {
+    if (error instanceof BunPreflightError) throw error;
     throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED", { cause: error });
   }
 }

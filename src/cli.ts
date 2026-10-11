@@ -13,6 +13,7 @@ import {
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
 import { parseContainerRuntimeCommand } from "./engine/container.js";
 import { runFixtureDemo } from "./engine/demo.js";
+import { BunPreflightError, renderBunPreflightRefusal } from "./engine/bun-preflight.js";
 import { RepositoryAuditInventoryError, type RepositoryLinkAssessment } from "./engine/index.js";
 import {
   type GitRegressionOptions,
@@ -1677,6 +1678,10 @@ export async function runCli(
     }
   } catch (error) {
     io.writeStderr(`${errorMessage(error)}\n`);
+    if (error instanceof BunPreflightError) {
+      io.writeStderr(`${renderBunPreflightRefusal(error.diagnostic)}\n`);
+      if (argv.includes("--json")) writeJson(io, error.diagnostic);
+    }
     if (error instanceof RepositoryAuditInventoryError) {
       io.writeStderr(`Audit exclusions: ${JSON.stringify(error.appliedExcludes)}\n`);
     }

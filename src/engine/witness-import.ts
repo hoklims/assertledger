@@ -225,6 +225,34 @@ export async function importWitness(
   const target = path.join(parent, path.basename(output));
   if (isWithin(target, request.repository.root))
     throw new Error("WITNESS_OUTPUT_INSIDE_REPOSITORY");
+  // Validate existing output without reserving it: a refused preflight writes nothing to --out.
+  try {
+    await lstat(target);
+    throw new Error("WITNESS_OUTPUT_EXISTS");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const source = parseEvidenceManifestV4(
+    await verifyCampaign(
+      request,
+      options.isolation.kind === "container" && options.isolation.runtimeCommand !== undefined
+        ? { containerRuntime: { command: options.isolation.runtimeCommand } }
+        : {},
+    ),
+  );
+  const manifest = parseEvidenceManifestV4(
+    sealManifestArtifact({
+      ...source,
+      limitations: [
+        ...source.limitations,
+        "The witness import replays operator-recorded targets; AssertLedger checked each target's recorded base digest against the repository and does not infer the fault's meaning.",
+        witness.neutral === null
+          ? "The neutral control repeats the reference snapshot and provides no independent robustness evidence."
+          : "The operator supplied the neutral control and its reason; AssertLedger does not infer its independence.",
+      ],
+    }),
+  );
+  // Exclusive creation still arbitrates concurrent importers. Cleanup only owns our reservation.
   try {
     await mkdir(target, { recursive: false });
   } catch (error) {
@@ -234,26 +262,6 @@ export async function importWitness(
   }
   let completed = false;
   try {
-    const source = parseEvidenceManifestV4(
-      await verifyCampaign(
-        request,
-        options.isolation.kind === "container" && options.isolation.runtimeCommand !== undefined
-          ? { containerRuntime: { command: options.isolation.runtimeCommand } }
-          : {},
-      ),
-    );
-    const manifest = parseEvidenceManifestV4(
-      sealManifestArtifact({
-        ...source,
-        limitations: [
-          ...source.limitations,
-          "The witness import replays operator-recorded targets; AssertLedger checked each target's recorded base digest against the repository and does not infer the fault's meaning.",
-          witness.neutral === null
-            ? "The neutral control repeats the reference snapshot and provides no independent robustness evidence."
-            : "The operator supplied the neutral control and its reason; AssertLedger does not infer its independence.",
-        ],
-      }),
-    );
     const manifestPath = path.join(target, "manifest.json");
     await writeFile(path.join(target, "executed-request.json"), `${canonicalize(request)}\n`, {
       flag: "wx",

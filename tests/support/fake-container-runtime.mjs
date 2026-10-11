@@ -161,6 +161,19 @@ async function main() {
       const directory = containerDirectory(name);
       const create = JSON.parse(readFileSync(path.join(directory, "create.json"), "utf8"));
       const upload = JSON.parse(readFileSync(path.join(directory, "upload.json"), "utf8"));
+      if (
+        scenario.bunPreflight &&
+        create.some((item) => item.includes("bunVersion: Bun.version"))
+      ) {
+        writeFileSync(path.join(directory, "exit.json"), JSON.stringify({ exitCode: 0 }));
+        print({
+          execPath: "/usr/local/bin/bun",
+          bunVersion: "1.4.2",
+          bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
+          digest: `sha256:${"a".repeat(64)}`,
+        });
+        return;
+      }
       const environment = Object.fromEntries(
         create
           .filter((item) => item.startsWith("--env="))
@@ -170,6 +183,31 @@ async function main() {
           }),
       );
       const candidates = JSON.parse(environment.TESTFORGE_CANDIDATE_FILES ?? "[]");
+      if (scenario.bunPreflight && environment.ASSERTLEDGER_BUN_DESIGNATED) {
+        appendFileSync(
+          path.join(stateDirectory, "preflight.jsonl"),
+          `${JSON.stringify({
+            designated: JSON.parse(environment.ASSERTLEDGER_BUN_DESIGNATED),
+            source: upload.find((entry) => entry.name === "repository/probe.test.ts")?.text,
+            outputExists: existsSync(scenario.bunPreflight.out),
+          })}\n`,
+        );
+        writeFileSync(path.join(directory, "exit.json"), JSON.stringify({ exitCode: 0 }));
+        if (scenario.bunPreflight.report !== "unavailable")
+          writeFileSync(
+            path.join(directory, "result.json"),
+            JSON.stringify({
+              content: JSON.stringify({
+                protocolVersion: "1.0.0",
+                outcome: "PASS",
+                attributed: false,
+                testsDiscovered: 1,
+                candidateTestsDiscovered: 1,
+              }),
+            }),
+          );
+        return;
+      }
       const bug = upload.some(
         (entry) => entry.name === "repository/src/value.js" && entry.text.includes("BUG"),
       );
