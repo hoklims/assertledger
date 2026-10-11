@@ -9,6 +9,10 @@ export { DiagnosticCodesSchema, DiagnosticReportSchema };
 
 type Entry = readonly [explanation: string, nextAction: string, severity?: "info" | "limitation"];
 const CATALOGUE: Readonly<Record<string, Entry>> = {
+  JAVASCRIPT_TOKENIZATION_FAILED: [
+    "JavaScript/TypeScript lexical scanning could not make bounded progress; the refusal names the file and offset.",
+    "Inspect the named source file and report the lexical failure with a minimal reproduction. Audit does not return partial facts for that file.",
+  ],
   REPOSITORY_ROOT_INVALID: [
     "The initialization root does not resolve to an accessible directory.",
     "Pass an existing repository directory to init or doctor and check its access permissions.",

@@ -1,7 +1,8 @@
 import { builtinModules } from "node:module";
 import path from "node:path";
-import { createScanner, SyntaxKind } from "typescript/unstable/ast";
+import { SyntaxKind } from "typescript/unstable/ast";
 import { portablePathKey } from "../core/index.js";
+import { scanJavaScriptTokens } from "./javascript-tokens.js";
 
 /**
  * The static module closure of the tests an adapter executes. A repository link inside it refuses
@@ -51,38 +52,8 @@ function isLiteralToken(kind: SyntaxKind | undefined): boolean {
 }
 
 /** Literal module specifiers of one JavaScript or TypeScript text, and whether one is computed. */
-export function scanModuleSpecifiers(source: string): SpecifierScan {
-  const tokens: Array<{ kind: SyntaxKind; text: string; value: string }> = [];
-  const scanner = createScanner(true, undefined, source);
-  const templateExpressionBraceDepths: number[] = [];
-  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
-    const tokenStart = scanner.getTokenStart();
-    if (scanner.getTokenEnd() <= tokenStart) {
-      scanner.resetTokenState(Math.min(source.length, tokenStart + 1));
-      continue;
-    }
-    const templateDepthIndex = templateExpressionBraceDepths.length - 1;
-    if (
-      kind === SyntaxKind.CloseBraceToken &&
-      templateDepthIndex >= 0 &&
-      templateExpressionBraceDepths[templateDepthIndex] === 0
-    ) {
-      kind = scanner.reScanTemplateToken(false);
-      tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
-      if (kind === SyntaxKind.TemplateTail) templateExpressionBraceDepths.pop();
-      continue;
-    }
-    tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
-    if (kind === SyntaxKind.TemplateHead) {
-      templateExpressionBraceDepths.push(0);
-    } else if (templateDepthIndex >= 0 && kind === SyntaxKind.OpenBraceToken) {
-      templateExpressionBraceDepths[templateDepthIndex] =
-        (templateExpressionBraceDepths[templateDepthIndex] ?? 0) + 1;
-    } else if (templateDepthIndex >= 0 && kind === SyntaxKind.CloseBraceToken) {
-      templateExpressionBraceDepths[templateDepthIndex] =
-        (templateExpressionBraceDepths[templateDepthIndex] ?? 0) - 1;
-    }
-  }
+export function scanModuleSpecifiers(source: string, file?: string): SpecifierScan {
+  const tokens = [...scanJavaScriptTokens(source, file)];
   const specifiers = new Set<string>();
   let nonLiteral = false;
   for (let index = 0; index < tokens.length; index += 1) {
@@ -514,7 +485,7 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
     }
     if (!SCANNED_EXTENSIONS.includes(path.posix.extname(file).toLowerCase())) continue;
     for (const text of await input.read(file)) {
-      const scan = scanModuleSpecifiers(text);
+      const scan = scanModuleSpecifiers(text, file);
       if (scan.nonLiteral) walk.markUnbounded(file, "NON_LITERAL_MODULE_SPECIFIER");
       for (const specifier of [...scan.specifiers].sort()) {
         await walk.resolve(file, specifier, input.read);

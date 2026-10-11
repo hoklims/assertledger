@@ -23,7 +23,7 @@ import path from "node:path";
 import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createScanner, SyntaxKind } from "typescript/unstable/ast";
+import { SyntaxKind } from "typescript/unstable/ast";
 import {
   AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
@@ -93,6 +93,7 @@ import {
   prepareContainerBackend,
   runContainerExecution,
 } from "./container.js";
+import { scanJavaScriptTokens } from "./javascript-tokens.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 import {
   computeTestClosure,
@@ -1065,40 +1066,8 @@ function initCommandPathMatchers(
     .map(initPathPatternMatcher);
 }
 
-function initJavaScriptModuleSpecifiers(source: string): Set<string> {
-  const tokens: Array<{ kind: SyntaxKind; text: string; value: string }> = [];
-  const scanner = createScanner(true, undefined, source);
-  const templateExpressionBraceDepths: number[] = [];
-  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
-    const tokenStart = scanner.getTokenStart();
-    if (scanner.getTokenEnd() <= tokenStart) {
-      // Context-free scanning can leave a private identifier empty (for example '#' in a regex).
-      // Never collect a non-EOF token without consuming source text.
-      scanner.resetTokenState(Math.min(source.length, tokenStart + 1));
-      continue;
-    }
-    const templateDepthIndex = templateExpressionBraceDepths.length - 1;
-    if (
-      kind === SyntaxKind.CloseBraceToken &&
-      templateDepthIndex >= 0 &&
-      templateExpressionBraceDepths[templateDepthIndex] === 0
-    ) {
-      kind = scanner.reScanTemplateToken(false);
-      tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
-      if (kind === SyntaxKind.TemplateTail) templateExpressionBraceDepths.pop();
-      continue;
-    }
-    tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
-    if (kind === SyntaxKind.TemplateHead) {
-      templateExpressionBraceDepths.push(0);
-    } else if (templateDepthIndex >= 0 && kind === SyntaxKind.OpenBraceToken) {
-      templateExpressionBraceDepths[templateDepthIndex] =
-        (templateExpressionBraceDepths[templateDepthIndex] ?? 0) + 1;
-    } else if (templateDepthIndex >= 0 && kind === SyntaxKind.CloseBraceToken) {
-      templateExpressionBraceDepths[templateDepthIndex] =
-        (templateExpressionBraceDepths[templateDepthIndex] ?? 0) - 1;
-    }
-  }
+function initJavaScriptModuleSpecifiers(source: string, file?: string): Set<string> {
+  const tokens = [...scanJavaScriptTokens(source, file)];
   const specifiers = new Set<string>();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -1398,7 +1367,7 @@ export async function initializeRepository(
     )
       continue;
     if (/\.[cm]?[jt]sx?$/u.test(file)) {
-      const specifiers = initJavaScriptModuleSpecifiers(content);
+      const specifiers = initJavaScriptModuleSpecifiers(content, file);
       if (specifiers.has("node:test")) frameworkFacts.add("node:test");
       if ([...specifiers].some((name) => name === "vitest" || name.startsWith("@vitest/"))) {
         frameworkFacts.add("vitest");
@@ -1574,7 +1543,7 @@ export async function initializeRepository(
     const testSources = inScopeFiles.filter(
       (file) =>
         initBunTestSource(file) &&
-        initJavaScriptModuleSpecifiers(contents.get(file) ?? "").has("bun:test"),
+        initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file).has("bun:test"),
     );
     const pathMatchers = initCommandPathMatchers(testCommand, testSources);
     const baseTestFiles =
@@ -2362,7 +2331,10 @@ function isAuditTest(file: string): boolean {
   );
 }
 
-function auditAst(text: string): {
+function auditAst(
+  text: string,
+  file: string,
+): {
   decisionPoints: number;
   exports: string[];
   identifiers: Set<string>;
@@ -2375,7 +2347,6 @@ function auditAst(text: string): {
   const lexicalTokens: string[] = [];
   const addWeak = (category: WeakAssertionCategory) =>
     weak.set(category, (weak.get(category) ?? 0) + 1);
-  const scanner = createScanner(true, undefined, text);
   const decisionKinds = new Set([
     SyntaxKind.IfKeyword,
     SyntaxKind.ForKeyword,
@@ -2388,8 +2359,9 @@ function auditAst(text: string): {
     SyntaxKind.BarBarToken,
     SyntaxKind.QuestionQuestionToken,
   ]);
-  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
-    if (kind === SyntaxKind.Identifier) identifiers.add(scanner.getTokenValue());
+  for (const token of scanJavaScriptTokens(text, file)) {
+    const { kind } = token;
+    if (kind === SyntaxKind.Identifier) identifiers.add(token.value);
     if (decisionKinds.has(kind)) decisionPoints += 1;
     lexicalTokens.push(
       kind === SyntaxKind.StringLiteral ||
@@ -2398,7 +2370,7 @@ function auditAst(text: string): {
         kind === SyntaxKind.TemplateMiddle ||
         kind === SyntaxKind.TemplateTail
         ? '"__LITERAL__"'
-        : scanner.getTokenText(),
+        : token.text,
     );
   }
   const lexicalText = lexicalTokens.join(" ");
@@ -2534,7 +2506,7 @@ export async function auditRepository(
   const astByFile = new Map<string, ReturnType<typeof auditAst>>();
   for (const [file, content] of fileContents) {
     if (!isAuditJavaScript(file)) continue;
-    const ast = auditAst(content.toString("utf8"));
+    const ast = auditAst(content.toString("utf8"), file);
     astByFile.set(file, ast);
     if (isAuditTest(file))
       for (const identifier of ast.identifiers) testIdentifiers.add(identifier);
