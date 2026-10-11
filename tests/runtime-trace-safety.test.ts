@@ -28,8 +28,14 @@ test("a slow diagnostic writer does not delay the next lifecycle operation", {
 }, async (context) => {
   const OriginalWorker = workerThreads.Worker;
   let entered: (() => void) | undefined;
-  const writing = new Promise<void>((resolve) => {
-    entered = resolve;
+  let markerTimer: ReturnType<typeof setTimeout> | undefined;
+  const writing = new Promise<void>((resolve, reject) => {
+    // The production worker is deliberately unref'ed. Keep this test's marker wait alive.
+    markerTimer = setTimeout(() => reject(new Error("test writer was not reached")), 2000);
+    entered = () => {
+      clearTimeout(markerTimer);
+      resolve();
+    };
   });
   // Stall the actual writeSync inside the engine's worker, after its ready handshake.
   const prefix = `(() => {
@@ -68,6 +74,7 @@ test("a slow diagnostic writer does not delay the next lifecycle operation", {
       });
     });
   } finally {
+    clearTimeout(markerTimer);
     context.mock.restoreAll();
     syncBuiltinESMExports();
   }
