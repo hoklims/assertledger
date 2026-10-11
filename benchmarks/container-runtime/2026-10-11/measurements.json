@@ -1,0 +1,1097 @@
+{
+  "schemaVersion": "measurement-1",
+  "acceptedComparison": ["rigorous-before", "rigorous-after"],
+  "comparisonProjectionSha256": "837fee8ed8f0f27b1a43fb143455d74591dcdb67e18828d1bfc9969a74c2107e",
+  "allFifteenImportsVerified": true,
+  "allFifteenReplaysValid": true,
+  "fullSemanticParity": true,
+  "excludedComparisonFields": [
+    "artifactDigest",
+    "decisionDigest",
+    "observations[].durationMs",
+    "observations[].stdoutDigest",
+    "observations[].stderrDigest"
+  ],
+  "expectedFailure": "error: expect(received).toBe(expected)",
+  "requiredAttempts": 3,
+  "neutral": null,
+  "medianSpeedup": 3.21436354383489,
+  "medianReductionPercent": 68.8896421838162,
+  "series": {
+    "rigorous-before": {
+      "identity": {
+        "producer": {
+          "digest": "0ec72896b905801929ec79772cb545920d97f7eb58a9fb286d0d6c27edcb109c",
+          "files": 2005
+        },
+        "dependencies": {
+          "digest": "ef3bc8cbb0860e88368758e5cf9097465e1cdba8fbac051c06bfe5372b97dcb4",
+          "files": 1830
+        },
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "transport": "producer-default",
+        "nodeVersion": "v22.23.2",
+        "platform": "win32",
+        "architecture": "x64",
+        "cpuCount": 24,
+        "memoryBytes": 68388532224,
+        "repetitions": 3
+      },
+      "statistics": {
+        "minimumMs": 408213.52240000013,
+        "medianMs": 419721.988,
+        "maximumMs": 500207.4421
+      },
+      "runs": [
+        {
+          "number": 1,
+          "startedAt": "2026-10-11T15:26:54.488Z",
+          "wallMs": 500207.4421,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 999.8762999999999,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 536.2151999999999,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 669.0513000000001,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 30102.231600000014,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 269093.08050000004,
+              "inputBytes": 683834368
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 32789.53099999996,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 29194.23410000013,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 32378.01190000005,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 24928.09129999999,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2975.7497999999905,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 57245.405199999994,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 217,
+          "reusedUploads": 0,
+          "minimumRuntimeMarginMs": 28081.991400000006,
+          "minimumStartMarginMs": 28371.66320000001,
+          "run": 1,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30013.9172,
+              "cpuPercent": 56.96451919362179,
+              "freeMemoryBytes": 4017274880,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60022.28180000001,
+              "cpuPercent": 62.04326124042294,
+              "freeMemoryBytes": 2952044544,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90037.6097,
+              "cpuPercent": 56.90616617562991,
+              "freeMemoryBytes": 3899621376,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120039.6726,
+              "cpuPercent": 63.99998348547341,
+              "freeMemoryBytes": 2676961280,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 150042.623,
+              "cpuPercent": 63.336969365170845,
+              "freeMemoryBytes": 3721822208,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 180055.0509,
+              "cpuPercent": 61.505951128837786,
+              "freeMemoryBytes": 3148566528,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 210058.4607,
+              "cpuPercent": 57.40715270117488,
+              "freeMemoryBytes": 3488215040,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 240070.43699999998,
+              "cpuPercent": 59.36375003954897,
+              "freeMemoryBytes": 3586621440,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 270084.9399,
+              "cpuPercent": 62.003953379286436,
+              "freeMemoryBytes": 2573398016,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 300101.331,
+              "cpuPercent": 69.22377764475223,
+              "freeMemoryBytes": 2188333056,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 330134.868,
+              "cpuPercent": 67.93236999145142,
+              "freeMemoryBytes": 2211954688,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 360138.5871,
+              "cpuPercent": 58.93629591680749,
+              "freeMemoryBytes": 2110418944,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 390123.3869,
+              "cpuPercent": 54.93067062965792,
+              "freeMemoryBytes": 2972643328,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 420135.6931,
+              "cpuPercent": 60.426833549232605,
+              "freeMemoryBytes": 2712371200,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 450141.7941,
+              "cpuPercent": 64.74668810581541,
+              "freeMemoryBytes": 2884567040,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 480153.7053,
+              "cpuPercent": 56.58526628214571,
+              "freeMemoryBytes": 2929483776,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "aa4f5290bea19731a166f631c3ef60564faf53e1b618ff858ed1749970c77d1f",
+          "traceSha256": "be51e06c5eb0f7a0c8689ae28b7c92f02883814b185276f93785e43723f2190a",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:74e497d1455d20ec8b2bbfc1e780426b3845163f44e885980e7553933c51982c",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "df4f5a3110d55d72b1772b17543c4e939f53b852709a05398063cb4812bb8db7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "number": 2,
+          "startedAt": "2026-10-11T15:35:17.337Z",
+          "wallMs": 419721.988,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 443.515,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 486.81759999999997,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 444.43460000000005,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 28980.5563,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 228881.53019999992,
+              "inputBytes": 683834368
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 27037.74510000005,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 22462.36530000004,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 28287.533400000037,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 22727.544800000003,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2366.462599999999,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 41599.97690000001,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 217,
+          "reusedUploads": 0,
+          "minimumRuntimeMarginMs": 28468.07740000001,
+          "minimumStartMarginMs": 28912.6362,
+          "run": 2,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30006.755800000043,
+              "cpuPercent": 55.6190090231658,
+              "freeMemoryBytes": 3855630336,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60012.9216,
+              "cpuPercent": 53.72878719253733,
+              "freeMemoryBytes": 4413386752,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90015.28749999998,
+              "cpuPercent": 58.633179128889324,
+              "freeMemoryBytes": 3024703488,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120017.78639999998,
+              "cpuPercent": 55.65245327263192,
+              "freeMemoryBytes": 2747445248,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 150023.2881,
+              "cpuPercent": 59.44864928847983,
+              "freeMemoryBytes": 3213070336,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 180026.8162,
+              "cpuPercent": 61.58336945975517,
+              "freeMemoryBytes": 3289161728,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 210035.78980000003,
+              "cpuPercent": 64.75443937786717,
+              "freeMemoryBytes": 2455277568,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 240038.6505,
+              "cpuPercent": 64.40649732719706,
+              "freeMemoryBytes": 3282989056,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 270044.66800000006,
+              "cpuPercent": 58.19990255906325,
+              "freeMemoryBytes": 2437165056,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 300045.83070000005,
+              "cpuPercent": 54.88892751799703,
+              "freeMemoryBytes": 2793418752,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 330054.3968,
+              "cpuPercent": 56.721194977041925,
+              "freeMemoryBytes": 2934865920,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 360060.0965,
+              "cpuPercent": 56.779757722908805,
+              "freeMemoryBytes": 3457245184,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 390060.615,
+              "cpuPercent": 59.34559623301345,
+              "freeMemoryBytes": 2721140736,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "1e8b6884c789d9eb6bf2e0b1ef0c8c0dd079b690c01bda3f7da9b24f3eded085",
+          "traceSha256": "2a67a3b6ace632b9b3f15f121fa5db0de2e5da0be6e3c431a7092dccfd5f9118",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:648cd1555fb718bd96797524f02de4e6daf9f906fe7efbaf2dc1bf862a0ae3fe",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "333ade42e3ba416182c836f55be66d5bd24ec7e0b5f9fa8d39440873a4e92dc7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "number": 3,
+          "startedAt": "2026-10-11T15:42:17.834Z",
+          "wallMs": 408213.52240000013,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 595.6836000000001,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 619.0764,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 610.2274000000002,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 25032.998499999976,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 226728.50660000008,
+              "inputBytes": 683834368
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 29110.046499999866,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 21415.12049999996,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 25155.450000000044,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 19009.289900000033,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 3112.7281999999977,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 41250.887299999915,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 217,
+          "reusedUploads": 0,
+          "minimumRuntimeMarginMs": 28312.0718,
+          "minimumStartMarginMs": 28665.559400000006,
+          "run": 3,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30013.51620000007,
+              "cpuPercent": 65.31303830976924,
+              "freeMemoryBytes": 3642527744,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60024.88730000006,
+              "cpuPercent": 66.0457747350528,
+              "freeMemoryBytes": 1667866624,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90028.24320000003,
+              "cpuPercent": 54.12605068653812,
+              "freeMemoryBytes": 4610334720,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120037.31019999995,
+              "cpuPercent": 52.232368691289274,
+              "freeMemoryBytes": 4425342976,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 150050.85080000013,
+              "cpuPercent": 49.57866097714266,
+              "freeMemoryBytes": 2931568640,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 180057.8844000001,
+              "cpuPercent": 54.46731608410103,
+              "freeMemoryBytes": 3143585792,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 210062.35300000012,
+              "cpuPercent": 58.554453836374734,
+              "freeMemoryBytes": 3464048640,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 240071.26600000006,
+              "cpuPercent": 59.29212070468445,
+              "freeMemoryBytes": 3353157632,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 270070.8728,
+              "cpuPercent": 66.80079623647397,
+              "freeMemoryBytes": 4712284160,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 300079.75029999996,
+              "cpuPercent": 53.27812693428031,
+              "freeMemoryBytes": 2838773760,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 330085.47,
+              "cpuPercent": 60.897117176427805,
+              "freeMemoryBytes": 3358322688,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 360096.8081,
+              "cpuPercent": 55.583470227004625,
+              "freeMemoryBytes": 2851958784,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 390097.2594999999,
+              "cpuPercent": 53.38225411854965,
+              "freeMemoryBytes": 3108843520,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "1dc7b6c34c7a02c439fcde923a7fcfc89bb40958aee1e7af23577d46c7df1aa7",
+          "traceSha256": "e6080afe6c611fd58f2365f531bc00ecd8f63a656eea5e205685be012da20260",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:3f00cc27f2af6bc9212ce5e661375eab38ae821e4881b4b40524b7160a3042f9",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "ea415d32d2580da24ca6ad1e3b2d2528aea1c4f8b489294d165eeaff17b97670",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "completionResultsSha256": "4933c95d9d2849b799bcabbf4031529a9a53b08d68e22e413bff1106e4041421"
+    },
+    "rigorous-after": {
+      "identity": {
+        "producer": {
+          "digest": "42beb8f4cec33cfc7220fa30174887c49ee8df85c04205b537514afe2cda829a",
+          "files": 2009
+        },
+        "dependencies": {
+          "digest": "ef3bc8cbb0860e88368758e5cf9097465e1cdba8fbac051c06bfe5372b97dcb4",
+          "files": 1830
+        },
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "transport": "producer-default",
+        "nodeVersion": "v22.23.2",
+        "platform": "win32",
+        "architecture": "x64",
+        "cpuCount": 24,
+        "memoryBytes": 68388532224,
+        "repetitions": 3
+      },
+      "statistics": {
+        "minimumMs": 127971.16019999998,
+        "medianMs": 130577.0123,
+        "maximumMs": 134180.46839999998
+      },
+      "runs": [
+        {
+          "number": 1,
+          "startedAt": "2026-10-11T15:50:26.960Z",
+          "wallMs": 134180.46839999998,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 573.733,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 760.5328999999999,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 463.7071000000001,
+              "inputBytes": 0
+            },
+            "stdio-connect": {
+              "calls": 1,
+              "durationMs": 713.1844999999998,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 1999.0249000000344,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 34016.93789999998,
+              "inputBytes": 196445293
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 28427.830799999996,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 66.37340000000813,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 5067.414800000024,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 300.827199999997,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2120.458499999997,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 43794.28389999995,
+              "inputBytes": 0
+            },
+            "stdio-close": {
+              "calls": 1,
+              "durationMs": 6.11699999999837,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 40,
+          "reusedUploads": 16,
+          "minimumRuntimeMarginMs": 28807.6666,
+          "minimumStartMarginMs": 28807.6666,
+          "run": 1,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30008.973599999998,
+              "cpuPercent": 52.87184219950962,
+              "freeMemoryBytes": 2973388800,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60283.0122,
+              "cpuPercent": 68.3199864110706,
+              "freeMemoryBytes": 2006290432,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90024.0361,
+              "cpuPercent": 68.75199551070561,
+              "freeMemoryBytes": 2131468288,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120030.80630000001,
+              "cpuPercent": 60.991392643122566,
+              "freeMemoryBytes": 2743185408,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "195b0f653ad95c3d9ac3552a9563bba6d698a59a805c46114233904d53c9bf2a",
+          "traceSha256": "b22cd8b0fc2d2e0b1e87d65ddbfe4ae229b317ef36f89322d8047cedb704e441",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:a5852c85a663ebee6455dd4594fc1a408b862b0fd91c2028814f837bc02688ca",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "0a8469b7dde236fd62a08600f278863b7907d54f08930c26183c50966c216c80",
+          "stderrSha256": "c88c3813acbd0a6e22f8d6263fda88ccaed01562445406456b6b16eff6bbc92d"
+        },
+        {
+          "number": 2,
+          "startedAt": "2026-10-11T15:52:41.489Z",
+          "wallMs": 127971.16019999998,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 426.96260000000007,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 792.1617,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 481.5401999999999,
+              "inputBytes": 0
+            },
+            "stdio-connect": {
+              "calls": 1,
+              "durationMs": 708.1264000000001,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 1914.706100000023,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 31744.17179999999,
+              "inputBytes": 196445293
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 27803.657400000033,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 61.943500000016684,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 4957.673200000012,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 310.98220000006313,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2477.7272999999986,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 40712.502999999975,
+              "inputBytes": 0
+            },
+            "stdio-close": {
+              "calls": 1,
+              "durationMs": 5.960800000000745,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 40,
+          "reusedUploads": 16,
+          "minimumRuntimeMarginMs": 28649.218,
+          "minimumStartMarginMs": 28649.218,
+          "run": 2,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30016.017900000006,
+              "cpuPercent": 57.01158158728585,
+              "freeMemoryBytes": 1800409088,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60015.99649999998,
+              "cpuPercent": 57.23850754692308,
+              "freeMemoryBytes": 2743365632,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90017.35999999999,
+              "cpuPercent": 55.35454035294782,
+              "freeMemoryBytes": 3334979584,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120018.8995,
+              "cpuPercent": 57.13951539552823,
+              "freeMemoryBytes": 1894236160,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "ceb5a8e508abaf2cf1f56eb878f2b518aedc13b0c76ea6e08ee02c3fdee68e54",
+          "traceSha256": "9808e1872f84d190b527e723b79a812bfaccabb43c790b60ef9405ba6e793601",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:f7e88d5a8b94da7b70b50879a7165baae9b9101f2a63524a77ed0c7b8180ee52",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "47ce590efb5ac603cd3037d97ee08cba0ab7e942e48ede3bf1cf818ad1d2c716",
+          "stderrSha256": "09eef30109ee36317dbe20cd870d6feebe9b57998027f6949589a4f593fc21f4"
+        },
+        {
+          "number": 3,
+          "startedAt": "2026-10-11T15:54:49.740Z",
+          "wallMs": 130577.0123,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 610.2458,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 481.31600000000003,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 1310.1177,
+              "inputBytes": 0
+            },
+            "stdio-connect": {
+              "calls": 1,
+              "durationMs": 631.4709000000003,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 1970.2971999999672,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 31644.111700000027,
+              "inputBytes": 196445293
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 28005.45499999998,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 66.29969999998593,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 4963.974799999961,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 304.00290000001223,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 1962.2451,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 42843.57769999998,
+              "inputBytes": 0
+            },
+            "stdio-close": {
+              "calls": 1,
+              "durationMs": 5.233400000011898,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 40,
+          "reusedUploads": 16,
+          "minimumRuntimeMarginMs": 28251.87,
+          "minimumStartMarginMs": 28251.87,
+          "run": 3,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30006.150000000023,
+              "cpuPercent": 53.89928303128153,
+              "freeMemoryBytes": 1526149120,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60007.68469999998,
+              "cpuPercent": 57.67763576777736,
+              "freeMemoryBytes": 2808844288,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90019.58350000001,
+              "cpuPercent": 55.230617388635075,
+              "freeMemoryBytes": 4184334336,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120036.05450000003,
+              "cpuPercent": 54.29369090596528,
+              "freeMemoryBytes": 3317714944,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "7e44534d3f12c77028be9a26d6fc7d6d5ae9de4be4d6e0a2f1c47d1b92ddddbe",
+          "traceSha256": "3607553cb0bf1f439b3e1ef4f5335bd5f84209042d1c38a1db5ee233a0383969",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:bd59ff3925a37c271e03200cab4adad559dbd18b78e94f8e184b750ed40feccd",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "a21a8729becbc9be21ac5de899a7731ac36637ebeac70d69f898d056f00c7849",
+          "stderrSha256": "6b1a15c1da20c5805a78b61e3015b21e29a0f38d6261735964afe30b8452599f"
+        }
+      ],
+      "completionResultsSha256": "fd45fac3e2ef97f5f8af482dad2d014b85adcfba0954be46214e84e5f5f507cc"
+    }
+  },
+  "repositoryDigest": "sha256:99307d4860e0542521bce08aa538e168ccac5129b269317938043c7f18c5bbd4",
+  "schemaVersionOfManifest": "4.0.0",
+  "sourceModuleCountVerified": 42,
+  "historicalSeriesStatistics": {
+    "before": {
+      "identity": {
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "buildInfo": {
+          "sourceRevision": {
+            "status": "RECORDED",
+            "commit": "b803de9626bd7265cf835322f9d47ef6f1e694d4",
+            "worktree": "DIRTY"
+          }
+        },
+        "containerModuleDigest": "659b1b933533cf4e5906f453c0b81ab4792dd4f620d7cbea15668a4993cf9cbb",
+        "engineModuleDigest": "397ea7e3d3e9c47e9bbc4e0a61264991e0bb6bd1a86be1cd7c8d04e9097f3e15"
+      },
+      "statistics": {
+        "minimumMs": 394229.6203999999,
+        "medianMs": 413645.7907000001,
+        "maximumMs": 548764.9778
+      }
+    },
+    "after": {
+      "identity": {
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "buildInfo": {
+          "sourceRevision": {
+            "status": "RECORDED",
+            "commit": "b803de9626bd7265cf835322f9d47ef6f1e694d4",
+            "worktree": "DIRTY"
+          }
+        },
+        "containerModuleDigest": "72646f535043e672c3ec6b4772da604e91f2e9518e94fe47950dae3c2a868418",
+        "engineModuleDigest": "c3f047bd7983f5047ef250258bc3484ca56a7409d5f8695af8d2436f3f423fc7"
+      },
+      "statistics": {
+        "minimumMs": 319320.64430000004,
+        "medianMs": 322212.534,
+        "maximumMs": 338069.8203
+      }
+    },
+    "final": {
+      "identity": {
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "buildInfo": {
+          "sourceRevision": {
+            "status": "RECORDED",
+            "commit": "b803de9626bd7265cf835322f9d47ef6f1e694d4",
+            "worktree": "DIRTY"
+          }
+        },
+        "containerModuleDigest": "28a74d829fa7f66c037cbdf7ac778758b3a9240ffd7d2284693083db690675ae",
+        "engineModuleDigest": "2bb0e65028ab2a2514d32e1fc788065675a74b22e7289e86a475b652d654b721"
+      },
+      "statistics": {
+        "minimumMs": 124745.7611,
+        "medianMs": 348449.68650000007,
+        "maximumMs": 1171072.4575
+      }
+    },
+    "matched-before": {
+      "identity": {
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "buildInfo": {
+          "sourceRevision": {
+            "status": "RECORDED",
+            "commit": "b803de9626bd7265cf835322f9d47ef6f1e694d4",
+            "worktree": "DIRTY"
+          }
+        },
+        "containerModuleDigest": "659b1b933533cf4e5906f453c0b81ab4792dd4f620d7cbea15668a4993cf9cbb",
+        "engineModuleDigest": "397ea7e3d3e9c47e9bbc4e0a61264991e0bb6bd1a86be1cd7c8d04e9097f3e15"
+      },
+      "statistics": {
+        "minimumMs": 398507.67499999993,
+        "medianMs": 439124.9793,
+        "maximumMs": 440098.0665000001
+      }
+    },
+    "matched-after": {
+      "identity": {
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "buildInfo": {
+          "sourceRevision": {
+            "status": "RECORDED",
+            "commit": "b803de9626bd7265cf835322f9d47ef6f1e694d4",
+            "worktree": "DIRTY"
+          }
+        },
+        "containerModuleDigest": "28a74d829fa7f66c037cbdf7ac778758b3a9240ffd7d2284693083db690675ae",
+        "engineModuleDigest": "2bb0e65028ab2a2514d32e1fc788065675a74b22e7289e86a475b652d654b721"
+      },
+      "statistics": {
+        "minimumMs": 122805.53409999999,
+        "medianMs": 131565.44070000004,
+        "maximumMs": 136796.8647
+      }
+    }
+  },
+  "historicalArtifact": {
+    "path": "historical-measurements.json.gz",
+    "decodedSha256": "34cefa95bdadbb092a33b946047ab9b4da6e95aa282e503c4e46b5ef04549256",
+    "compressedSha256": "a041da772961d63113fe7d6441fafe8ddfc77d0ddb1e1ced87179020dfb4a474",
+    "decodedBytes": 80313
+  },
+  "historicalComparison": ["matched-before", "matched-after"],
+  "allTwentyOneImportsVerified": true,
+  "allTwentyOneReplaysValid": true,
+  "rigorousProvenance": {
+    "executorSha256": "34e091b7c2ee4f632ef6795883b6e9ec6f8a39f6b1a24fb154904e8bc9f668c7",
+    "executor": "rigorous-benchmark-executor.mjs.gz",
+    "executorEncoding": "gzip",
+    "dependenciesCopied": "pnpm locations preserved; links relocated into snapshot",
+    "completionPostconditions": "results.json is emitted only after producer tree and witness rehash equality",
+    "initialStartupFailure": "Initial dereferenced dependency copy failed isolated startup before measurements; excluded from timing and retained separately."
+  }
+}

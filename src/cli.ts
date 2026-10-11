@@ -10,16 +10,16 @@ import {
   renderDiagnostics,
   renderRepositoryLinkRefusal,
 } from "./diagnostics.js";
-import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
-import { parseContainerRuntimeCommand } from "./engine/container.js";
-import { runFixtureDemo } from "./engine/demo.js";
 import { BunPreflightError, renderBunPreflightRefusal } from "./engine/bun-preflight.js";
-import { RepositoryAuditInventoryError, type RepositoryLinkAssessment } from "./engine/index.js";
+import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
+import { parseContainerRuntimeCommand, parseContainerTransport } from "./engine/container.js";
+import { runFixtureDemo } from "./engine/demo.js";
 import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
   renderGitRegressionSummary,
 } from "./engine/git-regression.js";
+import { RepositoryAuditInventoryError, type RepositoryLinkAssessment } from "./engine/index.js";
 import { type RepositorySetupResult, type SetupClient, setupRepository } from "./engine/setup.js";
 import { DEFAULT_WITNESS_ENVIRONMENT_ALLOWLIST } from "./engine/witness-import.js";
 import {
@@ -52,7 +52,7 @@ Commands:
   explain CODE [CODE ...] [--json]             Explain reason codes and safe next actions
   check [repository] --before REF [--after REF] --neutral REF --neutral-reason TEXT
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
-        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
+        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV] [--container-transport MODE]
          | --allow-unsafe-execution)            Qualify one committed node:test regression
   doctor [repository] [--framework ID] [--exclude NAME ...] [--json]
                                                Inspect static repository readiness without writing
@@ -89,11 +89,11 @@ Commands:
           evidence-provider-manifest|evidence-export-request|evidence-export|
           evidence-export-replay-result>
                                                Print a JSON Schema
-  verify [request.json|-] [--container-runtime JSON_ARGV | --allow-unsafe-execution
+  verify [request.json|-] [--container-transport MODE] [--container-runtime JSON_ARGV | --allow-unsafe-execution
         | --allow-windows-native-execution]   Execute a v2-v4 container, trusted-local or
                                                declared Windows-native campaign
   import-witness [request.json|-] --out DIRECTORY
-        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
+        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV] [--container-transport MODE]
          | --allow-unsafe-execution | --allow-windows-native-execution)
         [--env NAME ...] [--json]              Replay a recorded red/green witness
   replay [manifest.json|-]                     Verify an evidence digest
@@ -230,6 +230,7 @@ interface CheckArguments {
   out: string;
   containerImage?: string;
   containerRuntime?: string;
+  containerTransport?: string;
 }
 
 interface ClientArguments {
@@ -420,6 +421,7 @@ function parseCheckArguments(argv: readonly string[], cwd: string): CheckArgumen
     "--out",
     "--container-image",
     "--container-runtime",
+    "--container-transport",
   ]);
   const booleanFlags = new Set(["--allow-unsafe-execution", "--json"]);
   for (let index = 1; index < argv.length; index += 1) {
@@ -460,9 +462,11 @@ function parseCheckArguments(argv: readonly string[], cwd: string): CheckArgumen
   };
   const containerImage = atMostOne("--container-image");
   const containerRuntime = atMostOne("--container-runtime");
+  const containerTransport = atMostOne("--container-transport");
   return {
     ...(containerImage === undefined ? {} : { containerImage }),
     ...(containerRuntime === undefined ? {} : { containerRuntime }),
+    ...(containerTransport === undefined ? {} : { containerTransport }),
     repository: path.resolve(cwd, repository),
     before: exactlyOne("--before"),
     ...(afterValues[0] === undefined ? {} : { after: afterValues[0] }),
@@ -1191,11 +1195,12 @@ export async function runCli(
           );
           return 4;
         }
-        const { containerImage, containerRuntime, ...checkOptions } = parseCheckArguments(
-          argv,
-          io.cwd,
-        );
-        if (containerImage === undefined && containerRuntime !== undefined) {
+        const { containerImage, containerRuntime, containerTransport, ...checkOptions } =
+          parseCheckArguments(argv, io.cwd);
+        if (
+          containerImage === undefined &&
+          (containerRuntime !== undefined || containerTransport !== undefined)
+        ) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
         }
         if (containerImage === undefined) {
@@ -1213,6 +1218,9 @@ export async function runCli(
             ...(containerRuntime === undefined
               ? {}
               : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+            ...(containerTransport === undefined
+              ? {}
+              : { transport: parseContainerTransport(containerTransport) }),
           },
         };
         const result = await ledger.checkGitRegressionV2(options);
@@ -1221,7 +1229,13 @@ export async function runCli(
         return decisionExitCode(result);
       }
       case "import-witness": {
-        const valueFlags = new Set(["--out", "--container-image", "--container-runtime", "--env"]);
+        const valueFlags = new Set([
+          "--out",
+          "--container-image",
+          "--container-runtime",
+          "--container-transport",
+          "--env",
+        ]);
         const booleanFlags = new Set([
           "--allow-unsafe-execution",
           "--allow-windows-native-execution",
@@ -1254,11 +1268,13 @@ export async function runCli(
         const allowWindowsNative = argv.includes("--allow-windows-native-execution");
         const containerImage = optionalFlag(argv, "--container-image");
         const containerRuntime = optionalFlag(argv, "--container-runtime");
+        const containerTransport = optionalFlag(argv, "--container-transport");
         const environment = repeatedFlagValues(argv, "--env");
         const selected = [allowUnsafeExecution, allowWindowsNative, containerImage !== undefined];
         if (
           selected.filter(Boolean).length > 1 ||
-          (containerImage === undefined && containerRuntime !== undefined) ||
+          (containerImage === undefined &&
+            (containerRuntime !== undefined || containerTransport !== undefined)) ||
           (containerImage !== undefined && environment.length > 0)
         ) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
@@ -1282,6 +1298,9 @@ export async function runCli(
                   ...(containerRuntime === undefined
                     ? {}
                     : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+                  ...(containerTransport === undefined
+                    ? {}
+                    : { transport: parseContainerTransport(containerTransport) }),
                 }
               : allowWindowsNative
                 ? { kind: "windows-native", environmentAllowlist }
@@ -1355,12 +1374,13 @@ export async function runCli(
       }
       case "verify": {
         const request = await readJsonInput(
-          positionalArguments(argv, new Set(["--container-runtime"]))[1],
+          positionalArguments(argv, new Set(["--container-runtime", "--container-transport"]))[1],
           io,
         );
         const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
         const allowWindowsNative = argv.includes("--allow-windows-native-execution");
         const runtimeArgument = optionalFlag(argv, "--container-runtime");
+        const transportArgument = optionalFlag(argv, "--container-transport");
         const isolationKind =
           isRecord(request) && isRecord(request.isolation) ? request.isolation.kind : undefined;
         const containerRequest = isolationKind === "container";
@@ -1368,10 +1388,15 @@ export async function runCli(
         // Each backend has exactly one authorization; another backend's flag never stands in.
         if (
           (containerRequest && (allowUnsafeExecution || allowWindowsNative)) ||
-          (windowsNativeRequest && (allowUnsafeExecution || runtimeArgument !== undefined)) ||
+          (windowsNativeRequest &&
+            (allowUnsafeExecution ||
+              runtimeArgument !== undefined ||
+              transportArgument !== undefined)) ||
           (!containerRequest &&
             !windowsNativeRequest &&
-            (allowWindowsNative || runtimeArgument !== undefined))
+            (allowWindowsNative ||
+              runtimeArgument !== undefined ||
+              transportArgument !== undefined))
         ) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
         }
@@ -1389,9 +1414,18 @@ export async function runCli(
         const version3 = isRecord(request) && request.schemaVersion === "3.0.0";
         const version4 = isRecord(request) && request.schemaVersion === "4.0.0";
         const runtimeOptions =
-          runtimeArgument === undefined
+          runtimeArgument === undefined && transportArgument === undefined
             ? {}
-            : { containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) } };
+            : {
+                containerRuntime: {
+                  ...(runtimeArgument === undefined
+                    ? {}
+                    : { command: parseContainerRuntimeCommand(runtimeArgument) }),
+                  ...(transportArgument === undefined
+                    ? {}
+                    : { transport: parseContainerTransport(transportArgument) }),
+                },
+              };
         if (version4) {
           const authorized = containerRequest
             ? request

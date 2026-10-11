@@ -1,0 +1,20 @@
+{
+  "producer": {
+    "digest": "42beb8f4cec33cfc7220fa30174887c49ee8df85c04205b537514afe2cda829a",
+    "files": 2009
+  },
+  "dependencies": {
+    "digest": "ef3bc8cbb0860e88368758e5cf9097465e1cdba8fbac051c06bfe5372b97dcb4",
+    "files": 1830
+  },
+  "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+  "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+  "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+  "transport": "producer-default",
+  "nodeVersion": "v22.23.2",
+  "platform": "win32",
+  "architecture": "x64",
+  "cpuCount": 24,
+  "memoryBytes": 68388532224,
+  "repetitions": 3
+}

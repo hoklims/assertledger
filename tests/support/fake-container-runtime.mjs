@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { gunzipSync } from "node:zlib";
 
 const [stateDirectory, ...args] = process.argv.slice(2);
 const scenario = JSON.parse(readFileSync(path.join(stateDirectory, "scenario.json"), "utf8"));
@@ -136,7 +137,17 @@ async function main() {
     case "cp": {
       if (args[1] === "--archive" && args[2] === "-") {
         const name = args[3].slice(0, args[3].indexOf(":"));
-        const entries = parseTar(await readStdin());
+        const input = await readStdin();
+        writeFileSync(
+          path.join(containerDirectory(name), "upload-transport.json"),
+          JSON.stringify({
+            gzip: input[0] === 0x1f && input[1] === 0x8b,
+            bytes: input.byteLength,
+          }),
+        );
+        const entries = parseTar(
+          input[0] === 0x1f && input[1] === 0x8b ? gunzipSync(input) : input,
+        );
         writeFileSync(
           path.join(containerDirectory(name), "upload.json"),
           JSON.stringify(

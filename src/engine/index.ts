@@ -25,7 +25,6 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SyntaxKind } from "typescript/unstable/ast";
 import type { BunPreflightRefusal } from "../contracts/diagnostics.js";
-import { BunPreflightError } from "./bun-preflight.js";
 import {
   AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
@@ -60,8 +59,8 @@ import {
   repositoryInitConfigV2Digest,
   repositoryInitLockDigest,
   repositoryInitLockV2Digest,
-  type VerificationRequest as VerificationRequestContract,
   VERIFICATION_SCHEMA_VERSION_V4,
+  type VerificationRequest as VerificationRequestContract,
 } from "../contracts/index.js";
 import {
   assertSafeRelativePath,
@@ -83,6 +82,7 @@ import {
   runNodeTestRuntimePreflight,
 } from "./adapters/node-test-runtime.js";
 import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
+import { BunPreflightError } from "./bun-preflight.js";
 import {
   type BoundedProcessResult,
   CONTAINER_ASSET_DIRECTORY,
@@ -91,23 +91,27 @@ import {
   CONTAINER_RESULT_FILE,
   CONTAINER_WORKSPACE,
   type ContainerBackend,
+  type ContainerTransport,
   DEFAULT_CONTAINER_RUNTIME_COMMAND,
+  parseContainerTransport,
   prepareContainerBackend,
   runContainerExecution,
 } from "./container.js";
+import { openDockerStdioControl } from "./docker-stdio.js";
 import { scanJavaScriptTokens } from "./javascript-tokens.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
-import {
-  computeTestClosure,
-  type TestClosureInput,
-  type UnboundedClosureEdge,
-} from "./test-closure.js";
 import {
   type RuntimeDoctorResult,
   type RuntimeDoctorResultV2,
   runBunRuntimeDoctorChecks,
   runRuntimeDoctorChecks,
 } from "./runtime-doctor.js";
+import { traceOperation, withRuntimeTrace } from "./runtime-trace.js";
+import {
+  computeTestClosure,
+  type TestClosureInput,
+  type UnboundedClosureEdge,
+} from "./test-closure.js";
 
 const DEFAULT_EXCLUDES = new Set([".git", ".testforge", "node_modules"]);
 const SHA256_PREFIX = "sha256:";
@@ -3523,7 +3527,7 @@ async function runContainerNodeProbe(
   maximumOutputBytes: number,
 ): Promise<{ execPath: string; nodeVersion: string; executableDigest: string }> {
   const { process: result } = await runContainerExecution(
-    container,
+    { ...container, traceContext: { kind: "identity", probe: "node" } },
     {
       workspace,
       executable,
@@ -3610,7 +3614,7 @@ function containerPreflightExecutor(
       });
       const candidate = `${CONTAINER_WORKSPACE}/${probe.name}.test.mjs`;
       const executed = await runContainerExecution(
-        container,
+        { ...container, traceContext: { kind: "preflight", probe: probe.name } },
         {
           workspace,
           reporterSource: probe.reporterSource,
@@ -3663,7 +3667,7 @@ async function runContainerBunProbe(
   executableDigest: string;
 }> {
   const { process: result } = await runContainerExecution(
-    container,
+    { ...container, traceContext: { kind: "identity", probe: "bun" } },
     {
       workspace,
       executable,
@@ -4139,7 +4143,16 @@ async function executeObservation(
   const temporaryRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-run-")));
   const workspace = path.join(temporaryRoot, "repository");
   try {
-    await copyRepository(repositoryRoot, workspace, workspaceExcludes(request));
+    await traceOperation(
+      "host-workspace-copy",
+      {
+        kind: candidate === null ? "campaign-load" : "campaign-test",
+        worldId: world.id,
+        candidateId: candidate?.id ?? null,
+        attempt,
+      },
+      () => copyRepository(repositoryRoot, workspace, workspaceExcludes(request)),
+    );
     await applyFiles(workspace, world.files);
     if (candidate) await applyFiles(workspace, candidate.files);
     const candidateFiles = candidate ? candidate.files.map((file) => file.path) : [];
@@ -4153,7 +4166,26 @@ async function executeObservation(
             candidateFiles,
             nodeTestReporterPath,
           )
-        : await executeContainerAdapter(request, container, workspace, candidate, candidateFiles);
+        : await executeContainerAdapter(
+            request,
+            {
+              ...container,
+              traceContext: {
+                kind: candidate === null ? "campaign-load" : "campaign-test",
+                worldId: world.id,
+                candidateId: candidate?.id ?? null,
+                attempt,
+              },
+              workspaceIdentity: sha256Canonical({
+                snapshot: repositoryRoot,
+                world: world.files,
+                candidate: candidate?.files ?? [],
+              }),
+            },
+            workspace,
+            candidate,
+            candidateFiles,
+          );
     const nodeClassification =
       request.adapter.kind === "node-test"
         ? classifyNodeTest(result, nodeTestReport, candidate !== null)
@@ -4188,7 +4220,7 @@ async function executeObservation(
 
 export interface VerifyCampaignOptions {
   /** Operator-owned argv prefix of a Docker-compatible CLI; requests cannot provide it. */
-  containerRuntime?: { command: readonly string[] };
+  containerRuntime?: { command?: readonly string[]; transport?: ContainerTransport };
 }
 
 interface BunTestRuntimePreflight {
@@ -4207,6 +4239,7 @@ type BunDriverExecutor = (
   workspace: string,
   files: readonly string[],
   environment: Record<string, string>,
+  probe?: string,
 ) => Promise<{ report: StructuredCommandReport | undefined; result: ProcessResult }>;
 
 function localBunDriverExecutor(
@@ -4234,9 +4267,12 @@ function containerBunDriverExecutor(
   timeoutMs: number,
   maximumOutputBytes: number,
 ): BunDriverExecutor {
-  return async (workspace, files, environment) =>
+  return async (workspace, files, environment, probe) =>
     runContainerBunDriver(
-      container,
+      {
+        ...container,
+        traceContext: { kind: "preflight", ...(probe === undefined ? {} : { probe }) },
+      },
       workspace,
       executable,
       files,
@@ -4442,18 +4478,23 @@ async function runBunDesignatedPreflight(
             await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
             await writeFile(path.join(workspace, "probe.test.ts"), `${header} ${probe.body}\n`);
             const test = { file: "probe.test.ts", path: ["probe"] };
-            return executor(workspace, ["probe.test.ts"], {
-              ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(
-                probe.mode === "run"
-                  ? {
-                      mode: "run",
-                      test,
-                      expectedFailure: probe.expectedFailure ?? null,
-                      testTimeoutMs: probe.testTimeoutMs ?? null,
-                    }
-                  : { mode: "load", tests: [test] },
-              ),
-            });
+            return executor(
+              workspace,
+              ["probe.test.ts"],
+              {
+                ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(
+                  probe.mode === "run"
+                    ? {
+                        mode: "run",
+                        test,
+                        expectedFailure: probe.expectedFailure ?? null,
+                        testTimeoutMs: probe.testTimeoutMs ?? null,
+                      }
+                    : { mode: "load", tests: [test] },
+                ),
+              },
+              probe.name,
+            );
           }),
       );
       recorded.push({
@@ -4574,9 +4615,14 @@ async function runBunTestRuntimePreflight(
             );
             const candidatePath = path.join(workspace, "candidate.test.ts");
             await writeFile(candidatePath, probe.source);
-            return executor(workspace, ["base.test.ts"], {
-              TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
-            });
+            return executor(
+              workspace,
+              ["base.test.ts"],
+              {
+                TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
+              },
+              probe.name,
+            );
           }),
       );
       probes.push({
@@ -4599,6 +4645,16 @@ export async function verifyCampaign(
   options: VerifyCampaignOptions = {},
 ): Promise<unknown> {
   const request = parseRequest(value);
+  return withRuntimeTrace([request.repository.root], () =>
+    verifyCampaignWithTrace(request, options),
+  );
+}
+
+async function verifyCampaignWithTrace(
+  request: VerificationRequest,
+  options: VerifyCampaignOptions,
+): Promise<unknown> {
+  const transport = parseContainerTransport(options.containerRuntime?.transport);
   const container =
     request.isolation.kind === "container"
       ? await prepareContainerBackend(
@@ -4608,6 +4664,33 @@ export async function verifyCampaign(
           os.tmpdir(),
         )
       : undefined;
+  if (container === undefined || transport === "cli")
+    return verifyPreparedCampaign(request, container);
+  let control: Awaited<ReturnType<typeof openDockerStdioControl>> | undefined;
+  try {
+    control = await traceOperation(
+      "stdio-connect",
+      { transport: "stdio-api" },
+      () => openDockerStdioControl(container.runtimeCommand, os.tmpdir(), container.record),
+      () => ({ runtimeInvocations: 1 }),
+    );
+  } catch (error) {
+    if (transport === "stdio") throw error;
+    // Capability negotiation has made no mutable request. CLI-compatible runtimes remain valid.
+  }
+  if (control === undefined) return verifyPreparedCampaign(request, container);
+  container.controlRunner = control.run;
+  try {
+    return await verifyPreparedCampaign(request, container);
+  } finally {
+    await traceOperation("stdio-close", {}, () => control.close());
+  }
+}
+
+async function verifyPreparedCampaign(
+  request: VerificationRequest,
+  container: ContainerBackend | undefined,
+): Promise<unknown> {
   const repositoryRoot = await resolveRepositoryRoot(request.repository.root);
   const version4 = request.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4;
   const excludes = campaignExcludes(request);
@@ -4716,11 +4799,13 @@ export async function verifyCampaign(
   const campaignRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-")));
   const repositorySnapshot = path.join(campaignRoot, "repository");
   try {
-    await copyRepository(
-      repositoryRoot,
-      repositorySnapshot,
-      excludes,
-      new Set(omittedLinks.map(portablePathKey)),
+    await traceOperation("host-snapshot", { kind: "snapshot" }, () =>
+      copyRepository(
+        repositoryRoot,
+        repositorySnapshot,
+        excludes,
+        new Set(omittedLinks.map(portablePathKey)),
+      ),
     );
     const snapshotInventory = await walkFiles(repositorySnapshot, excludes);
     if (snapshotInventory.files.length > request.budgets.maximumRepositoryFiles) {
@@ -4772,6 +4857,9 @@ export async function verifyCampaign(
       : ((await analyzeRepository(repositorySnapshot)) as { repositoryDigest: string })
           .repositoryDigest;
     const observations: Observation[] = [];
+    // Qualification always ran above. Only deterministic upload bytes may be reused here.
+    if (container !== undefined)
+      container.uploadArchives = { entries: new Map(), bytes: 0, maximumBytes: 32 * 1024 * 1024 };
 
     for (const world of request.worlds) {
       for (let attempt = 1; attempt <= request.policy.requiredAttempts; attempt += 1) {

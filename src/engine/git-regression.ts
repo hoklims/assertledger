@@ -31,6 +31,7 @@ import {
 import { renderDiagnostics } from "../diagnostics.js";
 import { DEFAULT_CONTAINER_LIMITS, parseContainerRuntimeCommand } from "./container.js";
 import { verifyCampaign } from "./index.js";
+import { withRuntimeTrace } from "./runtime-trace.js";
 
 type QualificationManifest =
   | EvidenceManifestContract
@@ -102,7 +103,11 @@ export interface GitRegressionOptions {
 
 /** Qualifies in digest-pinned containers instead of trusted-local execution; the evidence is v2. */
 export interface GitRegressionV2Options extends Omit<GitRegressionOptions, "allowUnsafeExecution"> {
-  container: { image: string; runtimeCommand?: readonly string[] };
+  container: {
+    image: string;
+    runtimeCommand?: readonly string[];
+    transport?: import("./container.js").ContainerTransport;
+  };
 }
 
 type QualificationMode = "trusted-local" | "container";
@@ -562,7 +567,13 @@ function validateOptions(
   test: string;
   baseTests: string[];
   out: string;
-  container: { image: string; runtimeCommand: string[] | undefined } | undefined;
+  container:
+    | {
+        image: string;
+        runtimeCommand: string[] | undefined;
+        transport?: import("./container.js").ContainerTransport;
+      }
+    | undefined;
 } {
   // Untyped callers can pass both switches; each entry point refuses the other mode's switch.
   const requested = options as { allowUnsafeExecution?: unknown; container?: unknown };
@@ -588,6 +599,9 @@ function validateOptions(
             requestedContainer?.runtimeCommand === undefined
               ? undefined
               : parseContainerRuntimeCommand(requestedContainer.runtimeCommand),
+          ...(requestedContainer?.transport === undefined
+            ? {}
+            : { transport: requestedContainer.transport }),
         };
   const test = assertSafeRelativePath(options.test, ["."]);
   if (!/\.(?:cjs|mjs|js)$/.test(test)) throw new Error("GIT_REGRESSION_TEST_TYPE_UNSUPPORTED");
@@ -1074,11 +1088,20 @@ async function qualify(
       ],
     };
     const sourceManifest = parseQualificationManifest(
-      await verifyCampaign(
-        request,
-        container?.runtimeCommand === undefined
-          ? {}
-          : { containerRuntime: { command: container.runtimeCommand } },
+      await withRuntimeTrace([repository, outputTarget], () =>
+        verifyCampaign(
+          request,
+          container === undefined
+            ? {}
+            : {
+                containerRuntime: {
+                  ...(container.runtimeCommand === undefined
+                    ? {}
+                    : { command: container.runtimeCommand }),
+                  ...(container.transport === undefined ? {} : { transport: container.transport }),
+                },
+              },
+        ),
       ),
     );
     assertBaseControlsDiscoveredTests(sourceManifest);

@@ -319,6 +319,19 @@ for (const report of ["mismatch", "unavailable"]) {
       3,
       "two identities and one probe, no campaign",
     );
+    for (const call of calls.filter((args) => args[0] === "create")) {
+      const name = call.find((arg) => arg.startsWith("--name="))?.slice("--name=".length);
+      assert.ok(name);
+      const upload = JSON.parse(
+        await readFile(path.join(state, "containers", name, "upload-transport.json"), "utf8"),
+      );
+      assert.equal(
+        upload.gzip,
+        true,
+        "compressed transport must still detect the false preflight probe",
+      );
+      assert.ok(upload.bytes > 0);
+    }
     assert.ok(!existsSync(f.out));
   });
 }

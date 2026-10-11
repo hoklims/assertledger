@@ -215,6 +215,27 @@ async function structuredContainerRequest(isolation?: Record<string, unknown>) {
 }
 
 describe("container isolation through the CLI", () => {
+  it("keeps an explicitly required stdio transport through CLI check", async () => {
+    const value = await gitFixture();
+    const runtime = await fakeRuntime();
+    const result = await cli([
+      ...checkArguments(value),
+      "--container-image",
+      IMAGE,
+      "--container-runtime",
+      JSON.stringify(runtime.command),
+      "--container-transport",
+      "stdio",
+    ]);
+    assert.equal(result.code, 4, result.stderr);
+    assert.match(result.stderr, /CONTAINER_STDIO_UNAVAILABLE/);
+    assert.equal(await exists(path.join(value.root, ".assertledger", "evidence")), false);
+    assert.equal(
+      (await recordedCalls(runtime.state)).filter((call) => call[0] === "create").length,
+      0,
+    );
+  });
+
   it("refuses a Git check without an isolation choice and names both safe options", async () => {
     const value = await gitFixture();
     const result = await cli(checkArguments(value));
@@ -334,6 +355,31 @@ describe("container isolation through the CLI", () => {
 });
 
 describe("container isolation through the SDK", () => {
+  it("keeps an explicitly required stdio transport through a Git qualification", async () => {
+    const value = await gitFixture();
+    const runtime = await fakeRuntime();
+    const out = ".assertledger/stdio-evidence";
+    await assert.rejects(
+      new AssertLedger().checkGitRegressionV2({
+        repository: value.root,
+        before: value.before,
+        after: value.after,
+        neutral: value.after,
+        neutralReason: "explicit repeated control",
+        test: "candidate.test.js",
+        baseTests: ["base.test.js"],
+        out,
+        container: { image: IMAGE, runtimeCommand: runtime.command, transport: "stdio" },
+      }),
+      /CONTAINER_STDIO_UNAVAILABLE/,
+    );
+    assert.equal(await exists(path.join(value.root, out)), false);
+    assert.equal(
+      (await recordedCalls(runtime.state)).filter((call) => call[0] === "create").length,
+      0,
+    );
+  });
+
   it("keeps Git checks explicit: trusted-local stays v1 and containers use the v2 entry point", async () => {
     const value = await gitFixture();
     const ledger = new AssertLedger();
@@ -425,6 +471,8 @@ describe("container diagnostics", () => {
       "CONTAINER_RUNTIME_NOT_FOUND",
       "CONTAINER_RUNTIME_PLATFORM_UNSUPPORTED",
       "CONTAINER_RUNTIME_UNAVAILABLE",
+      "CONTAINER_STDIO_UNAVAILABLE",
+      "CONTAINER_TRANSPORT_INVALID",
       "ISOLATION_MODE_CONFLICT",
     ];
     const report = explainReasonCodes(codes);

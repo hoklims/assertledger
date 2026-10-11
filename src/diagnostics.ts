@@ -291,6 +291,14 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "The container runtime command is not a non-empty JSON argv array.",
     'Pass the executable and its arguments as a JSON array, for example ["docker"]; shell strings are never executed.',
   ],
+  CONTAINER_TRANSPORT_INVALID: [
+    "The operator selected an unknown container control transport.",
+    "Use --container-transport auto, cli or stdio. Requests cannot select the runtime or its transport.",
+  ],
+  CONTAINER_STDIO_UNAVAILABLE: [
+    "The runtime could not establish a compatible, identity-checked Docker control connection over standard input/output; no campaign container was started.",
+    "Check that the configured runtime supports docker system dial-stdio, or select --container-transport cli. No Docker host endpoint or WSL shell is required.",
+  ],
   CONTAINER_RUNTIME_NOT_FOUND: [
     "The configured container runtime command could not be started; nothing was executed.",
     'Install a Docker-compatible CLI or pass its argv explicitly, for example ["wsl.exe","-d","Ubuntu","--exec","docker"].',
