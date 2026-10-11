@@ -368,8 +368,8 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Check the Bun executable and its permissions, then rerun the runtime diagnostic.",
   ],
   BUN_TEST_PROFILE_PREFLIGHT_FAILED: [
-    "Controlled Bun callback probes did not separate assertions from ordinary errors.",
-    "Keep the campaign unqualified and inspect the Bun installation and AssertLedger package.",
+    "A controlled Bun probe did not match its expected outcome, attribution or discovered-test counts, or produced no valid report. The campaign remains unqualified.",
+    "Read the named probe and its expected/observed results on stderr or with --json. Null observed fields mean no valid driver report; inspect the process outcome, exit code, signal and deadline or runtime transport. For a mismatching report, check the pinned Bun version and AssertLedger installation. Repair the cause and rerun the complete preflight; never skip a failing probe.",
   ],
   BUN_TEST_CONTAINER_UNSUPPORTED: [
     "The Bun file-candidate profile has not been qualified in the container backend.",
