@@ -344,6 +344,7 @@ test("oversized headers and subprocess stderr are bounded during capability qual
       await assert.rejects(
         openDockerStdioControl(f.command, f.state, expected),
         /CONTAINER_STDIO_UNAVAILABLE/,
+        JSON.stringify(scenario),
       );
     } finally {
       await f.dispose();

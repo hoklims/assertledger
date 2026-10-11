@@ -7,7 +7,14 @@ const state = process.argv[2];
 const scenario = JSON.parse(readFileSync(path.join(state, "scenario.json"), "utf8"));
 appendFileSync(path.join(state, "launches.jsonl"), `${JSON.stringify(process.argv.slice(3))}\n`);
 const digest = "e".repeat(64);
-if (scenario.stderrFlood) process.stderr.write(Buffer.alloc(1_048_577, 97));
+if (scenario.stderrFlood) {
+  await new Promise((resolve, reject) => {
+    process.stderr.write(Buffer.alloc(1_048_577, 97), (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
 const socket = Duplex.from({ readable: process.stdin, writable: process.stdout });
 socket.setTimeout = () => socket;
 socket.setNoDelay = () => socket;
