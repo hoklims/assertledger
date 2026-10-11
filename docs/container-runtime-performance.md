@@ -77,7 +77,9 @@ Use `git -c core.autocrlf=false apply PATH_TO_PATCH` in the extracted producer d
 the recorded module bytes on Windows.
 
 The script snapshots `dist`, `integrations`, `package.json` and resolved `node_modules` before the
-timer, hashes every copied file and verifies that snapshot again after the series. Each serial run
+timer. It preserves pnpm package locations, relocates dependency links into the snapshot and refuses
+links outside that dependency tree. It checks isolated CLI startup, hashes the files and links,
+records Node and dependency identities, and verifies the snapshot again after the series. Each serial run
 uses a fresh trace and evidence directory, imports the witness, then replays the resulting manifest.
 Wall time covers the import, including trace setup and flushing; replay is outside the timer.
 
@@ -99,10 +101,10 @@ The witness has three attempts and an explicit null neutral control. Its SHA-256
 
 | Series | Run 1 | Run 2 | Run 3 | Median | Min–max |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Baseline: trace only, original transport | 439.125 s | 440.098 s | 398.508 s | 439.125 s | 398.508–440.098 s |
-| Final: gzip + stdio + immutable archive reuse | 136.797 s | 131.565 s | 122.806 s | 131.565 s | 122.806–136.797 s |
+| Baseline: trace only, original transport | 500.207 s | 419.722 s | 408.214 s | 419.722 s | 408.214–500.207 s |
+| Final: gzip + stdio + immutable archive reuse | 134.180 s | 127.971 s | 130.577 s | 130.577 s | 127.971–134.180 s |
 
-The measured median is **3.338× faster**, a **70.0% reduction**. Heavy background work was stopped
+The measured median is **3.214× faster**, a **68.9% reduction**. Heavy background work was stopped
 before all six accepted runs. Runtime, image, repository, witness, attempts and deadlines remained
 fixed; ambient CPU samples are retained rather than assuming perfectly identical machine load.
 The [measurement data](../benchmarks/container-runtime/2026-10-11/measurements.json) includes every
@@ -111,26 +113,26 @@ Six compressed JSONL traces beside that file preserve the individual calls. Thei
 manifests and replay outputs retain the exact captured bytes; decompress a manifest and run
 `assertledger replay PATH_TO_MANIFEST --json` to check it independently.
 
-CPU samples span 38.5–48.9% before and 39.1–58.7% after. The minimum remaining attached-start
-budget is 28.366 s before and 27.622 s after, including the shorter identity/probe budgets. No
+CPU samples span 49.6–69.2% before and 52.9–68.8% after. The minimum remaining attached-start
+budget is 28.372 s before and 28.252 s after, including the shorter identity/probe budgets. No
 deadline was raised. The median phase totals below cover an entire witness; independently computed
 phase medians need not sum to the median wall time.
 
 | Phase | Calls | Before | After |
 | --- | ---: | ---: | ---: |
-| Runtime version | 1 | 0.514 s | 0.452 s |
-| Daemon info | 1 | 0.576 s | 0.485 s |
-| Image inspection | 1 | 0.632 s | 0.719 s |
-| Stdio qualification | 1 after | — | 0.735 s |
-| Create | 36 | 22.040 s | 1.849 s |
-| Upload, including archive generation | 36 | 249.160 s | 33.291 s |
-| Attached start | 36 | 27.601 s | 27.667 s |
-| State inspection | 36 | 19.970 s | 0.061 s |
-| Result download | 34 | 17.965 s | 0.296 s |
-| Remove with volumes | 36 | 23.677 s | 4.707 s |
-| Host snapshot | 1 | 2.273 s | 2.226 s |
-| Fresh host workspace copy | 18 | 54.113 s | 42.326 s |
-| Stdio close | 1 after | — | 0.005 s |
+| Runtime version | 1 | 0.596 s | 0.574 s |
+| Daemon info | 1 | 0.536 s | 0.761 s |
+| Image inspection | 1 | 0.610 s | 0.482 s |
+| Stdio qualification | 1 after | — | 0.708 s |
+| Create | 36 | 28.981 s | 1.970 s |
+| Upload, including archive generation | 36 | 228.882 s | 31.744 s |
+| Attached start | 36 | 29.110 s | 28.005 s |
+| State inspection | 36 | 22.462 s | 0.066 s |
+| Result download | 34 | 22.728 s | 0.304 s |
+| Remove with volumes | 36 | 28.288 s | 4.964 s |
+| Host snapshot | 1 | 2.976 s | 2.120 s |
+| Fresh host workspace copy | 18 | 41.600 s | 42.844 s |
+| Stdio close | 1 after | — | 0.006 s |
 
 Every accepted run created 36 containers and returned `VERIFIED`, with a valid
 replay. The containers comprise two Bun identity probes, 16 designated preflight probes, nine world
@@ -142,16 +144,25 @@ additional.
 Baseline upload totals were 683,834,368 bytes per run; the final producer uploaded 196,445,293
 compressed bytes. It still transfers an archive to every fresh container. Sixteen of the eighteen
 repository uploads reuse immutable bytes; two distinct input plans are assembled. No preflight-result
-cache or execution concurrency was introduced. All fifteen exploratory and accepted manifests
+cache or execution concurrency was introduced. All twenty-one exploratory and accepted manifests
 have identical semantic fields, with eighteen observations each, and replay `valid: true`.
 
-Exploration is retained separately in the data. The initial baseline was 548.765/394.230/413.646 s;
+Exploration is retained losslessly in `historical-measurements.json.gz`, with summaries in the data.
+The initial baseline was 548.765/394.230/413.646 s;
 the gzip + stdio pilot was 338.070/322.213/319.321 s. Its upload median remained 227.924 s, so the
 archive-production cost motivated input-byte reuse. An initial final-producer series then took
 1171.072/348.450/124.746 s while heavy work stopped midway; it is excluded from the accepted timing
-comparison. No refused run was retried or hidden.
+comparison. A later trace-only comparison measured 439.125/440.098/398.508 s before and
+136.797/131.565/122.806 s after. These older runs did not freeze or fingerprint dependencies and
+record Node, so the accepted comparison above was repeated using the complete producer snapshot.
+An initial dependency-copy attempt failed isolated CLI loading before creating any container;
+its output was retained and excluded from timing. Copying pnpm packages by dereferencing their
+links had changed Node's transitive dependency resolution; the snapshot now preserves those locations.
 
 The public script passed syntax, format, lint and help checks, plus two synthetic two-run series
 with valid replay and semantic comparison. Its smoke also rejected existing output, output inside
-the repository and changed discovery counts. The real measurements used the retained campaign
-runner with the same import/replay, phase, byte and load collection, without dependency-copy timing.
+the repository and changed discovery counts. All six accepted measurements used the exact executor
+retained in `rigorous-benchmark-executor.mjs.gz`. Its fingerprint and the complete dependency/Node
+identities are in the data. The public script adds a guard against output inside dependencies;
+dependency copying and isolated startup happen outside the timer. Both frozen producer trees and
+the witness passed their final integrity checks.

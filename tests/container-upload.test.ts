@@ -84,12 +84,41 @@ it("uploads a compressed archive retaining the exact workspace and read-only ada
     );
     assert.ok(uploaded.byteLength < Buffer.byteLength(content) / 4);
     const archive = gunzipSync(uploaded);
-    assert.ok(archive.includes(Buffer.from(content)));
-    assert.ok(archive.includes(Buffer.from("read-only adapter")));
-    assert.ok(archive.includes(Buffer.from("repository/fixture.txt")));
-    assert.ok(archive.includes(Buffer.from("reporter/driver.mjs")));
-    const header = archive.subarray(archive.indexOf(Buffer.from("reporter/driver.mjs")));
-    assert.match(header.subarray(100, 108).toString("ascii"), /444/);
+    const entries: Array<{ name: string; type: string; mode: number; content: string }> = [];
+    let offset = 0;
+    while (offset + 512 <= archive.length) {
+      const header = archive.subarray(offset, offset + 512);
+      if (header.every((byte) => byte === 0)) break;
+      const size = Number.parseInt(header.subarray(124, 136).toString("ascii"), 8);
+      assert.ok(Number.isSafeInteger(size) && size >= 0);
+      assert.ok(offset + 512 + size <= archive.length);
+      entries.push({
+        name: header.subarray(0, 100).toString("utf8").replace(/\0.*$/su, ""),
+        type: String.fromCharCode(header[156] as number),
+        mode: Number.parseInt(header.subarray(100, 108).toString("ascii"), 8),
+        content: archive.subarray(offset + 512, offset + 512 + size).toString("utf8"),
+      });
+      offset += 512 + Math.ceil(size / 512) * 512;
+    }
+    const expectedEntries = [
+      { name: "out/", type: "5", mode: 0o755, content: "" },
+      { name: "reporter/", type: "5", mode: 0o555, content: "" },
+      { name: "reporter/driver.mjs", type: "0", mode: 0o444, content: "read-only adapter" },
+      { name: "repository/", type: "5", mode: 0o755, content: "" },
+      { name: "repository/fixture.txt", type: "0", mode: 0o644, content },
+    ];
+    assert.deepEqual(
+      entries.map(({ content: _content, ...metadata }) => metadata),
+      expectedEntries.map(({ content: _content, ...metadata }) => metadata),
+    );
+    for (const [index, expected] of expectedEntries.entries()) {
+      assert.ok(
+        entries[index]?.content === expected.content,
+        `exact contents for ${expected.name}`,
+      );
+    }
+    assert.equal(archive.length - offset, 1024, "tar ends with exactly two empty blocks");
+    assert.ok(archive.subarray(offset).every((byte) => byte === 0));
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

@@ -4,6 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import workerThreads, { type WorkerOptions } from "node:worker_threads";
 import {
   RuntimeTraceQueue,
   traceOperation,
@@ -22,28 +23,53 @@ async function fixture(operation: (root: string) => Promise<void>): Promise<void
   }
 }
 
-test("a slow diagnostic writer does not delay the next lifecycle operation", async () => {
-  const promises = fsPromises;
-  const original = promises.appendFile;
-  const previous = process.env.ASSERTLEDGER_RUNTIME_TRACE;
-  promises.appendFile = async () => new Promise((resolve) => setTimeout(resolve, 250));
+test("a slow diagnostic writer does not delay the next lifecycle operation", {
+  timeout: 5000,
+}, async (context) => {
+  const OriginalWorker = workerThreads.Worker;
+  let entered: (() => void) | undefined;
+  const writing = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  // Stall the actual writeSync inside the engine's worker, after its ready handshake.
+  const prefix = `(() => {
+    const fs = require('node:fs');
+    const { parentPort } = require('node:worker_threads');
+    const write = fs.writeSync;
+    fs.writeSync = (...args) => {
+      parentPort.postMessage('writer-blocked');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+      return write(...args);
+    };
+  })();`;
+  context.mock.method(
+    workerThreads,
+    "Worker",
+    class extends OriginalWorker {
+      constructor(filename: string | URL, options?: WorkerOptions) {
+        super(prefix + String(filename), options);
+        this.on("message", (message) => {
+          if (message === "writer-blocked") entered?.();
+        });
+      }
+    },
+  );
   syncBuiltinESMExports();
-  process.env.ASSERTLEDGER_RUNTIME_TRACE = "unused-trace-destination";
   try {
     await fixture(async (root) => {
       process.env.ASSERTLEDGER_RUNTIME_TRACE = join(root, "trace.jsonl");
       await withRuntimeTrace([], async () => {
-        const start = performance.now();
         const result = await traceOperation("start", {}, async () => "TIMEOUT");
         assert.equal(result, "TIMEOUT");
+        await writing;
+        const start = performance.now();
+        assert.equal(await traceOperation("kill", {}, async () => "PASS"), "PASS");
         assert.ok(performance.now() - start < 100, "diagnostics delayed the next container kill");
       });
     });
   } finally {
-    promises.appendFile = original;
+    context.mock.restoreAll();
     syncBuiltinESMExports();
-    if (previous === undefined) delete process.env.ASSERTLEDGER_RUNTIME_TRACE;
-    else process.env.ASSERTLEDGER_RUNTIME_TRACE = previous;
   }
 });
 

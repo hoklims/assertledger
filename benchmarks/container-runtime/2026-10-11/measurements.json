@@ -1,6 +1,6 @@
 {
   "schemaVersion": "measurement-1",
-  "acceptedComparison": ["matched-before", "matched-after"],
+  "acceptedComparison": ["rigorous-before", "rigorous-after"],
   "comparisonProjectionSha256": "837fee8ed8f0f27b1a43fb143455d74591dcdb67e18828d1bfc9969a74c2107e",
   "allFifteenImportsVerified": true,
   "allFifteenReplaysValid": true,
@@ -15,9 +15,962 @@
   "expectedFailure": "error: expect(received).toBe(expected)",
   "requiredAttempts": 3,
   "neutral": null,
-  "medianSpeedup": 3.3376924590805546,
-  "medianReductionPercent": 70.03918089339263,
+  "medianSpeedup": 3.21436354383489,
+  "medianReductionPercent": 68.8896421838162,
   "series": {
+    "rigorous-before": {
+      "identity": {
+        "producer": {
+          "digest": "0ec72896b905801929ec79772cb545920d97f7eb58a9fb286d0d6c27edcb109c",
+          "files": 2005
+        },
+        "dependencies": {
+          "digest": "ef3bc8cbb0860e88368758e5cf9097465e1cdba8fbac051c06bfe5372b97dcb4",
+          "files": 1830
+        },
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "transport": "producer-default",
+        "nodeVersion": "v22.23.2",
+        "platform": "win32",
+        "architecture": "x64",
+        "cpuCount": 24,
+        "memoryBytes": 68388532224,
+        "repetitions": 3
+      },
+      "statistics": {
+        "minimumMs": 408213.52240000013,
+        "medianMs": 419721.988,
+        "maximumMs": 500207.4421
+      },
+      "runs": [
+        {
+          "number": 1,
+          "startedAt": "2026-10-11T15:26:54.488Z",
+          "wallMs": 500207.4421,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 999.8762999999999,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 536.2151999999999,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 669.0513000000001,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 30102.231600000014,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 269093.08050000004,
+              "inputBytes": 683834368
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 32789.53099999996,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 29194.23410000013,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 32378.01190000005,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 24928.09129999999,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2975.7497999999905,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 57245.405199999994,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 217,
+          "reusedUploads": 0,
+          "minimumRuntimeMarginMs": 28081.991400000006,
+          "minimumStartMarginMs": 28371.66320000001,
+          "run": 1,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30013.9172,
+              "cpuPercent": 56.96451919362179,
+              "freeMemoryBytes": 4017274880,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60022.28180000001,
+              "cpuPercent": 62.04326124042294,
+              "freeMemoryBytes": 2952044544,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90037.6097,
+              "cpuPercent": 56.90616617562991,
+              "freeMemoryBytes": 3899621376,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120039.6726,
+              "cpuPercent": 63.99998348547341,
+              "freeMemoryBytes": 2676961280,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 150042.623,
+              "cpuPercent": 63.336969365170845,
+              "freeMemoryBytes": 3721822208,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 180055.0509,
+              "cpuPercent": 61.505951128837786,
+              "freeMemoryBytes": 3148566528,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 210058.4607,
+              "cpuPercent": 57.40715270117488,
+              "freeMemoryBytes": 3488215040,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 240070.43699999998,
+              "cpuPercent": 59.36375003954897,
+              "freeMemoryBytes": 3586621440,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 270084.9399,
+              "cpuPercent": 62.003953379286436,
+              "freeMemoryBytes": 2573398016,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 300101.331,
+              "cpuPercent": 69.22377764475223,
+              "freeMemoryBytes": 2188333056,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 330134.868,
+              "cpuPercent": 67.93236999145142,
+              "freeMemoryBytes": 2211954688,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 360138.5871,
+              "cpuPercent": 58.93629591680749,
+              "freeMemoryBytes": 2110418944,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 390123.3869,
+              "cpuPercent": 54.93067062965792,
+              "freeMemoryBytes": 2972643328,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 420135.6931,
+              "cpuPercent": 60.426833549232605,
+              "freeMemoryBytes": 2712371200,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 450141.7941,
+              "cpuPercent": 64.74668810581541,
+              "freeMemoryBytes": 2884567040,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 480153.7053,
+              "cpuPercent": 56.58526628214571,
+              "freeMemoryBytes": 2929483776,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "aa4f5290bea19731a166f631c3ef60564faf53e1b618ff858ed1749970c77d1f",
+          "traceSha256": "be51e06c5eb0f7a0c8689ae28b7c92f02883814b185276f93785e43723f2190a",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:74e497d1455d20ec8b2bbfc1e780426b3845163f44e885980e7553933c51982c",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "df4f5a3110d55d72b1772b17543c4e939f53b852709a05398063cb4812bb8db7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "number": 2,
+          "startedAt": "2026-10-11T15:35:17.337Z",
+          "wallMs": 419721.988,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 443.515,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 486.81759999999997,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 444.43460000000005,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 28980.5563,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 228881.53019999992,
+              "inputBytes": 683834368
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 27037.74510000005,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 22462.36530000004,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 28287.533400000037,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 22727.544800000003,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2366.462599999999,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 41599.97690000001,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 217,
+          "reusedUploads": 0,
+          "minimumRuntimeMarginMs": 28468.07740000001,
+          "minimumStartMarginMs": 28912.6362,
+          "run": 2,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30006.755800000043,
+              "cpuPercent": 55.6190090231658,
+              "freeMemoryBytes": 3855630336,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60012.9216,
+              "cpuPercent": 53.72878719253733,
+              "freeMemoryBytes": 4413386752,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90015.28749999998,
+              "cpuPercent": 58.633179128889324,
+              "freeMemoryBytes": 3024703488,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120017.78639999998,
+              "cpuPercent": 55.65245327263192,
+              "freeMemoryBytes": 2747445248,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 150023.2881,
+              "cpuPercent": 59.44864928847983,
+              "freeMemoryBytes": 3213070336,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 180026.8162,
+              "cpuPercent": 61.58336945975517,
+              "freeMemoryBytes": 3289161728,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 210035.78980000003,
+              "cpuPercent": 64.75443937786717,
+              "freeMemoryBytes": 2455277568,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 240038.6505,
+              "cpuPercent": 64.40649732719706,
+              "freeMemoryBytes": 3282989056,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 270044.66800000006,
+              "cpuPercent": 58.19990255906325,
+              "freeMemoryBytes": 2437165056,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 300045.83070000005,
+              "cpuPercent": 54.88892751799703,
+              "freeMemoryBytes": 2793418752,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 330054.3968,
+              "cpuPercent": 56.721194977041925,
+              "freeMemoryBytes": 2934865920,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 360060.0965,
+              "cpuPercent": 56.779757722908805,
+              "freeMemoryBytes": 3457245184,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 390060.615,
+              "cpuPercent": 59.34559623301345,
+              "freeMemoryBytes": 2721140736,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "1e8b6884c789d9eb6bf2e0b1ef0c8c0dd079b690c01bda3f7da9b24f3eded085",
+          "traceSha256": "2a67a3b6ace632b9b3f15f121fa5db0de2e5da0be6e3c431a7092dccfd5f9118",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:648cd1555fb718bd96797524f02de4e6daf9f906fe7efbaf2dc1bf862a0ae3fe",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "333ade42e3ba416182c836f55be66d5bd24ec7e0b5f9fa8d39440873a4e92dc7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "number": 3,
+          "startedAt": "2026-10-11T15:42:17.834Z",
+          "wallMs": 408213.52240000013,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 595.6836000000001,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 619.0764,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 610.2274000000002,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 25032.998499999976,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 226728.50660000008,
+              "inputBytes": 683834368
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 29110.046499999866,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 21415.12049999996,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 25155.450000000044,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 19009.289900000033,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 3112.7281999999977,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 41250.887299999915,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 217,
+          "reusedUploads": 0,
+          "minimumRuntimeMarginMs": 28312.0718,
+          "minimumStartMarginMs": 28665.559400000006,
+          "run": 3,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30013.51620000007,
+              "cpuPercent": 65.31303830976924,
+              "freeMemoryBytes": 3642527744,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60024.88730000006,
+              "cpuPercent": 66.0457747350528,
+              "freeMemoryBytes": 1667866624,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90028.24320000003,
+              "cpuPercent": 54.12605068653812,
+              "freeMemoryBytes": 4610334720,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120037.31019999995,
+              "cpuPercent": 52.232368691289274,
+              "freeMemoryBytes": 4425342976,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 150050.85080000013,
+              "cpuPercent": 49.57866097714266,
+              "freeMemoryBytes": 2931568640,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 180057.8844000001,
+              "cpuPercent": 54.46731608410103,
+              "freeMemoryBytes": 3143585792,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 210062.35300000012,
+              "cpuPercent": 58.554453836374734,
+              "freeMemoryBytes": 3464048640,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 240071.26600000006,
+              "cpuPercent": 59.29212070468445,
+              "freeMemoryBytes": 3353157632,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 270070.8728,
+              "cpuPercent": 66.80079623647397,
+              "freeMemoryBytes": 4712284160,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 300079.75029999996,
+              "cpuPercent": 53.27812693428031,
+              "freeMemoryBytes": 2838773760,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 330085.47,
+              "cpuPercent": 60.897117176427805,
+              "freeMemoryBytes": 3358322688,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 360096.8081,
+              "cpuPercent": 55.583470227004625,
+              "freeMemoryBytes": 2851958784,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 390097.2594999999,
+              "cpuPercent": 53.38225411854965,
+              "freeMemoryBytes": 3108843520,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "1dc7b6c34c7a02c439fcde923a7fcfc89bb40958aee1e7af23577d46c7df1aa7",
+          "traceSha256": "e6080afe6c611fd58f2365f531bc00ecd8f63a656eea5e205685be012da20260",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:3f00cc27f2af6bc9212ce5e661375eab38ae821e4881b4b40524b7160a3042f9",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "ea415d32d2580da24ca6ad1e3b2d2528aea1c4f8b489294d165eeaff17b97670",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "completionResultsSha256": "4933c95d9d2849b799bcabbf4031529a9a53b08d68e22e413bff1106e4041421"
+    },
+    "rigorous-after": {
+      "identity": {
+        "producer": {
+          "digest": "42beb8f4cec33cfc7220fa30174887c49ee8df85c04205b537514afe2cda829a",
+          "files": 2009
+        },
+        "dependencies": {
+          "digest": "ef3bc8cbb0860e88368758e5cf9097465e1cdba8fbac051c06bfe5372b97dcb4",
+          "files": 1830
+        },
+        "witnessDigest": "6c84a9135649990f751251e356e202fd3fa92efdd1fe3546282d7bc7ca47e1f9",
+        "image": "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
+        "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
+        "transport": "producer-default",
+        "nodeVersion": "v22.23.2",
+        "platform": "win32",
+        "architecture": "x64",
+        "cpuCount": 24,
+        "memoryBytes": 68388532224,
+        "repetitions": 3
+      },
+      "statistics": {
+        "minimumMs": 127971.16019999998,
+        "medianMs": 130577.0123,
+        "maximumMs": 134180.46839999998
+      },
+      "runs": [
+        {
+          "number": 1,
+          "startedAt": "2026-10-11T15:50:26.960Z",
+          "wallMs": 134180.46839999998,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 573.733,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 760.5328999999999,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 463.7071000000001,
+              "inputBytes": 0
+            },
+            "stdio-connect": {
+              "calls": 1,
+              "durationMs": 713.1844999999998,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 1999.0249000000344,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 34016.93789999998,
+              "inputBytes": 196445293
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 28427.830799999996,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 66.37340000000813,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 5067.414800000024,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 300.827199999997,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2120.458499999997,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 43794.28389999995,
+              "inputBytes": 0
+            },
+            "stdio-close": {
+              "calls": 1,
+              "durationMs": 6.11699999999837,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 40,
+          "reusedUploads": 16,
+          "minimumRuntimeMarginMs": 28807.6666,
+          "minimumStartMarginMs": 28807.6666,
+          "run": 1,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30008.973599999998,
+              "cpuPercent": 52.87184219950962,
+              "freeMemoryBytes": 2973388800,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60283.0122,
+              "cpuPercent": 68.3199864110706,
+              "freeMemoryBytes": 2006290432,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90024.0361,
+              "cpuPercent": 68.75199551070561,
+              "freeMemoryBytes": 2131468288,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120030.80630000001,
+              "cpuPercent": 60.991392643122566,
+              "freeMemoryBytes": 2743185408,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "195b0f653ad95c3d9ac3552a9563bba6d698a59a805c46114233904d53c9bf2a",
+          "traceSha256": "b22cd8b0fc2d2e0b1e87d65ddbfe4ae229b317ef36f89322d8047cedb704e441",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:a5852c85a663ebee6455dd4594fc1a408b862b0fd91c2028814f837bc02688ca",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "0a8469b7dde236fd62a08600f278863b7907d54f08930c26183c50966c216c80",
+          "stderrSha256": "c88c3813acbd0a6e22f8d6263fda88ccaed01562445406456b6b16eff6bbc92d"
+        },
+        {
+          "number": 2,
+          "startedAt": "2026-10-11T15:52:41.489Z",
+          "wallMs": 127971.16019999998,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 426.96260000000007,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 792.1617,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 481.5401999999999,
+              "inputBytes": 0
+            },
+            "stdio-connect": {
+              "calls": 1,
+              "durationMs": 708.1264000000001,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 1914.706100000023,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 31744.17179999999,
+              "inputBytes": 196445293
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 27803.657400000033,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 61.943500000016684,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 4957.673200000012,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 310.98220000006313,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 2477.7272999999986,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 40712.502999999975,
+              "inputBytes": 0
+            },
+            "stdio-close": {
+              "calls": 1,
+              "durationMs": 5.960800000000745,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 40,
+          "reusedUploads": 16,
+          "minimumRuntimeMarginMs": 28649.218,
+          "minimumStartMarginMs": 28649.218,
+          "run": 2,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30016.017900000006,
+              "cpuPercent": 57.01158158728585,
+              "freeMemoryBytes": 1800409088,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60015.99649999998,
+              "cpuPercent": 57.23850754692308,
+              "freeMemoryBytes": 2743365632,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90017.35999999999,
+              "cpuPercent": 55.35454035294782,
+              "freeMemoryBytes": 3334979584,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120018.8995,
+              "cpuPercent": 57.13951539552823,
+              "freeMemoryBytes": 1894236160,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "ceb5a8e508abaf2cf1f56eb878f2b518aedc13b0c76ea6e08ee02c3fdee68e54",
+          "traceSha256": "9808e1872f84d190b527e723b79a812bfaccabb43c790b60ef9405ba6e793601",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:f7e88d5a8b94da7b70b50879a7165baae9b9101f2a63524a77ed0c7b8180ee52",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "47ce590efb5ac603cd3037d97ee08cba0ab7e942e48ede3bf1cf818ad1d2c716",
+          "stderrSha256": "09eef30109ee36317dbe20cd870d6feebe9b57998027f6949589a4f593fc21f4"
+        },
+        {
+          "number": 3,
+          "startedAt": "2026-10-11T15:54:49.740Z",
+          "wallMs": 130577.0123,
+          "code": 0,
+          "signal": null,
+          "verdict": "VERIFIED",
+          "replay": true,
+          "phases": {
+            "version": {
+              "calls": 1,
+              "durationMs": 610.2458,
+              "inputBytes": 0
+            },
+            "info": {
+              "calls": 1,
+              "durationMs": 481.31600000000003,
+              "inputBytes": 0
+            },
+            "image-inspect": {
+              "calls": 1,
+              "durationMs": 1310.1177,
+              "inputBytes": 0
+            },
+            "stdio-connect": {
+              "calls": 1,
+              "durationMs": 631.4709000000003,
+              "inputBytes": 0
+            },
+            "create": {
+              "calls": 36,
+              "durationMs": 1970.2971999999672,
+              "inputBytes": 0
+            },
+            "upload": {
+              "calls": 36,
+              "durationMs": 31644.111700000027,
+              "inputBytes": 196445293
+            },
+            "start": {
+              "calls": 36,
+              "durationMs": 28005.45499999998,
+              "inputBytes": 0
+            },
+            "inspect": {
+              "calls": 36,
+              "durationMs": 66.29969999998593,
+              "inputBytes": 0
+            },
+            "remove": {
+              "calls": 36,
+              "durationMs": 4963.974799999961,
+              "inputBytes": 0
+            },
+            "download": {
+              "calls": 34,
+              "durationMs": 304.00290000001223,
+              "inputBytes": 0
+            },
+            "host-snapshot": {
+              "calls": 1,
+              "durationMs": 1962.2451,
+              "inputBytes": 0
+            },
+            "host-workspace-copy": {
+              "calls": 18,
+              "durationMs": 42843.57769999998,
+              "inputBytes": 0
+            },
+            "stdio-close": {
+              "calls": 1,
+              "durationMs": 5.233400000011898,
+              "inputBytes": 0
+            }
+          },
+          "classes": {
+            "campaign-load": 9,
+            "preflight": 16,
+            "campaign-test": 9,
+            "identity": 2
+          },
+          "containers": 36,
+          "logicalRuntimeCalls": 217,
+          "runtimeInvocations": 40,
+          "reusedUploads": 16,
+          "minimumRuntimeMarginMs": 28251.87,
+          "minimumStartMarginMs": 28251.87,
+          "run": 3,
+          "observations": 18,
+          "loadSamples": [
+            {
+              "elapsedMs": 30006.150000000023,
+              "cpuPercent": 53.89928303128153,
+              "freeMemoryBytes": 1526149120,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 60007.68469999998,
+              "cpuPercent": 57.67763576777736,
+              "freeMemoryBytes": 2808844288,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 90019.58350000001,
+              "cpuPercent": 55.230617388635075,
+              "freeMemoryBytes": 4184334336,
+              "loadAverage": [0, 0, 0]
+            },
+            {
+              "elapsedMs": 120036.05450000003,
+              "cpuPercent": 54.29369090596528,
+              "freeMemoryBytes": 3317714944,
+              "loadAverage": [0, 0, 0]
+            }
+          ],
+          "manifestSha256": "7e44534d3f12c77028be9a26d6fc7d6d5ae9de4be4d6e0a2f1c47d1b92ddddbe",
+          "traceSha256": "3607553cb0bf1f439b3e1ef4f5335bd5f84209042d1c38a1db5ee233a0383969",
+          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
+          "artifactDigest": "sha256:bd59ff3925a37c271e03200cab4adad559dbd18b78e94f8e184b750ed40feccd",
+          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+          "stdoutSha256": "a21a8729becbc9be21ac5de899a7731ac36637ebeac70d69f898d056f00c7849",
+          "stderrSha256": "6b1a15c1da20c5805a78b61e3015b21e29a0f38d6261735964afe30b8452599f"
+        }
+      ],
+      "completionResultsSha256": "fd45fac3e2ef97f5f8af482dad2d014b85adcfba0954be46214e84e5f5f507cc"
+    }
+  },
+  "repositoryDigest": "sha256:99307d4860e0542521bce08aa538e168ccac5129b269317938043c7f18c5bbd4",
+  "schemaVersionOfManifest": "4.0.0",
+  "sourceModuleCountVerified": 42,
+  "historicalSeriesStatistics": {
     "before": {
       "identity": {
         "runtime": ["wsl.exe", "-d", "Ubuntu", "--exec", "docker"],
@@ -37,484 +990,7 @@
         "minimumMs": 394229.6203999999,
         "medianMs": 413645.7907000001,
         "maximumMs": 548764.9778
-      },
-      "runs": [
-        {
-          "run": 1,
-          "wallMs": 548764.9778,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 614.6176999999999,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 744.8319999999999,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 1057.6607999999997,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 45962.149699999914,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 282647.39029999985,
-              "inputBytes": 683834368
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 46298.773800000126,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 34331.63800000011,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 31898.11630000001,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 35794.545700000046,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2585.010500000004,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 42859.68680000029,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 217,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "fd5513dae16e2c9214b881a2467d1779e1435bbdea900255ea451c859b084574",
-          "artifactDigest": "sha256:be71d7f0c18af0ab18b0da4e9d5761044449abccd1f8f44357c16b4d24acbebe",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "a5a3894aaeb15f450dc45d640ccfefd475fb1c75d34078b9375b1b8e76d69e26",
-          "stdoutSha256": "b429d5181e819ed19d7cb64f6539b0cbbfdc0249324d1bee640e9d098e1b9f44",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28612.1066,
-          "loadSamples": [
-            {
-              "elapsedMs": 30004.015900000002,
-              "cpuPercent": 51.5341006131995,
-              "freeMemoryBytes": 6881611776
-            },
-            {
-              "elapsedMs": 60005.9324,
-              "cpuPercent": 58.91510230647865,
-              "freeMemoryBytes": 4057878528
-            },
-            {
-              "elapsedMs": 90019.6929,
-              "cpuPercent": 64.30526100217027,
-              "freeMemoryBytes": 4486062080
-            },
-            {
-              "elapsedMs": 120031.66949999999,
-              "cpuPercent": 69.33488453228466,
-              "freeMemoryBytes": 3630972928
-            },
-            {
-              "elapsedMs": 150033.9626,
-              "cpuPercent": 66.05087717369797,
-              "freeMemoryBytes": 6243057664
-            },
-            {
-              "elapsedMs": 180046.0547,
-              "cpuPercent": 62.749468236497606,
-              "freeMemoryBytes": 7902949376
-            },
-            {
-              "elapsedMs": 210047.6798,
-              "cpuPercent": 69.51129920616503,
-              "freeMemoryBytes": 7351881728
-            },
-            {
-              "elapsedMs": 240055.266,
-              "cpuPercent": 58.0357929151714,
-              "freeMemoryBytes": 7488712704
-            },
-            {
-              "elapsedMs": 270060.7465,
-              "cpuPercent": 66.14043021719796,
-              "freeMemoryBytes": 4879679488
-            },
-            {
-              "elapsedMs": 300061.4671,
-              "cpuPercent": 55.03431974806045,
-              "freeMemoryBytes": 8061091840
-            },
-            {
-              "elapsedMs": 330454.9483,
-              "cpuPercent": 45.646920040945695,
-              "freeMemoryBytes": 6637023232
-            },
-            {
-              "elapsedMs": 360124.1554,
-              "cpuPercent": 60.53203520540635,
-              "freeMemoryBytes": 8080240640
-            },
-            {
-              "elapsedMs": 390136.4706,
-              "cpuPercent": 66.01364289462333,
-              "freeMemoryBytes": 6923935744
-            },
-            {
-              "elapsedMs": 420151.5493,
-              "cpuPercent": 53.72727648038311,
-              "freeMemoryBytes": 7074189312
-            },
-            {
-              "elapsedMs": 450164.8541,
-              "cpuPercent": 67.48451865854896,
-              "freeMemoryBytes": 5116133376
-            },
-            {
-              "elapsedMs": 480164.52880000003,
-              "cpuPercent": 66.71849139187191,
-              "freeMemoryBytes": 4551503872
-            },
-            {
-              "elapsedMs": 510176.544,
-              "cpuPercent": 56.57781090805065,
-              "freeMemoryBytes": 8524800000
-            },
-            {
-              "elapsedMs": 540189.0451999999,
-              "cpuPercent": 47.26218947693257,
-              "freeMemoryBytes": 8393936896
-            }
-          ],
-          "wslLoadBefore": "0.45 0.67 0.63 1/911 625322",
-          "wslLoadAfter": "0.75 0.91 0.81 1/911 631390"
-        },
-        {
-          "run": 2,
-          "wallMs": 394229.6203999999,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 572.9151999999999,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 1036.75,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 426.0906,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 20143.97099999996,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 232496.07660000003,
-              "inputBytes": 683834368
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 25166.316999999995,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 19493.722799999974,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 20677.478400000058,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 16703.884700000017,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2198.233800000002,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 39971.74539999993,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 217,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "eb508e69e235d63ac3e8c80e8b99d032b4d1c286ccbc35a9c78c20ec0a364a5e",
-          "artifactDigest": "sha256:54105980cfde8fc68d1917116034bc8e8f25ee03a7d88df188f92fc8740cd296",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "d6cfb7fbe7a738b82f2999133c8d0d2ef1ee9be286614f77a313669779bcd03f",
-          "stdoutSha256": "90e54b4367096c1228ab1f3b7e52677ed230ce145fb86195fa74c8d71de54c29",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28770.841399999998,
-          "loadSamples": [
-            {
-              "elapsedMs": 30002.543499999912,
-              "cpuPercent": 39.139602727967734,
-              "freeMemoryBytes": 8475729920
-            },
-            {
-              "elapsedMs": 60003.773499999894,
-              "cpuPercent": 36.98854450042213,
-              "freeMemoryBytes": 8920993792
-            },
-            {
-              "elapsedMs": 90006.92299999995,
-              "cpuPercent": 40.58286235438805,
-              "freeMemoryBytes": 8396214272
-            },
-            {
-              "elapsedMs": 120006.8555999999,
-              "cpuPercent": 37.85112941449429,
-              "freeMemoryBytes": 9053241344
-            },
-            {
-              "elapsedMs": 150019.8812999999,
-              "cpuPercent": 39.0734761791946,
-              "freeMemoryBytes": 8746864640
-            },
-            {
-              "elapsedMs": 180033.7799999999,
-              "cpuPercent": 37.96823308581085,
-              "freeMemoryBytes": 8434626560
-            },
-            {
-              "elapsedMs": 210042.86109999998,
-              "cpuPercent": 43.42347239333208,
-              "freeMemoryBytes": 9190637568
-            },
-            {
-              "elapsedMs": 240050.3091999999,
-              "cpuPercent": 41.85531645220841,
-              "freeMemoryBytes": 8986763264
-            },
-            {
-              "elapsedMs": 270063.6405,
-              "cpuPercent": 37.28031670835335,
-              "freeMemoryBytes": 8511447040
-            },
-            {
-              "elapsedMs": 300068.3696999999,
-              "cpuPercent": 32.773293899776114,
-              "freeMemoryBytes": 9207291904
-            },
-            {
-              "elapsedMs": 330079.54169999994,
-              "cpuPercent": 34.78188266791792,
-              "freeMemoryBytes": 8512622592
-            },
-            {
-              "elapsedMs": 360089.9010999999,
-              "cpuPercent": 32.206987471636374,
-              "freeMemoryBytes": 8817971200
-            },
-            {
-              "elapsedMs": 390099.67779999995,
-              "cpuPercent": 32.34408578389397,
-              "freeMemoryBytes": 9290178560
-            }
-          ],
-          "wslLoadBefore": "0.75 0.91 0.81 1/911 631393",
-          "wslLoadAfter": "0.47 0.67 0.74 1/891 637370"
-        },
-        {
-          "run": 3,
-          "wallMs": 413645.7907000001,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 909.8763,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 449.38440000000014,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 475.3891000000001,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 23600.53289999994,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 239652.33660000013,
-              "inputBytes": 683834368
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 25949.8919000001,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 20089.955700000057,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 25817.886699999995,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 19769.0238999999,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2120.0564999999915,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 39369.51720000002,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 217,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "a3c1ce25451e4c911be6be7c385bc61d3f3a26fd1183172de89995b8295644ba",
-          "artifactDigest": "sha256:bce653c7fc68efda7cabba6ee7ccfbbf944bb421bba5ac9e8ab4f241d24731bf",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "fa9521321c725e93ee0415779aff446204362f0ee2e33b5ee97f1e02717cfa0c",
-          "stdoutSha256": "f7746071c837c7d0e24f2d49552c0c2be43d849a5f670c680d195088344ad1c5",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 29044.2169,
-          "loadSamples": [
-            {
-              "elapsedMs": 30003.61030000006,
-              "cpuPercent": 35.69913735093932,
-              "freeMemoryBytes": 8965300224
-            },
-            {
-              "elapsedMs": 60015.720300000045,
-              "cpuPercent": 38.365170104045156,
-              "freeMemoryBytes": 8774754304
-            },
-            {
-              "elapsedMs": 90022.52650000004,
-              "cpuPercent": 37.682037913317714,
-              "freeMemoryBytes": 9051803648
-            },
-            {
-              "elapsedMs": 120030.76639999996,
-              "cpuPercent": 30.829428103017975,
-              "freeMemoryBytes": 8632582144
-            },
-            {
-              "elapsedMs": 150041.30700000015,
-              "cpuPercent": 37.10890044839087,
-              "freeMemoryBytes": 8733859840
-            },
-            {
-              "elapsedMs": 180042.0934,
-              "cpuPercent": 39.13635830856954,
-              "freeMemoryBytes": 8528527360
-            },
-            {
-              "elapsedMs": 210055.02240000002,
-              "cpuPercent": 42.64221150159568,
-              "freeMemoryBytes": 8330842112
-            },
-            {
-              "elapsedMs": 240060.11170000012,
-              "cpuPercent": 37.337257369295386,
-              "freeMemoryBytes": 8944283648
-            },
-            {
-              "elapsedMs": 270071.92740000004,
-              "cpuPercent": 46.51356596888856,
-              "freeMemoryBytes": 4965343232
-            },
-            {
-              "elapsedMs": 300072.40520000004,
-              "cpuPercent": 41.558389593259015,
-              "freeMemoryBytes": 7979290624
-            },
-            {
-              "elapsedMs": 330075.38249999995,
-              "cpuPercent": 44.04018272390914,
-              "freeMemoryBytes": 8390524928
-            },
-            {
-              "elapsedMs": 360079.2385000001,
-              "cpuPercent": 50.56327196650413,
-              "freeMemoryBytes": 7214202880
-            },
-            {
-              "elapsedMs": 390090.14710000006,
-              "cpuPercent": 55.22891241318859,
-              "freeMemoryBytes": 7490916352
-            }
-          ],
-          "wslLoadBefore": "0.47 0.67 0.74 1/891 637373",
-          "wslLoadAfter": "0.61 0.63 0.71 1/886 643359"
-        }
-      ]
+      }
     },
     "after": {
       "identity": {
@@ -535,449 +1011,7 @@
         "minimumMs": 319320.64430000004,
         "medianMs": 322212.534,
         "maximumMs": 338069.8203
-      },
-      "runs": [
-        {
-          "run": 1,
-          "wallMs": 338069.8203,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 408.7193000000001,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 413.99779999999987,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 440.0919000000001,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 630.5252,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 2055.9272999998916,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 235647.02629999997,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 23942.59499999995,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 68.09069999991743,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 5070.630599999986,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 308.94560000006004,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2859.059699999998,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 45351.66360000008,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 6.288799999980256,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "cf415cc00ab1cd947b5028fce3756d799a6509c30d55bd0ffecb9b55bc2184ff",
-          "artifactDigest": "sha256:80a0123e829fe6ca987bfe1ed318ef7d60919a2fc11d7f60e20f42947b72f08e",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "6b890c39a1fd5e5de826c7168e32a0405b298d744dba366b34e1608093970b16",
-          "stdoutSha256": "458d435774e88fd55e9513d965ad91712b71ae9ee806b3788b008015e24525eb",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 29059.367,
-          "loadSamples": [
-            {
-              "elapsedMs": 30012.9486,
-              "cpuPercent": 53.949618240740996,
-              "freeMemoryBytes": 8123498496
-            },
-            {
-              "elapsedMs": 60015.7556,
-              "cpuPercent": 49.151016367494435,
-              "freeMemoryBytes": 7597584384
-            },
-            {
-              "elapsedMs": 90019.8678,
-              "cpuPercent": 47.54241561655236,
-              "freeMemoryBytes": 8038510592
-            },
-            {
-              "elapsedMs": 120032.07800000001,
-              "cpuPercent": 46.29116277915701,
-              "freeMemoryBytes": 7894630400
-            },
-            {
-              "elapsedMs": 150043.51009999998,
-              "cpuPercent": 52.23039961240363,
-              "freeMemoryBytes": 8045293568
-            },
-            {
-              "elapsedMs": 180057.5761,
-              "cpuPercent": 55.023180732582766,
-              "freeMemoryBytes": 7499612160
-            },
-            {
-              "elapsedMs": 210071.2593,
-              "cpuPercent": 53.66737587088808,
-              "freeMemoryBytes": 8404488192
-            },
-            {
-              "elapsedMs": 240081.5877,
-              "cpuPercent": 48.19707596698406,
-              "freeMemoryBytes": 8281100288
-            },
-            {
-              "elapsedMs": 270082.6214,
-              "cpuPercent": 44.392670330397934,
-              "freeMemoryBytes": 8197218304
-            },
-            {
-              "elapsedMs": 300092.24700000003,
-              "cpuPercent": 45.472935517944165,
-              "freeMemoryBytes": 8165634048
-            },
-            {
-              "elapsedMs": 330092.21760000003,
-              "cpuPercent": 42.49343393705689,
-              "freeMemoryBytes": 8442490880
-            }
-          ],
-          "wslLoadBefore": "0.26 0.29 0.39 1/862 644494",
-          "wslLoadAfter": "0.45 0.42 0.41 1/884 648278"
-        },
-        {
-          "run": 2,
-          "wallMs": 322212.534,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 597.4743,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 479.5408000000001,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 415.40160000000014,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 430.76210000000015,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 1912.9780999998998,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 227924.43139999988,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 22211.640600000013,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 66.15360000007877,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 4816.55670000003,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 304.6585000000596,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2561.5069000000003,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 44997.09370000008,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 5.65580000000773,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "c270194acecf3f48cf9974bfd862ba539a206081407d05a1ea38ef52518aa21c",
-          "artifactDigest": "sha256:fa678188c20cbc691bf04134cb7633a8f6a25ddde61662be61f6079dac1a8601",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "2a3ef9a6388c2e1d8c3d769638d38794b7c60c5fc43c4c8e52328af37e89b31c",
-          "stdoutSha256": "207cd058f724790f2f1c95e861675ed7936e2441e37ab2cbe10e07ea9bc880bf",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 29109.8312,
-          "loadSamples": [
-            {
-              "elapsedMs": 30004.830799999996,
-              "cpuPercent": 44.03817793398112,
-              "freeMemoryBytes": 8040509440
-            },
-            {
-              "elapsedMs": 60016.157999999996,
-              "cpuPercent": 48.032161805996395,
-              "freeMemoryBytes": 8251494400
-            },
-            {
-              "elapsedMs": 90024.9816,
-              "cpuPercent": 44.802492663189994,
-              "freeMemoryBytes": 8146563072
-            },
-            {
-              "elapsedMs": 120027.74900000001,
-              "cpuPercent": 42.58945991516935,
-              "freeMemoryBytes": 7957377024
-            },
-            {
-              "elapsedMs": 150036.35080000001,
-              "cpuPercent": 42.75840852875405,
-              "freeMemoryBytes": 8334897152
-            },
-            {
-              "elapsedMs": 180050.1813,
-              "cpuPercent": 40.7760646766512,
-              "freeMemoryBytes": 8248688640
-            },
-            {
-              "elapsedMs": 210057.02170000004,
-              "cpuPercent": 38.82735850619199,
-              "freeMemoryBytes": 8223039488
-            },
-            {
-              "elapsedMs": 240067.34309999994,
-              "cpuPercent": 42.75634107039722,
-              "freeMemoryBytes": 8115343360
-            },
-            {
-              "elapsedMs": 270081.25399999996,
-              "cpuPercent": 47.00441645944411,
-              "freeMemoryBytes": 7166779392
-            },
-            {
-              "elapsedMs": 300083.4588,
-              "cpuPercent": 40.60223007286376,
-              "freeMemoryBytes": 8181190656
-            }
-          ],
-          "wslLoadBefore": "0.45 0.42 0.41 1/884 648281",
-          "wslLoadAfter": "0.30 0.40 0.42 1/883 652045"
-        },
-        {
-          "run": 3,
-          "wallMs": 319320.64430000004,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 591.4967,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 475.8579000000001,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 420.4906000000001,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 432.33320000000003,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 1935.8568000000646,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 225240.53300000002,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 22251.06100000003,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 68.17709999998169,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 4669.533000000129,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 312.08529999993243,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2406.4591,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 44534.72810000005,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 6.260899999993853,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "69bb81a593a855829e5dce81ca9d69d21bec13d1176515f3fea5d06d3bc253e1",
-          "artifactDigest": "sha256:0853905c66873b05aa8babe8de802d149a4d0fb3a357ac62d3f340c192e87a5c",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "5e6baafc545d201d2f476c9037bf02e88d14518b7cc860b6e4e88a9df106e857",
-          "stdoutSha256": "ca69f6f35a56c60d5d72393e5fc09b4dbcdabbe034f7ceb89634d7f0db4c0645",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 29113.404199999997,
-          "loadSamples": [
-            {
-              "elapsedMs": 30012.80469999998,
-              "cpuPercent": 40.67079477596502,
-              "freeMemoryBytes": 7664439296
-            },
-            {
-              "elapsedMs": 60012.43949999998,
-              "cpuPercent": 40.989846664476026,
-              "freeMemoryBytes": 8092295168
-            },
-            {
-              "elapsedMs": 90025.84939999995,
-              "cpuPercent": 44.27386264111388,
-              "freeMemoryBytes": 7777988608
-            },
-            {
-              "elapsedMs": 120034.6078,
-              "cpuPercent": 41.458748824212535,
-              "freeMemoryBytes": 7788744704
-            },
-            {
-              "elapsedMs": 150043.7293,
-              "cpuPercent": 43.01479511904499,
-              "freeMemoryBytes": 7699349504
-            },
-            {
-              "elapsedMs": 180051.18720000004,
-              "cpuPercent": 42.492610076766965,
-              "freeMemoryBytes": 8185163776
-            },
-            {
-              "elapsedMs": 210053.87860000005,
-              "cpuPercent": 41.61141050156869,
-              "freeMemoryBytes": 8037752832
-            },
-            {
-              "elapsedMs": 240068.80610000005,
-              "cpuPercent": 39.53569856962935,
-              "freeMemoryBytes": 8819888128
-            },
-            {
-              "elapsedMs": 270082.1546,
-              "cpuPercent": 39.4484571195336,
-              "freeMemoryBytes": 8310218752
-            },
-            {
-              "elapsedMs": 300087.9159,
-              "cpuPercent": 40.20266310739986,
-              "freeMemoryBytes": 8445083648
-            }
-          ],
-          "wslLoadBefore": "0.30 0.40 0.42 1/883 652048",
-          "wslLoadAfter": "0.75 0.53 0.47 1/884 655803"
-        }
-      ]
+      }
     },
     "final": {
       "identity": {
@@ -998,564 +1032,7 @@
         "minimumMs": 124745.7611,
         "medianMs": 348449.68650000007,
         "maximumMs": 1171072.4575
-      },
-      "runs": [
-        {
-          "run": 1,
-          "wallMs": 1171072.4575,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 5360.503699999999,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 6895.789000000001,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 6645.714499999998,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 5747.1622000000025,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 118321.51819999985,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 142460.00269999978,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 353981.25760000007,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 91.98589999993419,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 71076.8200000003,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 15419.666200000502,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 17937.89400000003,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 349099.7639000005,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 7.968800000147894,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 16,
-          "observations": 18,
-          "manifestSha256": "edf3c25ca96def8a91d4eb86d10d626a2435fb8d9c1d5c8fc2e26bfdf14fa0ef",
-          "artifactDigest": "sha256:bf825f3bfc789659d681688013661bc3bc25c21525c10ed08d056985955c83ee",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "f37a62e71d2bfccc69f5e226af30eae5002ad44b1cfc05029515eed32c54a8b5",
-          "stdoutSha256": "7e0da0956830d4357ee20d32eb079d4572e3015cf8b9c9e8fe5530936e407fa0",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 18260.671799999982,
-          "loadSamples": [
-            {
-              "elapsedMs": 30013.572099999998,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9998602240
-            },
-            {
-              "elapsedMs": 60372.5254,
-              "cpuPercent": 99.99576960447166,
-              "freeMemoryBytes": 9753010176
-            },
-            {
-              "elapsedMs": 90209.1973,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9491050496
-            },
-            {
-              "elapsedMs": 120216.2899,
-              "cpuPercent": 99.9977905709855,
-              "freeMemoryBytes": 9475817472
-            },
-            {
-              "elapsedMs": 150225.6547,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9875320832
-            },
-            {
-              "elapsedMs": 180234.01679999998,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9890418688
-            },
-            {
-              "elapsedMs": 210238.587,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9331920896
-            },
-            {
-              "elapsedMs": 240254.02870000002,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10051751936
-            },
-            {
-              "elapsedMs": 270263.1687,
-              "cpuPercent": 99.99778961256052,
-              "freeMemoryBytes": 9480257536
-            },
-            {
-              "elapsedMs": 300269.534,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10005082112
-            },
-            {
-              "elapsedMs": 330271.1887,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9446432768
-            },
-            {
-              "elapsedMs": 360277.20129999996,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9497223168
-            },
-            {
-              "elapsedMs": 390285.71119999996,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9919434752
-            },
-            {
-              "elapsedMs": 420296.1627,
-              "cpuPercent": 99.99779272897334,
-              "freeMemoryBytes": 9640034304
-            },
-            {
-              "elapsedMs": 450305.6701,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9033269248
-            },
-            {
-              "elapsedMs": 480310.49689999997,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9516548096
-            },
-            {
-              "elapsedMs": 510321.32759999996,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9117822976
-            },
-            {
-              "elapsedMs": 540333.7154,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9257357312
-            },
-            {
-              "elapsedMs": 570339.9758,
-              "cpuPercent": 99.99350885213028,
-              "freeMemoryBytes": 9204846592
-            },
-            {
-              "elapsedMs": 600343.1088,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9147019264
-            },
-            {
-              "elapsedMs": 630362.3063,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9051086848
-            },
-            {
-              "elapsedMs": 660348.7654,
-              "cpuPercent": 99.9977898293472,
-              "freeMemoryBytes": 9505865728
-            },
-            {
-              "elapsedMs": 690349.1795000001,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9869312000
-            },
-            {
-              "elapsedMs": 720358.836,
-              "cpuPercent": 99.9979298152153,
-              "freeMemoryBytes": 9196232704
-            },
-            {
-              "elapsedMs": 750365.223,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9332838400
-            },
-            {
-              "elapsedMs": 780374.6566,
-              "cpuPercent": 99.99793050640508,
-              "freeMemoryBytes": 9635487744
-            },
-            {
-              "elapsedMs": 814227.6199,
-              "cpuPercent": 99.99807960424484,
-              "freeMemoryBytes": 9108738048
-            },
-            {
-              "elapsedMs": 840558.8478,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9598636032
-            },
-            {
-              "elapsedMs": 870560.5183,
-              "cpuPercent": 99.9977897194325,
-              "freeMemoryBytes": 9089368064
-            },
-            {
-              "elapsedMs": 900562.7322000001,
-              "cpuPercent": 99.42819742032944,
-              "freeMemoryBytes": 9149902848
-            },
-            {
-              "elapsedMs": 930564.109,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9802665984
-            },
-            {
-              "elapsedMs": 960571.1206,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9721868288
-            },
-            {
-              "elapsedMs": 990584.8626,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9813643264
-            },
-            {
-              "elapsedMs": 1020594.2455000001,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 9788436480
-            },
-            {
-              "elapsedMs": 1050604.66,
-              "cpuPercent": 99.99778919413362,
-              "freeMemoryBytes": 10066903040
-            },
-            {
-              "elapsedMs": 1080615.9566,
-              "cpuPercent": 99.99778977439122,
-              "freeMemoryBytes": 9774047232
-            },
-            {
-              "elapsedMs": 1110630.13,
-              "cpuPercent": 99.9977908516405,
-              "freeMemoryBytes": 9687425024
-            },
-            {
-              "elapsedMs": 1140641.5248,
-              "cpuPercent": 99.99793027510783,
-              "freeMemoryBytes": 10353483776
-            },
-            {
-              "elapsedMs": 1170651.4834999999,
-              "cpuPercent": 82.6889505845395,
-              "freeMemoryBytes": 9875013632
-            }
-          ],
-          "wslLoadBefore": "0.73 0.71 0.66 1/881 656091",
-          "wslLoadAfter": "1.23 1.18 1.04 1/881 660175"
-        },
-        {
-          "run": 2,
-          "wallMs": 348449.68650000007,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 7800.4554,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 5268.5947000000015,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 6318.493299999998,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 6735.5875000000015,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 46424.02419999988,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 42163.15840000012,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 138773.95700000005,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 70.68840000004275,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 23624.842099999958,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 3024.8825000000215,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 1918.7783000000054,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 45136.441300000006,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 4.277200000011362,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 16,
-          "observations": 18,
-          "manifestSha256": "b4783a801201f284a9e93aa6f1eaad0aa862128cb8ded2b17d5094cfb1f11046",
-          "artifactDigest": "sha256:94dd8ef1bb658773e50bd9b6abce6762250a6b01131fa98ae62037953f192e46",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "acf70b46f83cd1e079514f0d2615aecd153375c20a5dcedace04541ba4b5f804",
-          "stdoutSha256": "c96786741738da94a30dae239eda70477f5e9f3eb264118bbfab2ff480b81d28",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 12708.87490000001,
-          "loadSamples": [
-            {
-              "elapsedMs": 30005.725499999942,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10256433152
-            },
-            {
-              "elapsedMs": 60052.67610000004,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10141847552
-            },
-            {
-              "elapsedMs": 91313.87819999992,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10292912128
-            },
-            {
-              "elapsedMs": 120373.42350000003,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10232360960
-            },
-            {
-              "elapsedMs": 150375.69929999998,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10026127360
-            },
-            {
-              "elapsedMs": 180377.64789999998,
-              "cpuPercent": 100,
-              "freeMemoryBytes": 10121768960
-            },
-            {
-              "elapsedMs": 210379.44680000003,
-              "cpuPercent": 99.96990251452065,
-              "freeMemoryBytes": 10228506624
-            },
-            {
-              "elapsedMs": 240391.04480000003,
-              "cpuPercent": 74.01694744692378,
-              "freeMemoryBytes": 10491179008
-            },
-            {
-              "elapsedMs": 270400.517,
-              "cpuPercent": 48.48579611595648,
-              "freeMemoryBytes": 10364669952
-            },
-            {
-              "elapsedMs": 300410.4334,
-              "cpuPercent": 49.427882960413086,
-              "freeMemoryBytes": 10018299904
-            },
-            {
-              "elapsedMs": 330415.31110000005,
-              "cpuPercent": 56.241237498831666,
-              "freeMemoryBytes": 10142953472
-            }
-          ],
-          "wslLoadBefore": "1.21 1.18 1.04 1/880 660181",
-          "wslLoadAfter": "0.87 1.11 1.06 1/890 663998"
-        },
-        {
-          "run": 3,
-          "wallMs": 124745.7611,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 465.78599999999994,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 530.1509,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 485.11750000000006,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 519.0143999999998,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 1808.2797999999857,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 33001.01000000003,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 24376.68669999999,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 55.59319999998888,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 4613.325200000014,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 282.7704000000367,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2119.8783000000003,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 39759.707700000006,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 6.436100000006263,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 16,
-          "observations": 18,
-          "manifestSha256": "a328e4ac729ec089e6b13639e4813a40114379d9bf327a85698d1ae1ad9a1819",
-          "artifactDigest": "sha256:7c129fde2abffbc32d071a715a0a0f5894e58ffe539e37b3f1e840653de647f7",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "2d3e8c775063c7a234118d2b9217c8e5c22fb426732ee4de957e5c4e35605843",
-          "stdoutSha256": "2fda3bad1bd55162f8fd9946485897d8de2cce7260cf4883a9b83dc39f1d681c",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28750.8188,
-          "loadSamples": [
-            {
-              "elapsedMs": 30007.86129999999,
-              "cpuPercent": 44.381667902292754,
-              "freeMemoryBytes": 9720279040
-            },
-            {
-              "elapsedMs": 60019.94039999996,
-              "cpuPercent": 45.186367508290814,
-              "freeMemoryBytes": 9357529088
-            },
-            {
-              "elapsedMs": 90023.15329999989,
-              "cpuPercent": 40.89576535996855,
-              "freeMemoryBytes": 9737732096
-            },
-            {
-              "elapsedMs": 120036.1362999999,
-              "cpuPercent": 45.19829058180029,
-              "freeMemoryBytes": 9539960832
-            }
-          ],
-          "wslLoadBefore": "0.87 1.11 1.06 1/890 664001",
-          "wslLoadAfter": "0.84 1.05 1.04 1/900 667685"
-        }
-      ]
+      }
     },
     "matched-before": {
       "identity": {
@@ -1576,469 +1053,7 @@
         "minimumMs": 398507.67499999993,
         "medianMs": 439124.9793,
         "maximumMs": 440098.0665000001
-      },
-      "runs": [
-        {
-          "run": 1,
-          "wallMs": 439124.9793,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 513.9392,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 576.1264000000001,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 631.5160000000001,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 20958.3548,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 250466.52109999993,
-              "inputBytes": 683834368
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 27600.505299999997,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 21034.789100000206,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 24860.10280000003,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 17965.18380000007,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2273.4352999999974,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 54112.58220000009,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 217,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "b33cae2cfe0759968136342871deb7d1bb4d3af1167aa2dff76216e0865b7b5d",
-          "artifactDigest": "sha256:0720ec06e5fda010bbaa24a824935f72089af30a2e6fed8ccf69b86f4e5b0037",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "868bdd8e324ce164117d3c57e163a492ae45a32257b1ee0dd4f8906168151309",
-          "stdoutSha256": "54242d52af55285d38fdf5171311eb5f2df96719baa516ed4c068582d6eea266",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28677.247499999998,
-          "loadSamples": [
-            {
-              "elapsedMs": 30003.5873,
-              "cpuPercent": 43.409615776796684,
-              "freeMemoryBytes": 9721229312
-            },
-            {
-              "elapsedMs": 60009.1668,
-              "cpuPercent": 48.09023641544227,
-              "freeMemoryBytes": 9574154240
-            },
-            {
-              "elapsedMs": 90020.18609999999,
-              "cpuPercent": 46.079504262996416,
-              "freeMemoryBytes": 9294045184
-            },
-            {
-              "elapsedMs": 120033.1118,
-              "cpuPercent": 42.80797039017968,
-              "freeMemoryBytes": 9079300096
-            },
-            {
-              "elapsedMs": 150036.2183,
-              "cpuPercent": 48.92115104709991,
-              "freeMemoryBytes": 8577085440
-            },
-            {
-              "elapsedMs": 180041.8649,
-              "cpuPercent": 48.15885131679526,
-              "freeMemoryBytes": 8784609280
-            },
-            {
-              "elapsedMs": 210042.9404,
-              "cpuPercent": 46.40454073235038,
-              "freeMemoryBytes": 8823623680
-            },
-            {
-              "elapsedMs": 240054.045,
-              "cpuPercent": 47.73931701620144,
-              "freeMemoryBytes": 8981409792
-            },
-            {
-              "elapsedMs": 270065.4829,
-              "cpuPercent": 48.04628635164777,
-              "freeMemoryBytes": 8210198528
-            },
-            {
-              "elapsedMs": 300079.3762,
-              "cpuPercent": 45.19132403345309,
-              "freeMemoryBytes": 8660021248
-            },
-            {
-              "elapsedMs": 330089.91990000004,
-              "cpuPercent": 38.461177516205645,
-              "freeMemoryBytes": 9630638080
-            },
-            {
-              "elapsedMs": 360091.4721,
-              "cpuPercent": 42.162842575767186,
-              "freeMemoryBytes": 9169752064
-            },
-            {
-              "elapsedMs": 390102.0663,
-              "cpuPercent": 42.51926786261249,
-              "freeMemoryBytes": 8864362496
-            },
-            {
-              "elapsedMs": 420106.5123,
-              "cpuPercent": 42.03598365959419,
-              "freeMemoryBytes": 9586978816
-            }
-          ],
-          "wslLoadBefore": "0.56 0.95 1.01 1/894 667698",
-          "wslLoadAfter": "1.04 0.85 0.93 1/897 673714"
-        },
-        {
-          "run": 2,
-          "wallMs": 440098.0665000001,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 717.523,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 444.6924,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 690.6655999999998,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 22769.947100000027,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 249160.34630000003,
-              "inputBytes": 683834368
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 24684.711100000008,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 19970.25940000005,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 23381.96180000004,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 17516.228600000053,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 3275.0438999999897,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 60353.984000000055,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 217,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "9217fb31e0668374112405ea5f8ca03fe1c6639557f360ac8df729d479e445a8",
-          "artifactDigest": "sha256:896eea182aa327ce4913cf1f35b922b775ac007406fa15ad35f54d8f40e0130d",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "71bc2232a291701faed6aea48dbd761fd2039f8e35a7fe6cec62239a49f97fed",
-          "stdoutSha256": "557503f787203b0f392610ef8847c4409b8fcad1556a97e327971288e1a54d53",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28986.533600000002,
-          "loadSamples": [
-            {
-              "elapsedMs": 30016.6593,
-              "cpuPercent": 45.23510332531422,
-              "freeMemoryBytes": 8627728384
-            },
-            {
-              "elapsedMs": 60023.87210000004,
-              "cpuPercent": 42.30953601005009,
-              "freeMemoryBytes": 8809345024
-            },
-            {
-              "elapsedMs": 90029.90430000005,
-              "cpuPercent": 43.37073815429695,
-              "freeMemoryBytes": 9194037248
-            },
-            {
-              "elapsedMs": 120030.69050000003,
-              "cpuPercent": 44.59597094182715,
-              "freeMemoryBytes": 8585904128
-            },
-            {
-              "elapsedMs": 150034.19819999998,
-              "cpuPercent": 41.80966980383608,
-              "freeMemoryBytes": 9488715776
-            },
-            {
-              "elapsedMs": 180036.80740000005,
-              "cpuPercent": 44.40987066772731,
-              "freeMemoryBytes": 9488588800
-            },
-            {
-              "elapsedMs": 210044.66300000006,
-              "cpuPercent": 42.875538906758614,
-              "freeMemoryBytes": 9519001600
-            },
-            {
-              "elapsedMs": 240055.3225,
-              "cpuPercent": 41.444783545873165,
-              "freeMemoryBytes": 9158688768
-            },
-            {
-              "elapsedMs": 270064.8425,
-              "cpuPercent": 41.37055557395326,
-              "freeMemoryBytes": 9834360832
-            },
-            {
-              "elapsedMs": 300066.346,
-              "cpuPercent": 42.66503549587455,
-              "freeMemoryBytes": 9596583936
-            },
-            {
-              "elapsedMs": 330076.36490000004,
-              "cpuPercent": 44.209443915295054,
-              "freeMemoryBytes": 9039253504
-            },
-            {
-              "elapsedMs": 360078.8371,
-              "cpuPercent": 41.48192772745257,
-              "freeMemoryBytes": 9103695872
-            },
-            {
-              "elapsedMs": 390093.8790000001,
-              "cpuPercent": 42.241226069689866,
-              "freeMemoryBytes": 9030426624
-            },
-            {
-              "elapsedMs": 420086.83310000005,
-              "cpuPercent": 41.07139160282271,
-              "freeMemoryBytes": 9367150592
-            }
-          ],
-          "wslLoadBefore": "0.96 0.83 0.92 1/897 673717",
-          "wslLoadAfter": "0.48 0.63 0.81 1/884 679723"
-        },
-        {
-          "run": 3,
-          "wallMs": 398507.67499999993,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 411.66290000000004,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 876.3521,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 408.1468,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 22040.013199999987,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 237638.31789999997,
-              "inputBytes": 683834368
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 29130.881700000027,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 19160.03940000001,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 23677.13310000013,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 18316.031599999922,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 1613.6166999999987,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 30558.50979999997,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 217,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 0,
-          "observations": 18,
-          "manifestSha256": "759d8c54e3939a4bd7ad4864acfba04d2660e8eb1a943207cbec41c57c28fcbe",
-          "artifactDigest": "sha256:5a1f4b9c9a15fdc44a472f5cca1c8872fa3fe8aaaa6a70881958f3f7a2e67f88",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "81f85c027f4629f0cf71b74e81e6cf0b65af04a20bc5ea3018b38dffb737d7f5",
-          "stdoutSha256": "a8acde2fbf20ff93da7a399bd5142b7944ee9d31e536e38c5064fbb5fdfdfeed",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28365.8742,
-          "loadSamples": [
-            {
-              "elapsedMs": 30014.619000000064,
-              "cpuPercent": 42.60118821475963,
-              "freeMemoryBytes": 8984408064
-            },
-            {
-              "elapsedMs": 60021.0122,
-              "cpuPercent": 43.73343404423653,
-              "freeMemoryBytes": 8748806144
-            },
-            {
-              "elapsedMs": 90025.56280000007,
-              "cpuPercent": 43.436756482232866,
-              "freeMemoryBytes": 9189126144
-            },
-            {
-              "elapsedMs": 120026.12060000002,
-              "cpuPercent": 45.42922872018404,
-              "freeMemoryBytes": 8996995072
-            },
-            {
-              "elapsedMs": 150026.38650000002,
-              "cpuPercent": 43.905537311024275,
-              "freeMemoryBytes": 8788885504
-            },
-            {
-              "elapsedMs": 180029.7513,
-              "cpuPercent": 44.28673738186344,
-              "freeMemoryBytes": 9072099328
-            },
-            {
-              "elapsedMs": 210032.6686000001,
-              "cpuPercent": 42.87089228457882,
-              "freeMemoryBytes": 8729743360
-            },
-            {
-              "elapsedMs": 240034.76049999997,
-              "cpuPercent": 42.11849390155615,
-              "freeMemoryBytes": 9304190976
-            },
-            {
-              "elapsedMs": 270044.59109999996,
-              "cpuPercent": 45.921927838507926,
-              "freeMemoryBytes": 8805863424
-            },
-            {
-              "elapsedMs": 300050.6616000001,
-              "cpuPercent": 47.109624566226536,
-              "freeMemoryBytes": 9145040896
-            },
-            {
-              "elapsedMs": 330055.3952,
-              "cpuPercent": 46.743675733863284,
-              "freeMemoryBytes": 9241382912
-            },
-            {
-              "elapsedMs": 360069.0314999999,
-              "cpuPercent": 44.374546867979035,
-              "freeMemoryBytes": 9424838656
-            },
-            {
-              "elapsedMs": 390072.00730000006,
-              "cpuPercent": 42.966133028712704,
-              "freeMemoryBytes": 9635033088
-            }
-          ],
-          "wslLoadBefore": "0.48 0.63 0.81 1/884 679726",
-          "wslLoadAfter": "0.55 0.61 0.75 1/889 685710"
-        }
-      ]
+      }
     },
     "matched-after": {
       "identity": {
@@ -2059,357 +1074,24 @@
         "minimumMs": 122805.53409999999,
         "medianMs": 131565.44070000004,
         "maximumMs": 136796.8647
-      },
-      "runs": [
-        {
-          "run": 1,
-          "wallMs": 136796.8647,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 438.4779000000001,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 485.3998999999999,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 433.4254000000001,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 734.9998,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 1989.0391999999797,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 35157.69819999999,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 27667.040599999986,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 61.31919999998536,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 5015.723799999987,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 305.48469999996723,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2562.677200000002,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 44319.637100000014,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 5.449999999982538,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 16,
-          "observations": 18,
-          "manifestSha256": "fd7c291a5f6ef089f444ed5f26b13f9c2abe90cc8bb46a457e25422e6cb79c61",
-          "artifactDigest": "sha256:fed2fbb5df0f131428afee69ca3e005292bc244e2f04bc78cc6201c33d1611c1",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "499e85ba27f21b84e35e26e68a1da56dfd12888ebc887bdafea4e2ff42a15278",
-          "stdoutSha256": "c5486d94df59958f96e74922d403c723b1d28bd7ca572d6db9ad9d9981600267",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28363.6259,
-          "loadSamples": [
-            {
-              "elapsedMs": 30015.9042,
-              "cpuPercent": 51.17402231330568,
-              "freeMemoryBytes": 7658143744
-            },
-            {
-              "elapsedMs": 60018.3148,
-              "cpuPercent": 52.984346579948195,
-              "freeMemoryBytes": 8408268800
-            },
-            {
-              "elapsedMs": 90024.1797,
-              "cpuPercent": 53.523636293591416,
-              "freeMemoryBytes": 7984209920
-            },
-            {
-              "elapsedMs": 120033.2518,
-              "cpuPercent": 58.70720018476817,
-              "freeMemoryBytes": 7530692608
-            }
-          ],
-          "wslLoadBefore": "0.37 0.48 0.66 1/889 685890",
-          "wslLoadAfter": "1.15 0.68 0.71 1/889 689610"
-        },
-        {
-          "run": 2,
-          "wallMs": 131565.44070000004,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 451.7966,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 411.1278000000001,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 806.5872999999999,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 816.4984999999999,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 1849.2614999999937,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 33291.116700000035,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 28328.967400000005,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 63.040599999989354,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 4706.509100000038,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 296.3122999999723,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2226.0856999999996,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 42326.23840000001,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 5.789999999979045,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 16,
-          "observations": 18,
-          "manifestSha256": "e2c299c55788c90b2b092013a165ffeb5ec2b6d28b907bc2ac917a5d3d6f45f0",
-          "artifactDigest": "sha256:3ea1672197dc9db9927c8507bf49d5f4e1483e1fb4d0165f22585d248301e5e9",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "d688a37fb4979ef8ce491b935d662fc3bc4114fd76da8ffad3223f498b95d246",
-          "stdoutSha256": "1a02da0ab13c777249bf7a19a9e824b051ebc953c77c2774b20883418f48c7f3",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 28765.5931,
-          "loadSamples": [
-            {
-              "elapsedMs": 30014.014400000015,
-              "cpuPercent": 46.26679614592588,
-              "freeMemoryBytes": 7708037120
-            },
-            {
-              "elapsedMs": 60015.296300000016,
-              "cpuPercent": 50.69268271161016,
-              "freeMemoryBytes": 8330731520
-            },
-            {
-              "elapsedMs": 90028.22,
-              "cpuPercent": 48.08301032256998,
-              "freeMemoryBytes": 7913644032
-            },
-            {
-              "elapsedMs": 120034.84290000002,
-              "cpuPercent": 52.33642671925285,
-              "freeMemoryBytes": 7690457088
-            }
-          ],
-          "wslLoadBefore": "1.15 0.68 0.71 1/889 689613",
-          "wslLoadAfter": "0.93 0.74 0.73 1/891 693318"
-        },
-        {
-          "run": 3,
-          "wallMs": 122805.53409999999,
-          "code": 0,
-          "verdict": "VERIFIED",
-          "replay": true,
-          "phases": {
-            "version": {
-              "calls": 1,
-              "durationMs": 579.2918999999999,
-              "inputBytes": 0
-            },
-            "info": {
-              "calls": 1,
-              "durationMs": 610.354,
-              "inputBytes": 0
-            },
-            "image-inspect": {
-              "calls": 1,
-              "durationMs": 719.4422000000002,
-              "inputBytes": 0
-            },
-            "stdio-connect": {
-              "calls": 1,
-              "durationMs": 496.5365999999999,
-              "inputBytes": 0
-            },
-            "create": {
-              "calls": 36,
-              "durationMs": 1745.9168000000186,
-              "inputBytes": 0
-            },
-            "upload": {
-              "calls": 36,
-              "durationMs": 31841.10300000003,
-              "inputBytes": 196445293
-            },
-            "start": {
-              "calls": 36,
-              "durationMs": 25291.93240000002,
-              "inputBytes": 0
-            },
-            "inspect": {
-              "calls": 36,
-              "durationMs": 58.10389999998506,
-              "inputBytes": 0
-            },
-            "remove": {
-              "calls": 36,
-              "durationMs": 4518.9575000000095,
-              "inputBytes": 0
-            },
-            "download": {
-              "calls": 34,
-              "durationMs": 276.18889999998555,
-              "inputBytes": 0
-            },
-            "host-snapshot": {
-              "calls": 1,
-              "durationMs": 2116.428200000002,
-              "inputBytes": 0
-            },
-            "host-workspace-copy": {
-              "calls": 18,
-              "durationMs": 38816.20940000003,
-              "inputBytes": 0
-            },
-            "stdio-close": {
-              "calls": 1,
-              "durationMs": 4.948199999998906,
-              "inputBytes": 0
-            }
-          },
-          "classes": {
-            "identity": 2,
-            "preflight": 16,
-            "campaign-load": 9,
-            "campaign-test": 9
-          },
-          "runtimeInvocations": 40,
-          "logicalRuntimeCalls": 217,
-          "reusedUploads": 16,
-          "observations": 18,
-          "manifestSha256": "977ca542aad5cd04cd052a064952eb19308c6274a6906aede08273f6a6f14670",
-          "artifactDigest": "sha256:c94329171a87bf61fb65c692d3553075b5f0fdcc66fa905f4fe1fae5ac1d73f2",
-          "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
-          "traceSha256": "681234ee4896010c92973a5f836ea6ea323aa807808e99f99bd84b98f08888df",
-          "stdoutSha256": "87a4e34f8bc33419032cc5507597408a9836e72ccc1e7be02525e88915542239",
-          "replaySha256": "ca4071a788eb569b4a8c9a99d289ed93e36d16ee9c28ee4be4235ad348706312",
-          "minimumStartMarginMs": 27622.049,
-          "loadSamples": [
-            {
-              "elapsedMs": 30011.90630000003,
-              "cpuPercent": 45.43219873333526,
-              "freeMemoryBytes": 7934132224
-            },
-            {
-              "elapsedMs": 60016.25020000001,
-              "cpuPercent": 41.7217099262763,
-              "freeMemoryBytes": 7989628928
-            },
-            {
-              "elapsedMs": 90018.44459999999,
-              "cpuPercent": 43.613739357839755,
-              "freeMemoryBytes": 7984754688
-            },
-            {
-              "elapsedMs": 120022.3812,
-              "cpuPercent": 39.06202103428416,
-              "freeMemoryBytes": 8251899904
-            }
-          ],
-          "wslLoadBefore": "0.93 0.74 0.73 1/891 693321",
-          "wslLoadAfter": "1.27 0.92 0.80 1/891 696990"
-        }
-      ]
+      }
     }
   },
-  "repositoryDigest": "sha256:99307d4860e0542521bce08aa538e168ccac5129b269317938043c7f18c5bbd4",
-  "schemaVersionOfManifest": "4.0.0",
-  "sourceModuleCountVerified": 42
+  "historicalArtifact": {
+    "path": "historical-measurements.json.gz",
+    "decodedSha256": "34cefa95bdadbb092a33b946047ab9b4da6e95aa282e503c4e46b5ef04549256",
+    "compressedSha256": "a041da772961d63113fe7d6441fafe8ddfc77d0ddb1e1ced87179020dfb4a474",
+    "decodedBytes": 80313
+  },
+  "historicalComparison": ["matched-before", "matched-after"],
+  "allTwentyOneImportsVerified": true,
+  "allTwentyOneReplaysValid": true,
+  "rigorousProvenance": {
+    "executorSha256": "34e091b7c2ee4f632ef6795883b6e9ec6f8a39f6b1a24fb154904e8bc9f668c7",
+    "executor": "rigorous-benchmark-executor.mjs.gz",
+    "executorEncoding": "gzip",
+    "dependenciesCopied": "pnpm locations preserved; links relocated into snapshot",
+    "completionPostconditions": "results.json is emitted only after producer tree and witness rehash equality",
+    "initialStartupFailure": "Initial dereferenced dependency copy failed isolated startup before measurements; excluded from timing and retained separately."
+  }
 }

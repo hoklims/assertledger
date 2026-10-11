@@ -3,7 +3,17 @@ import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { cp, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { finished } from "node:stream/promises";
@@ -117,11 +127,50 @@ async function treeIdentity(root) {
         );
         hash.update(bytes);
         files++;
+      } else if (entry.isSymbolicLink()) {
+        const target = await realpath(absolute);
+        assert.ok(within(target, root), "snapshot link escapes its dependency tree");
+        hash.update(
+          JSON.stringify([
+            path.relative(root, absolute).split(path.sep).join("/"),
+            "link",
+            path.relative(root, target).split(path.sep).join("/"),
+          ]),
+        );
       } else throw new Error(`Snapshot contains a non-regular entry: ${absolute}`);
     }
   }
   await visit(root);
   return { digest: hash.digest("hex"), files };
+}
+
+// Preserve pnpm's package locations and relocate every link into the frozen copy.
+// Dereferencing a top-level package changes where Node finds its transitive dependencies.
+async function copyDependencies(source, destination) {
+  const root = await realpath(source);
+  const links = [];
+  async function visit(directory, output) {
+    await mkdir(output);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const input = path.join(directory, entry.name);
+      const copied = path.join(output, entry.name);
+      if (entry.isDirectory()) await visit(input, copied);
+      else if (entry.isFile()) await copyFile(input, copied);
+      else if (entry.isSymbolicLink()) {
+        const target = await realpath(input);
+        assert.ok(within(target, root), "dependency link escapes its source tree");
+        assert.ok(
+          (await stat(target)).isDirectory(),
+          "only directory dependency links are supported",
+        );
+        links.push([path.join(destination, path.relative(root, target)), copied]);
+      } else throw new Error(`Dependency contains a non-regular entry: ${input}`);
+    }
+  }
+  await visit(root, destination);
+  for (const [target, copied] of links) {
+    await symlink(target, copied, process.platform === "win32" ? "junction" : "dir");
+  }
 }
 
 async function dependencyDirectory(producer) {
@@ -223,9 +272,10 @@ async function main() {
     await realpath(path.dirname(path.resolve(options["--output"]))),
     path.basename(options["--output"]),
   );
+  const dependencies = await realpath(await dependencyDirectory(producer));
   assert.ok(
-    !within(output, repository) && !within(output, producer),
-    "output must be outside repository and producer",
+    !within(output, repository) && !within(output, producer) && !within(output, dependencies),
+    "output must be outside repository, producer and dependencies",
   );
   await mkdir(output); // Exclusive: preserve previous measurements and evidence.
   const snapshot = path.join(output, "producer");
@@ -238,16 +288,12 @@ async function main() {
       force: false,
     });
   }
-  await cp(await dependencyDirectory(producer), path.join(snapshot, "node_modules"), {
-    recursive: true,
-    dereference: true,
-    errorOnExist: true,
-    force: false,
-  });
+  await copyDependencies(dependencies, path.join(snapshot, "node_modules"));
   const cli = path.join(snapshot, "dist", "cli.js");
   assert.ok((await stat(cli)).isFile(), "producer must contain a built dist/cli.js");
   const identity = {
     producer: await treeIdentity(snapshot),
+    dependencies: await treeIdentity(path.join(snapshot, "node_modules")),
     witnessDigest: digest(witnessBytes),
     image: options["--image"],
     runtime,
@@ -270,6 +316,7 @@ async function main() {
       "nodeVersion",
       "platform",
       "architecture",
+      "dependencies",
     ]) {
       assert.deepEqual(identity[field], previous.identity[field], `comparison changed ${field}`);
     }
@@ -279,6 +326,13 @@ async function main() {
   });
   const cleanEnvironment = { ...process.env };
   delete cleanEnvironment.ASSERTLEDGER_RUNTIME_TRACE;
+  const startup = await command(
+    [process.execPath, cli, "--help"],
+    path.join(output, "startup.stdout.txt"),
+    path.join(output, "startup.stderr.txt"),
+    cleanEnvironment,
+  );
+  assert.equal(startup.code, 0, "isolated producer cannot start; inspect startup.stderr.txt");
   const runs = [];
   let expected = previous?.runs[0]?.semantic;
   for (let number = 1; number <= repetitions; number++) {
