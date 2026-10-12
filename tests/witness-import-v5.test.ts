@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { parseEvidenceManifestV5, parseWitnessImportRequestV2 } from "../src/contracts/index.js";
-import { replayEvidenceManifest } from "../src/core/index.js";
+import { replayEvidenceManifest, sealManifestArtifact } from "../src/core/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const bun = process.env.ASSERTLEDGER_BUN_EXECUTABLE ?? "bun";
@@ -157,7 +157,8 @@ describe("witness import v2", () => {
     assert.equal(saved.evidenceContext.repository.snapshot, "test-closure");
     assert.equal(saved.evidenceContext.repository.preservedLinkCount, 2);
     assert.equal(replayEvidenceManifest(saved).valid, true);
-    // The decision digest binds the snapshot extent: rewriting it invalidates the replay.
+    // The decision digest binds the snapshot extent: a rewrite resealed with a fresh artifact
+    // digest still fails the replay.
     for (const tampered of [
       { snapshot: "repository" },
       { preservedLinkCount: 0 },
@@ -165,7 +166,10 @@ describe("witness import v2", () => {
     ]) {
       const forged = structuredClone(saved);
       Object.assign(forged.evidenceContext.repository, tampered);
-      assert.equal(replayEvidenceManifest(forged).valid, false, JSON.stringify(tampered));
+      const replay = replayEvidenceManifest(sealManifestArtifact(forged));
+      assert.equal(replay.artifactDigestValid, true, JSON.stringify(tampered));
+      assert.equal(replay.decisionDigestValid, false, JSON.stringify(tampered));
+      assert.equal(replay.valid, false, JSON.stringify(tampered));
     }
     const summary = await readFile(path.join(out, "summary.md"), "utf8");
     assert.match(summary, /Snapshot: test-closure, 2 repository-internal link\(s\) reproduced/u);
