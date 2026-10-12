@@ -115,3 +115,39 @@ it("accepts an explicit Bun framework in the static CLI doctor", async () => {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
+
+it("inventories Bun specs that import vitest or @jest/globals, which bun test answers itself", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-vitest-init-"));
+  try {
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "bun-vitest",
+        packageManager: "bun@1.4.2",
+        scripts: { test: "bun test" },
+      }),
+    );
+    await writeFile(path.join(root, "bun.lock"), "");
+    await writeFile(
+      path.join(root, "a.spec.ts"),
+      'import { expect, it } from "vitest"; it("a", () => expect(1).toBe(1));\n',
+    );
+    await writeFile(
+      path.join(root, "b.test.ts"),
+      'import { test } from "@jest/globals"; test("b", () => {});\n',
+    );
+    await writeFile(
+      path.join(root, "c.test.ts"),
+      'import { test } from "node:test"; test("c", () => {});\n',
+    );
+    // The imports also name vitest and jest, so the operator states that Bun runs them.
+    const plan = await initializeRepository(root, { dryRun: true, framework: "bun:test" });
+    assert.equal(plan.detections.adapterRecommendation, "bun-test");
+    const config = JSON.parse(
+      plan.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null",
+    ) as { adapter?: { baseTestFiles?: string[] } };
+    assert.deepEqual(config.adapter?.baseTestFiles, ["a.spec.ts", "b.test.ts"]);
+  } finally {
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});

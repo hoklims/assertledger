@@ -42,6 +42,7 @@ import {
   type EvidenceManifestV2Contract,
   type EvidenceManifestV3Contract,
   type EvidenceManifestV4Contract,
+  type EvidenceManifestV5Contract,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
@@ -85,7 +86,9 @@ import {
   parseVerificationRequestV2,
   parseVerificationRequestV3,
   parseVerificationRequestV4,
+  parseVerificationRequestV5,
   parseEvidenceManifestV4,
+  parseEvidenceManifestV5,
   parseVersionedEvidenceManifest,
   type ReplayResult,
   type RepositoryAnalysis,
@@ -318,13 +321,27 @@ export class AssertLedger {
   }
 
   /**
+   * Executes a v5 campaign: designated Bun tests in their package with their own Bun
+   * configuration, repository-internal links preserved and an optional test-closure snapshot.
+   */
+  async verifyV5(
+    request: unknown,
+    options: VerifyCampaignOptions = {},
+  ): Promise<EvidenceManifestV5Contract> {
+    return parseEvidenceManifestV5(
+      await verifyCampaign(parseVerificationRequestV5(request), options),
+    );
+  }
+
+  /**
    * Replays a recorded red/green witness: mutated targets, one designated test and its expected
-   * failure line. The operator chooses the isolation in `options`; the witness cannot.
+   * failure line. The operator chooses the isolation in `options`; the witness cannot. A v1
+   * witness yields v4 evidence and a v2 witness v5 evidence.
    */
   async importWitness(
     witness: unknown,
     options: WitnessImportOptions,
-  ): Promise<EvidenceManifestV4Contract> {
+  ): Promise<EvidenceManifestV4Contract | EvidenceManifestV5Contract> {
     return importWitness(witness, options);
   }
 
@@ -342,7 +359,8 @@ export class AssertLedger {
       | EvidenceManifestContract
       | EvidenceManifestV2Contract
       | EvidenceManifestV3Contract
-      | EvidenceManifestV4Contract;
+      | EvidenceManifestV4Contract
+      | EvidenceManifestV5Contract;
     try {
       parsedManifest = parseVersionedEvidenceManifest(manifest);
     } catch {

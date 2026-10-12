@@ -13,10 +13,14 @@ import {
 import path from "node:path";
 import {
   type EvidenceManifestV4Contract,
+  type EvidenceManifestV5Contract,
   parseEvidenceManifestV4,
-  parseWitnessImportRequest,
+  parseEvidenceManifestV5,
+  parseVersionedWitnessImportRequest,
   type VerificationRequestV4,
+  type VerificationRequestV5,
   type WitnessImportRequest,
+  type WitnessImportRequestV2,
 } from "../contracts/index.js";
 import { assertSafeRelativePath, canonicalize, sealManifestArtifact } from "../core/index.js";
 import { type ContainerTransport, DEFAULT_CONTAINER_LIMITS } from "./container.js";
@@ -66,14 +70,27 @@ function isWithin(candidate: string, root: string): boolean {
 }
 
 /**
- * Builds the v4 campaign of a recorded witness: the repository as the reference, the mutated
- * targets as the one target world, and the operator's neutral control, or an identity control
- * whose limit the manifest states. Each target must still hold the recorded base bytes.
+ * Builds the campaign of a recorded witness, v4 for a v1 witness and v5 for a v2 witness: the
+ * repository as the reference, the mutated targets as the one target world, and the operator's
+ * neutral control, or an identity control whose limit the manifest states. Each target must still
+ * hold the recorded base bytes.
  */
 export async function witnessVerificationRequest(
   witness: WitnessImportRequest,
   isolation: WitnessImportIsolation,
-): Promise<VerificationRequestV4> {
+): Promise<VerificationRequestV4>;
+export async function witnessVerificationRequest(
+  witness: WitnessImportRequestV2,
+  isolation: WitnessImportIsolation,
+): Promise<VerificationRequestV5>;
+export async function witnessVerificationRequest(
+  witness: WitnessImportRequest | WitnessImportRequestV2,
+  isolation: WitnessImportIsolation,
+): Promise<VerificationRequestV4 | VerificationRequestV5>;
+export async function witnessVerificationRequest(
+  witness: WitnessImportRequest | WitnessImportRequestV2,
+  isolation: WitnessImportIsolation,
+): Promise<VerificationRequestV4 | VerificationRequestV5> {
   const root = await realpath(witness.repository.root);
   if (!(await stat(root)).isDirectory()) throw new Error("WITNESS_REPOSITORY_INVALID");
   const targets = [];
@@ -104,15 +121,30 @@ export async function witnessVerificationRequest(
     files.reduce((total, file) => total + Buffer.byteLength(file.content, "utf8"), 0);
   const neutralFiles = witness.neutral?.files ?? [];
   const attempts = witness.requiredAttempts;
-  return {
-    schemaVersion: "4.0.0",
-    repository: {
-      root,
-      exclude: [...witness.repository.exclude],
-      includeDependencies: witness.repository.includeDependencies,
-      git: witness.repository.git,
-    },
-    adapter: { ...witness.adapter },
+  const repository = {
+    root,
+    exclude: [...witness.repository.exclude],
+    includeDependencies: witness.repository.includeDependencies,
+    git: witness.repository.git,
+  };
+  const campaign = {
+    ...(witness.schemaVersion === "2.0.0"
+      ? {
+          schemaVersion: "5.0.0" as const,
+          repository: {
+            ...repository,
+            snapshot: witness.repository.snapshot,
+            include: [...witness.repository.include],
+          },
+          adapter: {
+            ...witness.adapter,
+            trustedMatchers: witness.adapter.trustedMatchers.map((entry) => ({
+              path: entry.path,
+              matchers: [...entry.matchers],
+            })),
+          },
+        }
+      : { schemaVersion: "4.0.0" as const, repository, adapter: { ...witness.adapter } }),
     isolation:
       isolation.kind === "container"
         ? {
@@ -183,11 +215,12 @@ export async function witnessVerificationRequest(
       },
     ],
   };
+  return campaign as VerificationRequestV4 | VerificationRequestV5;
 }
 
 function renderSummary(
-  manifest: EvidenceManifestV4Contract,
-  witness: WitnessImportRequest,
+  manifest: EvidenceManifestV4Contract | EvidenceManifestV5Contract,
+  witness: WitnessImportRequest | WitnessImportRequestV2,
   manifestPath: string,
 ): string {
   const runs = (worldId: string) =>
@@ -206,6 +239,11 @@ function renderSummary(
     `- Reason codes: ${manifest.decision.reasonCodes.join(", ") || "none"}`,
     `- Isolation: **${manifest.isolation.level}**`,
     `- Omitted repository links: ${manifest.evidenceContext.repository.omittedLinks.length}`,
+    ...("snapshot" in manifest.evidenceContext.repository
+      ? [
+          `- Snapshot: ${manifest.evidenceContext.repository.snapshot}, ${manifest.evidenceContext.repository.preservedLinkCount} repository-internal link(s) reproduced`,
+        ]
+      : []),
     "",
     "## Limitations",
     "",
@@ -217,14 +255,19 @@ function renderSummary(
 }
 
 /**
- * Replays a recorded red/green witness as a v4 campaign and saves executed-request.json,
- * summary.md and, last, manifest.json in a new directory outside the repository.
+ * Replays a recorded red/green witness as a v4 (v1 witness) or v5 (v2 witness) campaign and saves
+ * executed-request.json, summary.md and, last, manifest.json in a new directory outside the
+ * repository.
  */
 export async function importWitness(
   value: unknown,
   options: WitnessImportOptions,
-): Promise<EvidenceManifestV4Contract> {
-  const witness = parseWitnessImportRequest(value);
+): Promise<EvidenceManifestV4Contract | EvidenceManifestV5Contract> {
+  const witness = parseVersionedWitnessImportRequest(value);
+  const parseManifest = (manifest: unknown) =>
+    witness.schemaVersion === "2.0.0"
+      ? parseEvidenceManifestV5(manifest)
+      : parseEvidenceManifestV4(manifest);
   const request = await witnessVerificationRequest(witness, options.isolation);
   const output = path.resolve(options.out);
   const parent = await realpath(path.dirname(output));
@@ -238,7 +281,7 @@ export async function importWitness(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const source = parseEvidenceManifestV4(
+  const source = parseManifest(
     await withRuntimeTrace([request.repository.root, target], () =>
       verifyCampaign(
         request,
@@ -257,7 +300,7 @@ export async function importWitness(
       ),
     ),
   );
-  const manifest = parseEvidenceManifestV4(
+  const manifest = parseManifest(
     sealManifestArtifact({
       ...source,
       limitations: [

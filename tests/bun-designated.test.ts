@@ -9,6 +9,7 @@ import {
   type BunDesignatedEvent,
   classifyBunDesignatedLoad,
   classifyBunDesignatedRun,
+  designatedBunConfig,
 } from "../integrations/bun/driver.mjs";
 import { runCli } from "../src/cli.js";
 import { parseEvidenceManifestV4 } from "../src/contracts/index.js";
@@ -152,23 +153,31 @@ describe("designated Bun classification", () => {
 async function runDriver(
   files: Record<string, string>,
   selection: Record<string, unknown>,
-): Promise<{ outcome: string; attributed: boolean }> {
+  testFiles: readonly string[] = ["tools/a.test.ts"],
+): Promise<{ outcome: string; attributed: boolean; testsDiscovered: number }> {
   const root = await temporaryDirectory("assertledger-designated-driver-");
   await writeTree(root, { "package.json": '{"type":"module"}\n', ...files });
-  const result = spawnSync(process.execPath, [driver, bun, helper, "tools/a.test.ts"], {
+  const result = spawnSync(process.execPath, [driver, bun, helper, ...testFiles], {
     cwd: root,
     env: { ...process.env, ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(selection) },
     encoding: "utf8",
     timeout: 60_000,
   });
-  return JSON.parse(result.stdout.trim()) as { outcome: string; attributed: boolean };
+  return JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "") as {
+    outcome: string;
+    attributed: boolean;
+    testsDiscovered: number;
+  };
 }
+
+const execution = { workingDirectory: ".", isolate: false, trustedMatchers: [] };
 
 const run = (expectedFailure: string | null = null, testTimeoutMs: number | null = null) => ({
   mode: "run",
   test: { file: "tools/a.test.ts", path: ["gate routing", "keeps docs"] },
   expectedFailure,
   testTimeoutMs,
+  ...execution,
 });
 
 describe("designated Bun driver", () => {
@@ -228,6 +237,201 @@ describe("designated Bun driver", () => {
     );
     assert.equal(result.outcome, "INFRA_ERROR");
     assert.equal(result.attributed, false);
+  });
+
+  it("refuses a selection that omits where and how Bun runs", async () => {
+    const { workingDirectory: _directory, ...withoutDirectory } = run();
+    const names = { "src/names.ts": 'export const names = () => ["a"];\n' };
+    assert.equal(
+      (await runDriver({ "tools/a.test.ts": TEST_SOURCE(KEEPS_DOCS), ...names }, withoutDirectory))
+        .outcome,
+      "INFRA_ERROR",
+    );
+  });
+});
+
+/** A package whose bunfig preload extends expect, as a Modelo package's test setup does. */
+const PACKAGE_FILES = {
+  "pkg/package.json": '{"name":"pkg","type":"module"}\n',
+  "pkg/bunfig.toml":
+    '[test]\npreload = ["./setup.ts"] # package setup\ncoverageSkipTestFiles = true\n',
+  "pkg/setup.ts": [
+    'import { expect } from "vitest";',
+    "(globalThis as Record<string, unknown>).packageSetup = true;",
+    "expect.extend({",
+    '  toEqual() { return { pass: false, message: () => "replaced" }; },',
+    '  toFailExtended() { return { pass: false, message: () => "extended" }; },',
+    "});",
+    "",
+  ].join("\n"),
+  "pkg/src/a.spec.ts": [
+    'import { describe, expect, it } from "vitest";',
+    'describe("package", () => {',
+    '  it("sees its setup", () => { expect((globalThis as Record<string, unknown>).packageSetup).toBe(true); });',
+    '  it("uses a replaced matcher", () => { expect(1).toEqual(1); });',
+    '  it("uses an extended matcher", () => { (expect(1) as unknown as { toFailExtended(): void }).toFailExtended(); });',
+    "});",
+    "",
+  ].join("\n"),
+  "pkg/src/b.spec.ts": 'import { it } from "vitest";\nit("second", () => {});\n',
+};
+
+const packageRun = (name: string, overrides: Record<string, unknown> = {}) => ({
+  mode: "run",
+  test: { file: "pkg/src/a.spec.ts", path: ["package", name] },
+  expectedFailure: null,
+  testTimeoutMs: null,
+  workingDirectory: "pkg",
+  isolate: true,
+  trustedMatchers: [],
+  ...overrides,
+});
+
+describe("designated Bun driver in a package", () => {
+  it("runs Bun in the declared directory with its own bunfig preloads", async () => {
+    const files = ["pkg/src/a.spec.ts"];
+    assert.equal(
+      (await runDriver(PACKAGE_FILES, packageRun("sees its setup"), files)).outcome,
+      "PASS",
+    );
+    // From the root the package preload never runs: the same test fails its built-in matcher.
+    assert.equal(
+      (
+        await runDriver(
+          PACKAGE_FILES,
+          packageRun("sees its setup", { workingDirectory: ".", isolate: false }),
+          files,
+        )
+      ).outcome,
+      "ASSERTION_FAILURE",
+    );
+  });
+
+  it("never credits a matcher that a repository preload replaced or added", async () => {
+    const files = ["pkg/src/a.spec.ts"];
+    assert.equal(
+      (await runDriver(PACKAGE_FILES, packageRun("uses a replaced matcher"), files)).outcome,
+      "PROCESS_CRASH",
+    );
+    assert.equal(
+      (await runDriver(PACKAGE_FILES, packageRun("uses an extended matcher"), files)).outcome,
+      "PROCESS_CRASH",
+    );
+  });
+
+  it("credits a declared trusted matcher only from its declared path and name", async () => {
+    const files = ["pkg/src/a.spec.ts"];
+    const trusted = (path: string, matchers: string[]) => ({
+      trustedMatchers: [{ path, matchers }],
+    });
+    assert.deepEqual(
+      await runDriver(
+        PACKAGE_FILES,
+        packageRun("uses an extended matcher", trusted("pkg/setup.ts", ["toFailExtended"])),
+        files,
+      ),
+      {
+        protocolVersion: "1.0.0",
+        outcome: "ASSERTION_FAILURE",
+        testsDiscovered: 1,
+        candidateTestsDiscovered: 1,
+        attributed: true,
+      },
+    );
+    assert.equal(
+      (
+        await runDriver(
+          PACKAGE_FILES,
+          packageRun("uses an extended matcher", trusted("pkg/other.ts", ["toFailExtended"])),
+          files,
+        )
+      ).outcome,
+      "PROCESS_CRASH",
+    );
+    assert.equal(
+      (
+        await runDriver(
+          PACKAGE_FILES,
+          packageRun("uses a replaced matcher", trusted("pkg/setup.ts", ["toFailExtended"])),
+          files,
+        )
+      ).outcome,
+      "PROCESS_CRASH",
+    );
+  });
+
+  it("loads isolated designated files one process each", async () => {
+    const files = ["pkg/src/a.spec.ts", "pkg/src/b.spec.ts"];
+    const load = (isolate: boolean) => ({
+      mode: "load",
+      tests: [
+        { file: "pkg/src/a.spec.ts", path: ["package", "sees its setup"] },
+        { file: "pkg/src/b.spec.ts", path: ["second"] },
+      ],
+      workingDirectory: "pkg",
+      isolate,
+      trustedMatchers: [],
+    });
+    for (const isolate of [true, false]) {
+      const result = await runDriver(PACKAGE_FILES, load(isolate), files);
+      assert.equal(result.outcome, "PASS", `isolate=${isolate}`);
+      assert.equal(result.testsDiscovered, 4, `isolate=${isolate}`);
+    }
+  });
+
+  it("refuses a bunfig whose test preload it cannot place after its own", async () => {
+    const files = ["pkg/src/a.spec.ts"];
+    const dotted = { ...PACKAGE_FILES, "pkg/bunfig.toml": 'test.preload = ["./setup.ts"]\n' };
+    assert.equal(
+      (await runDriver(dotted, packageRun("sees its setup"), files)).outcome,
+      "INFRA_ERROR",
+    );
+  });
+});
+
+describe("designated bunfig rewriting", () => {
+  const ours = "/root/node_modules/assertledger/preload.mjs";
+  it("puts AssertLedger's preload first and keeps every repository preload and setting", () => {
+    assert.equal(designatedBunConfig(undefined, ours), `[test]\npreload = ["${ours}"]\n`);
+    assert.equal(
+      designatedBunConfig('[test]\npreload = "./a.ts"\ntimeout = 5\n', ours),
+      `[test]\npreload = ["${ours}", "./a.ts"]\ntimeout = 5\n`,
+    );
+    assert.equal(
+      designatedBunConfig("[install]\nexact = true\n[test]\ncoverage = true\n", ours),
+      `[install]\nexact = true\n[test]\npreload = ["${ours}"]\ncoverage = true\n`,
+    );
+    assert.equal(
+      designatedBunConfig("[install]\nexact = true\n", ours),
+      `[install]\nexact = true\n\n[test]\npreload = ["${ours}"]\n`,
+    );
+    assert.equal(
+      designatedBunConfig('[test]\npreload = [\n  "./a.ts",\n  \'./b.ts\',\n]\nroot = "."\n', ours),
+      `[test]\npreload = ["${ours}", "./a.ts", "./b.ts"]\nroot = "."\n`,
+    );
+    // A top-level preload is not a test preload for bun test: it stays as found.
+    assert.equal(
+      designatedBunConfig('preload = ["./run.ts"]\n', ours),
+      `preload = ["./run.ts"]\n\n[test]\npreload = ["${ours}"]\n`,
+    );
+  });
+
+  it("refuses every test preload spelling it does not rewrite", () => {
+    for (const source of [
+      'test.preload = ["./a.ts"]\n',
+      'test = { preload = ["./a.ts"] }\n',
+      '[test]\n"preload" = ["./a.ts"]\n',
+      '[test]\npreload = ["./a.ts"]\npreload = ["./b.ts"]\n',
+      '[test]\npreload = [\n  "./a.ts", # comment\n]\n',
+      "[test]\npreload = ./a.ts\n",
+      "[test]\n[test]\n",
+    ]) {
+      assert.throws(
+        () => designatedBunConfig(source, ours),
+        /BUNFIG_TEST_PRELOAD_UNSUPPORTED/u,
+        source,
+      );
+    }
   });
 });
 

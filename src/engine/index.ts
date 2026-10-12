@@ -1,7 +1,8 @@
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, constants as fsConstants } from "node:fs";
 import {
+  copyFile,
   cp,
   type FileHandle,
   link,
@@ -16,6 +17,7 @@ import {
   rename,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -60,6 +62,7 @@ import {
   repositoryInitLockDigest,
   repositoryInitLockV2Digest,
   VERIFICATION_SCHEMA_VERSION_V4,
+  VERIFICATION_SCHEMA_VERSION_V5,
   type VerificationRequest as VerificationRequestContract,
 } from "../contracts/index.js";
 import {
@@ -109,6 +112,7 @@ import {
 import { traceOperation, withRuntimeTrace } from "./runtime-trace.js";
 import {
   computeTestClosure,
+  expandIncludedPaths,
   type TestClosureInput,
   type UnboundedClosureEdge,
 } from "./test-closure.js";
@@ -258,6 +262,10 @@ interface VerificationRequest {
     exclude: string[];
     includeDependencies: boolean;
     git: "excluded" | "synthesized";
+    /** v5: the snapshot extent; earlier versions always snapshot the repository. */
+    snapshot: "repository" | "test-closure";
+    /** v5: paths a test-closure snapshot also keeps. */
+    include: string[];
   };
   adapter:
     | {
@@ -275,6 +283,14 @@ interface VerificationRequest {
         kind: "bun-test-designated";
         executable: string;
         testTimeoutMs: number | null;
+        /** v5; earlier versions run in the repository root, without isolation or trust. */
+        workingDirectory: "repository-root" | "test-package";
+        isolate: boolean;
+        trustedMatchers: Array<{ path: string; matchers: string[] }>;
+        /** Set from the snapshot before any execution: where Bun runs, relative to the root. */
+        runDirectory?: string;
+        /** Set from the snapshot: each trusted path read through the snapshot's links. */
+        resolvedTrustedMatchers?: Array<{ path: string; matchers: string[] }>;
       }
     | {
         kind: "testforge-command";
@@ -590,6 +606,10 @@ function effectiveExcludes(requestExcludes: readonly string[]): Set<string> {
   return new Set([...DEFAULT_EXCLUDES, ...requestExcludes].map(portablePathKey));
 }
 
+function compareOrdinalStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function comparePortablePaths(left: string, right: string): number {
   const leftKey = portablePathKey(left);
   const rightKey = portablePathKey(right);
@@ -868,6 +888,201 @@ async function campaignOmittedLinks(
     );
   }
   return assessment.omitted;
+}
+
+/** A repository link reproduced in a v5 snapshot: its path, its target and the target's kind. */
+interface PreservedLink {
+  path: string;
+  /** The target relative to the link's directory, `/`-separated. */
+  target: string;
+  /** The target relative to the root, `/`-separated: what the closure walks instead. */
+  resolved: string;
+  type: "dir" | "file";
+}
+
+function relativeWithin(root: string, candidate: string): string | undefined {
+  const relative = path.relative(root, candidate);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return undefined;
+  }
+  return relative.split(path.sep).join("/");
+}
+
+/**
+ * Sorts a v5 inventory's links. A link is internal when its target and its real path both lie
+ * inside the root, outside every excluded name, and exist: it is reproduced as a relative link to
+ * the same target. Every other link, leaving the root, dangling, cyclic or into an exclusion, is
+ * external and can only be left out.
+ */
+async function classifyRepositoryLinks(
+  root: string,
+  links: readonly string[],
+  excludes: ReadonlySet<string>,
+): Promise<{
+  internal: Map<string, PreservedLink>;
+  external: string[];
+  escaping: Set<string>;
+}> {
+  const internal = new Map<string, PreservedLink>();
+  const external: string[] = [];
+  const escaping = new Set<string>();
+  const excluded = (relative: string) =>
+    relative.split("/").some((segment) => excludes.has(portablePathKey(segment)));
+  for (const link of links) {
+    const linkPath = path.join(root, ...link.split("/"));
+    try {
+      const lexical = relativeWithin(
+        root,
+        path.resolve(path.dirname(linkPath), await readlink(linkPath)),
+      );
+      const real = relativeWithin(root, await realpath(linkPath));
+      if (lexical === undefined || real === undefined) escaping.add(portablePathKey(link));
+      if (lexical === undefined || real === undefined || excluded(lexical) || excluded(real)) {
+        external.push(link);
+        continue;
+      }
+      const type = (await stat(linkPath)).isDirectory() ? "dir" : "file";
+      const resolved = lexical === "" ? "." : lexical;
+      const target = path.posix.relative(path.posix.dirname(link), resolved) || ".";
+      internal.set(portablePathKey(link), { path: link, target, resolved, type });
+    } catch {
+      // A dangling or cyclic link may still name a target outside the root.
+      if (await linkEscapesRoot(root, link)) escaping.add(portablePathKey(link));
+      external.push(link);
+    }
+  }
+  return { internal, external: external.sort(comparePortablePaths), escaping };
+}
+
+/** The modules `bun test` answers itself, whatever is installed under their names. */
+const BUN_RUNNER_MODULES: ReadonlySet<string> = new Set(["vitest", "@jest/globals"]);
+
+/** The files and links a v5 campaign snapshots, with what it records about the links. */
+interface SnapshotPlan {
+  files: string[];
+  links: PreservedLink[];
+  omittedLinks: string[];
+  unbounded: UnboundedClosureEdge[];
+}
+
+/**
+ * Plans a v5 snapshot against the closure of the executed tests, followed through internal links.
+ * An external link on that closure refuses the campaign and is named. A repository snapshot keeps
+ * every file and internal link and leaves the external links out; it refuses an unbounded closure
+ * when an external link exists, as v4 does. A test-closure snapshot keeps the closure, the
+ * operator's include paths and the overlaid files that exist, and records the unbounded edges.
+ */
+async function planCampaignSnapshot(
+  request: VerificationRequest,
+  root: string,
+  files: readonly string[],
+  links: readonly string[],
+  excludes: ReadonlySet<string>,
+): Promise<SnapshotPlan> {
+  const { internal, external, escaping } = await classifyRepositoryLinks(root, links, excludes);
+  const overlays = new Map<string, { path: string; contents: string[] }>();
+  for (const overlay of [
+    ...request.worlds.flatMap((world) => world.files),
+    ...request.candidates.flatMap((candidate) => candidate.files),
+  ]) {
+    const key = portablePathKey(overlay.path);
+    const entry = overlays.get(key) ?? { path: overlay.path, contents: [] };
+    entry.contents.push(overlay.content);
+    overlays.set(key, entry);
+  }
+  const repositoryFiles = new Set(files.map(portablePathKey));
+  const roots =
+    request.adapter.kind === "node-test" || request.adapter.kind === "bun-test"
+      ? [
+          ...request.adapter.baseTestFiles,
+          ...request.candidates.flatMap((candidate) => candidate.files.map((file) => file.path)),
+        ]
+      : request.adapter.kind === "bun-test-designated"
+        ? request.candidates.flatMap((candidate) =>
+            candidate.designated === undefined ? [] : [candidate.designated.file],
+          )
+        : undefined;
+  const linkTargets = new Map([...internal.values()].map((link) => [link.path, link.resolved]));
+  const closureFiles = [
+    ...files,
+    ...[...overlays.entries()]
+      .filter(([key]) => !repositoryFiles.has(key))
+      .map(([, entry]) => entry.path),
+  ];
+  const read = async (file: string) => {
+    const key = portablePathKey(file);
+    const texts = overlays.get(key)?.contents ?? [];
+    return repositoryFiles.has(key)
+      ? [await readFile(path.join(root, ...file.split("/")), "utf8"), ...texts]
+      : texts;
+  };
+  const refuseExternal = (reached: readonly string[]) => {
+    for (const link of reached) {
+      if (internal.has(portablePathKey(link))) continue;
+      throw new Error(
+        escaping.has(portablePathKey(link))
+          ? "REPOSITORY_LINK_ESCAPES_ROOT"
+          : roots === undefined
+            ? "UNSUPPORTED_REPOSITORY_SYMLINK"
+            : "REPOSITORY_LINK_IN_TEST_CLOSURE",
+        { cause: link },
+      );
+    }
+  };
+  if (roots === undefined) {
+    // A structured command names no test: only a repository without external links is snapshot.
+    refuseExternal(external);
+    return { files: [...files], links: [...internal.values()], omittedLinks: [], unbounded: [] };
+  }
+  const bunRunner =
+    request.adapter.kind === "bun-test" || request.adapter.kind === "bun-test-designated";
+  const closure = await computeTestClosure({
+    files: closureFiles,
+    links,
+    roots,
+    read,
+    linkTargets,
+    ...(bunRunner ? { runnerModules: BUN_RUNNER_MODULES } : {}),
+  });
+  refuseExternal(closure.links);
+  if (request.repository.snapshot === "repository") {
+    if (closure.unbounded.length > 0 && external.length > 0) {
+      throw new Error("TEST_CLOSURE_UNBOUNDED", { cause: external[0] });
+    }
+    return {
+      files: [...files],
+      links: [...internal.values()],
+      omittedLinks: external,
+      unbounded: [],
+    };
+  }
+  const included = expandIncludedPaths({ files, links, linkTargets }, request.repository.include);
+  if (included.missing.length > 0) {
+    throw new Error("REPOSITORY_INCLUDE_MISSING", { cause: included.missing[0] });
+  }
+  refuseExternal(included.links);
+  const selected = new Map<string, string>();
+  for (const file of [
+    ...closure.files,
+    ...included.files,
+    ...[...overlays.values()].map((entry) => entry.path),
+  ]) {
+    const key = portablePathKey(file);
+    if (repositoryFiles.has(key)) selected.set(key, file);
+  }
+  const selectedLinks = new Map<string, PreservedLink>();
+  for (const link of [...closure.links, ...included.links]) {
+    const preserved = internal.get(portablePathKey(link));
+    if (preserved !== undefined) selectedLinks.set(portablePathKey(link), preserved);
+  }
+  return {
+    files: [...selected.values()].sort(comparePortablePaths),
+    links: [...selectedLinks.values()].sort((left, right) =>
+      comparePortablePaths(left.path, right.path),
+    ),
+    omittedLinks: external,
+    unbounded: closure.unbounded,
+  };
 }
 
 /** The closure roots of a test framework's discovered sources; undefined when not analyzable. */
@@ -1546,11 +1761,13 @@ export async function initializeRepository(
       adapterRecommendation = "node-test";
     }
   } else if (framework === "bun:test") {
-    const testSources = inScopeFiles.filter(
-      (file) =>
-        initBunTestSource(file) &&
-        initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file).has("bun:test"),
-    );
+    // `bun test` answers `vitest` and `@jest/globals` with its own test API: a Bun repository's
+    // tests may import either instead of `bun:test`.
+    const testSources = inScopeFiles.filter((file) => {
+      if (!initBunTestSource(file)) return false;
+      const specifiers = initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file);
+      return [...BUN_RUNNER_MODULES, "bun:test"].some((name) => specifiers.has(name));
+    });
     const pathMatchers = initCommandPathMatchers(testCommand, testSources);
     const baseTestFiles =
       pathMatchers.length === 0
@@ -3011,6 +3228,30 @@ function parseRequest(value: unknown): VerificationRequest {
               adapter.testTimeoutMs === null || adapter.testTimeoutMs === undefined
                 ? null
                 : requirePositiveInteger(adapter.testTimeoutMs, "adapter_test_timeout_ms"),
+            workingDirectory:
+              adapter.workingDirectory === "test-package" ? "test-package" : "repository-root",
+            isolate: adapter.isolate === true,
+            trustedMatchers: (Array.isArray(adapter.trustedMatchers)
+              ? adapter.trustedMatchers
+              : []
+            ).map((value) => {
+              const entry = requireRecord(value, "trusted_matcher");
+              let trustedPath: string;
+              try {
+                trustedPath = assertSafeRelativePath(
+                  requireString(entry.path, "trusted_matcher_path"),
+                  ["."],
+                );
+              } catch {
+                throw new Error("TRUSTED_MATCHER_PATH_INVALID", { cause: entry.path });
+              }
+              return {
+                path: trustedPath,
+                matchers: [
+                  ...new Set(requireStringArray(entry.matchers, "trusted_matchers")),
+                ].sort(),
+              };
+            }),
           }
         : {
             kind: "testforge-command",
@@ -3036,6 +3277,14 @@ function parseRequest(value: unknown): VerificationRequest {
   if (includeDependencies && exclude.some((entry) => portablePathKey(entry) === "node_modules")) {
     throw new Error("REPOSITORY_DEPENDENCIES_EXCLUDED");
   }
+  const include = (Array.isArray(repository.include) ? repository.include : []).map((entry) => {
+    try {
+      return assertSafeRelativePath(requireString(entry, "repository_include"), ["."]);
+    } catch {
+      throw new Error("REPOSITORY_INCLUDE_INVALID", { cause: entry });
+    }
+  });
+  assertPortableStringCollection(include, "DUPLICATE_REPOSITORY_INCLUDE");
   return {
     schemaVersion: requireString(request.schemaVersion, "schema_version"),
     repository: {
@@ -3043,6 +3292,8 @@ function parseRequest(value: unknown): VerificationRequest {
       exclude,
       includeDependencies,
       git: repository.git === "synthesized" ? "synthesized" : "excluded",
+      snapshot: repository.snapshot === "test-closure" ? "test-closure" : "repository",
+      include: [...include].sort(),
     },
     adapter: normalizedAdapter,
     isolation: containerIsolation ?? {
@@ -3977,6 +4228,12 @@ async function synthesizeGitWorktree(
 
 /** The selection a designated campaign gives the Bun driver: load every test, or run one. */
 function designatedSelection(request: VerificationRequest, candidate: Candidate | null): unknown {
+  const adapter = request.adapter.kind === "bun-test-designated" ? request.adapter : undefined;
+  const execution = {
+    workingDirectory: adapter?.runDirectory ?? ".",
+    isolate: adapter?.isolate ?? false,
+    trustedMatchers: adapter?.resolvedTrustedMatchers ?? [],
+  };
   if (candidate !== null) {
     const designated = candidate.designated;
     if (designated === undefined) throw new Error("DESIGNATED_CANDIDATE_REQUIRED");
@@ -3984,8 +4241,8 @@ function designatedSelection(request: VerificationRequest, candidate: Candidate 
       mode: "run",
       test: { file: designated.file, path: designated.path },
       expectedFailure: designated.expectedFailure,
-      testTimeoutMs:
-        request.adapter.kind === "bun-test-designated" ? request.adapter.testTimeoutMs : null,
+      testTimeoutMs: adapter?.testTimeoutMs ?? null,
+      ...execution,
     };
   }
   return {
@@ -3994,7 +4251,92 @@ function designatedSelection(request: VerificationRequest, candidate: Candidate 
       if (entry.designated === undefined) throw new Error("DESIGNATED_CANDIDATE_REQUIRED");
       return { file: entry.designated.file, path: entry.designated.path };
     }),
+    ...execution,
   };
+}
+
+/** The nearest directory above `file`, up to the root, whose package.json the snapshot holds. */
+function nearestPackageDirectory(file: string, snapshotFiles: ReadonlySet<string>): string {
+  let directory = path.posix.dirname(file);
+  while (directory !== ".") {
+    if (snapshotFiles.has(portablePathKey(`${directory}/package.json`))) return directory;
+    directory = path.posix.dirname(directory);
+  }
+  return ".";
+}
+
+type DesignatedBunConfig = (source: string | undefined, preload: string) => string;
+
+/**
+ * Fixes where a designated campaign runs Bun before any execution: the repository root, or the
+ * one package holding every designated test. The bunfig there, in the snapshot and in each world,
+ * must let the driver put AssertLedger's preload first; each trusted path must exist and is read
+ * through the snapshot's links, as Bun reports module files by their real paths.
+ */
+async function prepareDesignatedRun(
+  request: VerificationRequest,
+  snapshot: string,
+  snapshotFiles: ReadonlySet<string>,
+): Promise<string> {
+  const adapter = request.adapter;
+  if (adapter.kind !== "bun-test-designated") throw new Error("UNSUPPORTED_ADAPTER");
+  const directories = new Set(
+    request.candidates.map((candidate) =>
+      adapter.workingDirectory === "test-package" && candidate.designated !== undefined
+        ? nearestPackageDirectory(candidate.designated.file, snapshotFiles)
+        : ".",
+    ),
+  );
+  if (directories.size !== 1) throw new Error("DESIGNATED_WORKING_DIRECTORY_MIXED");
+  const runDirectory = [...directories][0] as string;
+  const bunfig = runDirectory === "." ? "bunfig.toml" : `${runDirectory}/bunfig.toml`;
+  const { designatedBunConfig } = (await import(pathToFileURL(BUN_TEST_DRIVER_PATH).href)) as {
+    designatedBunConfig: DesignatedBunConfig;
+  };
+  const texts: Array<string | undefined> = [];
+  try {
+    const details = await lstat(path.join(snapshot, ...bunfig.split("/")));
+    if (!details.isFile()) throw new Error("BUNFIG_TEST_PRELOAD_UNSUPPORTED", { cause: bunfig });
+    texts.push(await readFile(path.join(snapshot, ...bunfig.split("/")), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new Error("BUNFIG_TEST_PRELOAD_UNSUPPORTED", { cause: bunfig });
+    }
+    texts.push(undefined);
+  }
+  for (const world of request.worlds) {
+    for (const file of world.files) {
+      if (portablePathKey(file.path) === portablePathKey(bunfig)) texts.push(file.content);
+    }
+  }
+  for (const text of texts) {
+    try {
+      designatedBunConfig(text, "/assertledger/preload.mjs");
+    } catch {
+      throw new Error("BUNFIG_TEST_PRELOAD_UNSUPPORTED", { cause: bunfig });
+    }
+  }
+  const resolvedTrustedMatchers = [];
+  for (const entry of adapter.trustedMatchers) {
+    let resolved: string | undefined;
+    try {
+      resolved = relativeWithin(
+        snapshot,
+        await realpath(path.join(snapshot, ...entry.path.split("/"))),
+      );
+    } catch {
+      resolved = undefined;
+    }
+    if (resolved === undefined)
+      throw new Error("TRUSTED_MATCHER_PATH_MISSING", { cause: entry.path });
+    resolvedTrustedMatchers.push({
+      path: resolved === "" ? "." : resolved,
+      matchers: entry.matchers,
+    });
+  }
+  adapter.runDirectory = runDirectory;
+  adapter.resolvedTrustedMatchers = resolvedTrustedMatchers;
+  return runDirectory;
 }
 
 /** The test files a designated run loads: every designated file for a control, one for a run. */
@@ -4051,6 +4393,100 @@ async function copyRepository(
       return true;
     },
   });
+}
+
+/** Files and links copied by a v5 snapshot or workspace, both `/`-separated from the root. */
+interface CopyPlan {
+  files: readonly string[];
+  links: ReadonlyArray<Pick<PreservedLink, "path" | "target" | "type">>;
+}
+
+const COPY_CONCURRENCY = 16;
+
+/**
+ * Copies exactly the planned files, then recreates each planned link with its relative target,
+ * once every target exists. A directory link that Windows refuses to create as a symbolic link is
+ * created as a junction to the same directory of the copy.
+ */
+async function copyPlannedTree(source: string, destination: string, plan: CopyPlan): Promise<void> {
+  await mkdir(destination, { recursive: false });
+  const directories = new Set<string>();
+  const ensureParent = async (relative: string) => {
+    const parent = path.posix.dirname(relative);
+    if (parent === "." || directories.has(parent)) return;
+    await mkdir(path.join(destination, ...parent.split("/")), { recursive: true });
+    directories.add(parent);
+  };
+  const files = [...plan.files];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(COPY_CONCURRENCY, files.length) }, async () => {
+      for (let index = next++; index < files.length; index = next++) {
+        const file = files[index] as string;
+        await ensureParent(file);
+        await copyFile(
+          path.join(source, ...file.split("/")),
+          path.join(destination, ...file.split("/")),
+          fsConstants.COPYFILE_EXCL,
+        );
+      }
+    }),
+  );
+  for (const link of plan.links) {
+    await ensureParent(link.path);
+    const linkPath = path.join(destination, ...link.path.split("/"));
+    const target = link.target.split("/").join(path.sep);
+    try {
+      await symlink(target, linkPath, link.type);
+    } catch (error) {
+      if (process.platform !== "win32" || link.type !== "dir") throw error;
+      await symlink(path.resolve(path.dirname(linkPath), target), linkPath, "junction");
+    }
+  }
+}
+
+/** The links of a copied v5 tree with their targets as written, `/`-separated and relative. */
+async function readTreeLinks(root: string, links: readonly string[]): Promise<PreservedLink[]> {
+  const read: PreservedLink[] = [];
+  for (const link of links) {
+    const linkPath = path.join(root, ...link.split("/"));
+    const literal = await readlink(linkPath);
+    const absolute = path.resolve(path.dirname(linkPath), literal);
+    const resolved = relativeWithin(root, absolute);
+    if (resolved === undefined) throw new Error("REPOSITORY_LINK_ESCAPES_ROOT", { cause: link });
+    const target = path.posix.relative(path.posix.dirname(link), resolved || ".") || ".";
+    const type = (await stat(linkPath)).isDirectory() ? "dir" : "file";
+    read.push({ path: link, target, resolved: resolved || ".", type });
+  }
+  return read;
+}
+
+/**
+ * The v5 repository digest: every file with its size and bytes, and every link with its kind and
+ * relative target, in one ordered sequence that no file and link pair can share.
+ */
+async function snapshotTreeDigest(
+  root: string,
+  files: readonly string[],
+  links: readonly PreservedLink[],
+): Promise<string> {
+  const entries = [
+    ...files.map((file) => ({ path: file, link: undefined as PreservedLink | undefined })),
+    ...links.map((link) => ({ path: link.path, link })),
+  ].sort((left, right) => comparePortablePaths(left.path, right.path));
+  const digest = createHash("sha256");
+  for (const entry of entries) {
+    if (entry.link !== undefined) {
+      digest.update(
+        Buffer.from(`L\0${entry.path}\0${entry.link.type}\0${entry.link.target}\0`, "utf8"),
+      );
+      continue;
+    }
+    const content = await readFile(path.join(root, ...entry.path.split("/")));
+    digest.update(Buffer.from(`F\0${entry.path}\0${content.byteLength}\0`, "utf8"));
+    digest.update(content);
+  }
+  return `${SHA256_PREFIX}${digest.digest("hex")}`;
 }
 
 async function executeTrustedLocalAdapter(
@@ -4139,6 +4575,7 @@ async function executeObservation(
   attempt: number,
   nodeTestReporterPath: string | undefined,
   container: ContainerBackend | undefined,
+  workspacePlan: CopyPlan | undefined,
 ): Promise<Observation> {
   const temporaryRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-run-")));
   const workspace = path.join(temporaryRoot, "repository");
@@ -4151,7 +4588,10 @@ async function executeObservation(
         candidateId: candidate?.id ?? null,
         attempt,
       },
-      () => copyRepository(repositoryRoot, workspace, workspaceExcludes(request)),
+      () =>
+        workspacePlan === undefined
+          ? copyRepository(repositoryRoot, workspace, workspaceExcludes(request))
+          : copyPlannedTree(repositoryRoot, workspace, workspacePlan),
     );
     await applyFiles(workspace, world.files);
     if (candidate) await applyFiles(workspace, candidate.files);
@@ -4357,11 +4797,24 @@ interface BunDesignatedProbe {
   mode: "run" | "load";
   expectedFailure?: string;
   testTimeoutMs?: number;
+  /** Further workspace files, such as a bunfig.toml and its preload. */
+  files?: Readonly<Record<string, string>>;
+  trustedMatchers?: ReadonlyArray<{ path: string; matchers: readonly string[] }>;
+  isolate?: boolean;
+  /** Further tests a load registers, each in its own file. */
+  loadTests?: ReadonlyArray<{ file: string; name: string }>;
   outcome: Observation["outcome"];
   attributed: boolean;
   testsDiscovered: number;
   candidateTestsDiscovered: number;
 }
+
+/** A bunfig.toml whose preload extends expect before AssertLedger's preload could, unordered. */
+const PRELOAD_EXTENSION_FILES = {
+  "bunfig.toml": '[test]\npreload = ["./setup.ts"]\n',
+  "setup.ts":
+    'import { expect } from "bun:test"; expect.extend({ toBe() { return { pass: false, message: () => "replaced" }; }, toFailExtended() { return { pass: false, message: () => "extended" }; } });\n',
+} as const;
 
 const DESIGNATED_PROBES: readonly BunDesignatedProbe[] = (() => {
   const run = (
@@ -4414,6 +4867,48 @@ const DESIGNATED_PROBES: readonly BunDesignatedProbe[] = (() => {
       'expect.extend({ toFail() { throw new Error("expect(received).toFail()"); } }); test("probe", () => expect(1).toFail());',
       "PROCESS_CRASH",
     ),
+    // expect.extend can reuse a built-in name; the function it installs is not the built-in one.
+    run(
+      "replaced-built-in",
+      'expect.extend({ toBe() { return { pass: false, message: () => "replaced" }; } }); test("probe", () => expect(1).toBe(1));',
+      "PROCESS_CRASH",
+    ),
+    // A repository preload runs after AssertLedger's: its replacement is never a built-in matcher,
+    // and its own matchers are custom unless the operator declared them trusted.
+    {
+      ...run(
+        "preload-replaced-built-in",
+        'test("probe", () => expect(1).toBe(1));',
+        "PROCESS_CRASH",
+      ),
+      files: PRELOAD_EXTENSION_FILES,
+    },
+    {
+      ...run(
+        "preload-custom-matcher",
+        'test("probe", () => expect(1).toFailExtended());',
+        "PROCESS_CRASH",
+      ),
+      files: PRELOAD_EXTENSION_FILES,
+    },
+    {
+      ...run(
+        "trusted-matcher",
+        'test("probe", () => expect(1).toFailExtended());',
+        "ASSERTION_FAILURE",
+      ),
+      files: PRELOAD_EXTENSION_FILES,
+      trustedMatchers: [{ path: "setup.ts", matchers: ["toFailExtended"] }],
+    },
+    {
+      ...run(
+        "trusted-matcher-other-name",
+        'test("probe", () => expect(1).toBe(1));',
+        "PROCESS_CRASH",
+      ),
+      files: PRELOAD_EXTENSION_FILES,
+      trustedMatchers: [{ path: "setup.ts", matchers: ["toFailExtended"] }],
+    },
     run("passing", 'test("probe", () => expect(1).toBe(1));', "PASS"),
     run("absent", 'test("other", () => expect(1).toBe(2));', "NO_TEST_DISCOVERED"),
     run(
@@ -4448,6 +4943,22 @@ const DESIGNATED_PROBES: readonly BunDesignatedProbe[] = (() => {
       testsDiscovered: 0,
       candidateTestsDiscovered: 0,
     },
+    {
+      // Isolated, each further file gets a fresh global: the driver loads one file per process.
+      name: "isolated-load",
+      body: 'test("probe", () => expect(1).toBe(2));',
+      mode: "load",
+      isolate: true,
+      loadTests: [{ file: "second.test.ts", name: "second" }],
+      outcome: "PASS",
+      attributed: false,
+      testsDiscovered: 2,
+      candidateTestsDiscovered: 0,
+    },
+    {
+      ...run("isolated-run", failing, "ASSERTION_FAILURE"),
+      isolate: true,
+    },
   ];
 })();
 
@@ -4477,10 +4988,28 @@ async function runBunDesignatedPreflight(
           withEmptyWorkspace(async (workspace) => {
             await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
             await writeFile(path.join(workspace, "probe.test.ts"), `${header} ${probe.body}\n`);
+            for (const [name, content] of Object.entries(probe.files ?? {})) {
+              await writeFile(path.join(workspace, name), content);
+            }
+            for (const extra of probe.loadTests ?? []) {
+              await writeFile(
+                path.join(workspace, extra.file),
+                `${header} test(${JSON.stringify(extra.name)}, () => {});\n`,
+              );
+            }
             const test = { file: "probe.test.ts", path: ["probe"] };
+            const execution = {
+              workingDirectory: ".",
+              isolate: probe.isolate ?? false,
+              trustedMatchers: probe.trustedMatchers ?? [],
+            };
+            const loadTests = [
+              test,
+              ...(probe.loadTests ?? []).map((extra) => ({ file: extra.file, path: [extra.name] })),
+            ];
             return executor(
               workspace,
-              ["probe.test.ts"],
+              probe.mode === "run" ? ["probe.test.ts"] : loadTests.map((entry) => entry.file),
               {
                 ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(
                   probe.mode === "run"
@@ -4489,8 +5018,9 @@ async function runBunDesignatedPreflight(
                         test,
                         expectedFailure: probe.expectedFailure ?? null,
                         testTimeoutMs: probe.testTimeoutMs ?? null,
+                        ...execution,
                       }
-                    : { mode: "load", tests: [test] },
+                    : { mode: "load", tests: loadTests, ...execution },
                 ),
               },
               probe.name,
@@ -4692,7 +5222,9 @@ async function verifyPreparedCampaign(
   container: ContainerBackend | undefined,
 ): Promise<unknown> {
   const repositoryRoot = await resolveRepositoryRoot(request.repository.root);
-  const version4 = request.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4;
+  const version5 = request.schemaVersion === VERIFICATION_SCHEMA_VERSION_V5;
+  // v4 and v5 bind the snapshot scope to the decision and record it in the manifest.
+  const version4 = request.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4 || version5;
   const excludes = campaignExcludes(request);
   // Before v4 any link refuses the walk; v4 collects them and judges each one below.
   const sourceLinks: string[] | undefined = version4 ? [] : undefined;
@@ -4703,10 +5235,23 @@ async function verifyPreparedCampaign(
   if (sourceInventory.totalBytes > request.budgets.maximumRepositoryBytes) {
     throw new Error("REPOSITORY_BYTES_BUDGET_EXCEEDED");
   }
+  // v5 plans the snapshot against the closure followed through internal links, which it keeps.
+  const snapshotPlan = version5
+    ? await planCampaignSnapshot(
+        request,
+        repositoryRoot,
+        sourceInventory.files,
+        sourceLinks ?? [],
+        excludes,
+      )
+    : undefined;
   const omittedLinks =
-    sourceLinks === undefined || sourceLinks.length === 0
-      ? []
-      : await campaignOmittedLinks(request, repositoryRoot, sourceInventory.files, sourceLinks);
+    snapshotPlan !== undefined
+      ? snapshotPlan.omittedLinks
+      : sourceLinks === undefined || sourceLinks.length === 0
+        ? []
+        : await campaignOmittedLinks(request, repositoryRoot, sourceInventory.files, sourceLinks);
+  if (version5 && omittedLinks.length > 10_000) throw new Error("REPOSITORY_LINK_LIMIT_EXCEEDED");
   const nodeIdentity =
     request.adapter.kind !== "node-test"
       ? undefined
@@ -4800,24 +5345,57 @@ async function verifyPreparedCampaign(
   const repositorySnapshot = path.join(campaignRoot, "repository");
   try {
     await traceOperation("host-snapshot", { kind: "snapshot" }, () =>
-      copyRepository(
-        repositoryRoot,
-        repositorySnapshot,
-        excludes,
-        new Set(omittedLinks.map(portablePathKey)),
-      ),
+      snapshotPlan !== undefined
+        ? copyPlannedTree(repositoryRoot, repositorySnapshot, snapshotPlan)
+        : copyRepository(
+            repositoryRoot,
+            repositorySnapshot,
+            excludes,
+            new Set(omittedLinks.map(portablePathKey)),
+          ),
     );
-    const snapshotInventory = await walkFiles(repositorySnapshot, excludes);
+    // A v5 snapshot holds the planned links; read back, they are what the digest binds.
+    const snapshotLinkPaths: string[] | undefined = version5 ? [] : undefined;
+    const snapshotInventory = await walkFiles(repositorySnapshot, excludes, snapshotLinkPaths);
     if (snapshotInventory.files.length > request.budgets.maximumRepositoryFiles) {
       throw new Error("REPOSITORY_FILE_BUDGET_EXCEEDED");
     }
     if (snapshotInventory.totalBytes > request.budgets.maximumRepositoryBytes) {
       throw new Error("REPOSITORY_BYTES_BUDGET_EXCEEDED");
     }
+    const snapshotLinks =
+      snapshotLinkPaths === undefined
+        ? []
+        : await readTreeLinks(repositorySnapshot, snapshotLinkPaths);
+    if (
+      snapshotPlan !== undefined &&
+      JSON.stringify(snapshotLinks.map(({ path: link, target, type }) => [link, target, type])) !==
+        JSON.stringify(
+          snapshotPlan.links.map(({ path: link, target, type }) => [link, target, type]),
+        )
+    ) {
+      throw new Error("REPOSITORY_SNAPSHOT_LINKS_CHANGED");
+    }
     const gitRecord =
       request.repository.git === "synthesized"
         ? await synthesizeGitWorktree(repositorySnapshot)
         : null;
+    // Each v5 execution copies the snapshot as planned, links and synthesized Git metadata included.
+    const workspacePlan: CopyPlan | undefined =
+      snapshotPlan === undefined
+        ? undefined
+        : await (async () => {
+            const links: string[] = [];
+            const inventory = await walkFiles(
+              repositorySnapshot,
+              workspaceExcludes(request),
+              links,
+            );
+            return {
+              files: inventory.files,
+              links: await readTreeLinks(repositorySnapshot, links),
+            };
+          })();
     const designatedTestFiles = request.candidates.flatMap((candidate) =>
       candidate.designated === undefined ? [] : [candidate.designated.file],
     );
@@ -4851,11 +5429,18 @@ async function verifyPreparedCampaign(
     if (nodeTestReporterPath !== undefined) {
       await writeFile(nodeTestReporterPath, NODE_TEST_REPORTER_SOURCE, { flag: "wx" });
     }
-    // A v4 digest covers exactly the snapshot, dependencies included when the request says so.
-    const repositoryDigest = version4
-      ? await repositoryInventoryDigest(repositorySnapshot, snapshotInventory.files)
-      : ((await analyzeRepository(repositorySnapshot)) as { repositoryDigest: string })
-          .repositoryDigest;
+    // A v4 digest covers exactly the snapshot, dependencies included when the request says so; a
+    // v5 digest also binds every reproduced link and its target.
+    const repositoryDigest = version5
+      ? await snapshotTreeDigest(repositorySnapshot, snapshotInventory.files, snapshotLinks)
+      : version4
+        ? await repositoryInventoryDigest(repositorySnapshot, snapshotInventory.files)
+        : ((await analyzeRepository(repositorySnapshot)) as { repositoryDigest: string })
+            .repositoryDigest;
+    const runDirectory =
+      request.adapter.kind === "bun-test-designated"
+        ? await prepareDesignatedRun(request, repositorySnapshot, snapshotFiles)
+        : undefined;
     const observations: Observation[] = [];
     // Qualification always ran above. Only deterministic upload bytes may be reused here.
     if (container !== undefined)
@@ -4872,6 +5457,7 @@ async function verifyPreparedCampaign(
             attempt,
             nodeTestReporterPath,
             container,
+            workspacePlan,
           ),
         );
       }
@@ -4888,6 +5474,7 @@ async function verifyPreparedCampaign(
               attempt,
               nodeTestReporterPath,
               container,
+              workspacePlan,
             ),
           );
         }
@@ -4992,19 +5579,31 @@ async function verifyPreparedCampaign(
                       runtimePreflight: bunRuntimePreflight,
                       arguments: [
                         "test",
+                        "--config=<generated-bunfig>",
                         "--max-concurrency=1",
                         "--retry=0",
-                        "--preload",
-                        "./node_modules/assertledger/preload.mjs",
                         "--reporter=junit",
                         "--reporter-outfile=<generated-junit-file>",
+                        ...(request.adapter.isolate ? ["--isolate"] : []),
                         "--test-name-pattern=<anchored-designated-test-path>",
                         ...(request.adapter.testTimeoutMs === null
                           ? []
                           : [`--timeout=${request.adapter.testTimeoutMs}`]),
                         "<designated-test-file>",
                       ],
+                      // The generated bunfig is the run directory's own with AssertLedger's
+                      // preload placed before every repository preload.
+                      bunConfiguration: "repository-bunfig-with-assertledger-preload-first",
                       testTimeoutMs: request.adapter.testTimeoutMs,
+                      ...(version5
+                        ? {
+                            workingDirectory: request.adapter.workingDirectory,
+                            runDirectory: runDirectory ?? ".",
+                            isolate: request.adapter.isolate,
+                            trustedMatchers: request.adapter.trustedMatchers,
+                            resolvedTrustedMatchers: request.adapter.resolvedTrustedMatchers ?? [],
+                          }
+                        : {}),
                       designatedTests: request.candidates.map((candidate) => ({
                         candidateId: candidate.id,
                         file: candidate.designated?.file ?? null,
@@ -5043,6 +5642,20 @@ async function verifyPreparedCampaign(
                 includeDependencies: request.repository.includeDependencies,
                 omittedLinks: [...omittedLinks].sort(),
                 git: gitRecord,
+                ...(version5
+                  ? {
+                      snapshot: request.repository.snapshot,
+                      include: [...request.repository.include].sort(),
+                      preservedLinkCount: snapshotLinks.length,
+                      unboundedClosureEdges: [...(snapshotPlan?.unbounded ?? [])].sort(
+                        (left, right) =>
+                          compareOrdinalStrings(
+                            `${left.file}\u0000${left.reason}`,
+                            `${right.file}\u0000${right.reason}`,
+                          ),
+                      ),
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -5076,6 +5689,17 @@ async function verifyPreparedCampaign(
             "Only a failure thrown inside the designated test by a bun:test built-in matcher, in Bun's matcher message form, or by assertSame is admitted as an assertion; with a declared expected line, its first message line must equal it. Custom matchers, usage errors and every other error are not assertion evidence.",
             "Controls load every designated test file without running a test: they show that each world evaluates the file and its imports and still registers the designated test, not that other tests pass.",
             "Bun callback instrumentation determines assertion ownership; JUnit counts only check completeness and never classify assertions.",
+            "Bun ran with the run directory's own bunfig, rewritten so that AssertLedger's preload runs before every repository preload; a matcher replaced or added by expect.extend, before or during the test, is not a built-in matcher.",
+            ...(request.adapter.trustedMatchers.length > 0
+              ? [
+                  "The operator declared custom matchers trusted: a failure of a declared matcher, installed by a module at or below its declared path, is admitted as an assertion, including a usage error that the matcher reports in the matcher message form.",
+                ]
+              : []),
+            ...(request.adapter.isolate
+              ? [
+                  "Bun ran with --isolate; a control that loads several isolated test files runs one Bun process per file.",
+                ]
+              : []),
           ]
         : [];
     const snapshotLimitations = version4
@@ -5092,7 +5716,24 @@ async function verifyPreparedCampaign(
             : []),
           ...(omittedLinks.length > 0
             ? [
-                `${omittedLinks.length} repository link(s) outside the module closure of every executed test were left out of the snapshot; the closure follows literal module specifiers only and does not cover files read at run time.`,
+                version5
+                  ? `${omittedLinks.length} repository link(s) that leave the root, dangle or reach an excluded path lie outside the module closure of every executed test and were left out of the snapshot; the closure follows literal module specifiers only and does not cover files read at run time.`
+                  : `${omittedLinks.length} repository link(s) outside the module closure of every executed test were left out of the snapshot; the closure follows literal module specifiers only and does not cover files read at run time.`,
+              ]
+            : []),
+          ...(version5 && snapshotLinks.length > 0
+            ? [
+                `${snapshotLinks.length} repository-internal link(s) were reproduced in the snapshot with their relative targets; the repository digest binds each link and its target.`,
+              ]
+            : []),
+          ...(version5 && request.repository.snapshot === "test-closure"
+            ? [
+                "The snapshot holds only the static module closure of the executed tests, the package, TypeScript and Bun configurations on their paths and the operator's include paths; a file read at run time outside them is absent from every world.",
+                ...((snapshotPlan?.unbounded.length ?? 0) > 0
+                  ? [
+                      `${snapshotPlan?.unbounded.length} closure edge(s) could not be followed statically; the modules they load at run time are absent unless an include path holds them.`,
+                    ]
+                  : []),
               ]
             : []),
         ]

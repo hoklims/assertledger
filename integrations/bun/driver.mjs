@@ -310,6 +310,120 @@ function escapeRegularExpression(value) {
   return value.replace(/[\\^$.*+?()[\]{}|/-]/gu, "\\$&");
 }
 
+const GENERATED_CONFIG_PREFIX = "__assertledger_bunfig_";
+const TEST_TABLE_HEADER = /^\s*\[\s*test\s*\]\s*(?:#.*)?$/u;
+const TABLE_HEADER = /^\s*\[/u;
+const TEST_PRELOAD = /^\s*preload\s*=(.*)$/u;
+// Spellings that could set test.preload without the plain key inside a [test] table.
+const INDIRECT_TEST_PRELOAD =
+  /^\s*(?:test\s*\.\s*preload|["']?test["']?\s*=|\[\s*["']test["']\s*\]|["']preload["']\s*=)/u;
+
+function unsupportedConfig() {
+  return new Error("BUNFIG_TEST_PRELOAD_UNSUPPORTED");
+}
+
+/** The strings of a one-line TOML array or string, or undefined when it is anything else. */
+function parsePreloadValue(raw) {
+  let rest = raw.trim();
+  const strings = [];
+  const array = rest.startsWith("[");
+  if (array) rest = rest.slice(1).trimStart();
+  for (;;) {
+    if (array && rest.startsWith("]")) {
+      rest = rest.slice(1);
+      break;
+    }
+    const basic = /^"((?:[^"\\\p{Cc}]|\\["\\btnfr]|\\u[0-9A-Fa-f]{4})*)"/u.exec(rest);
+    const literal = basic === null ? /^'([^'\p{Cc}]*)'/u.exec(rest) : null;
+    if (basic === null && literal === null) return undefined;
+    strings.push(basic === null ? literal[1] : JSON.parse(`"${basic[1]}"`));
+    rest = rest.slice((basic ?? literal)[0].length).trimStart();
+    if (!array) break;
+    if (rest.startsWith(",")) rest = rest.slice(1).trimStart();
+    else if (!rest.startsWith("]")) return undefined;
+  }
+  return /^\s*(?:#.*)?$/u.test(rest) ? strings : undefined;
+}
+
+/**
+ * The bunfig a designated run uses: the repository's own, read from the working directory, whose
+ * [test] preload list starts with AssertLedger's preload and then keeps every repository preload in
+ * order. `bun test --config` reads only this file, so the repository preloads run once, after the
+ * instrumentation has recorded Bun's own matchers. A preload set any other way is refused.
+ */
+export function designatedBunConfig(source, preload) {
+  const entry = JSON.stringify(preload);
+  if (source === undefined) return `[test]\npreload = [${entry}]\n`;
+  const lines = source.split(/\r?\n/u);
+  let inTest = false;
+  let header = -1;
+  let assignment = -1;
+  let assignmentEnd = -1;
+  let preloads = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (INDIRECT_TEST_PRELOAD.test(line)) throw unsupportedConfig();
+    if (TABLE_HEADER.test(line)) {
+      inTest = TEST_TABLE_HEADER.test(line);
+      if (inTest) {
+        if (header >= 0) throw unsupportedConfig();
+        header = index;
+      }
+      continue;
+    }
+    const match = inTest ? TEST_PRELOAD.exec(line) : null;
+    if (match === null) continue;
+    if (assignment >= 0) throw unsupportedConfig();
+    // An array may continue over the following lines; it ends on the first line that parses.
+    let value = match[1];
+    let end = index;
+    let parsed = parsePreloadValue(value);
+    while (parsed === undefined && value.trim().startsWith("[") && end + 1 < lines.length) {
+      end += 1;
+      if (TABLE_HEADER.test(lines[end]) && !/^\s*\[\s*["']/u.test(lines[end])) break;
+      value = `${value} ${lines[end].replace(/^\s*#.*$/u, "")}`;
+      parsed = parsePreloadValue(value);
+    }
+    if (parsed === undefined) throw unsupportedConfig();
+    assignment = index;
+    assignmentEnd = end;
+    preloads = parsed;
+    index = end;
+  }
+  const replacement = `preload = [${[entry, ...preloads.map((value) => JSON.stringify(value))].join(", ")}]`;
+  if (assignment >= 0) lines.splice(assignment, assignmentEnd - assignment + 1, replacement);
+  else if (header >= 0) lines.splice(header + 1, 0, replacement);
+  else {
+    while (lines.length > 0 && lines.at(-1) === "") lines.pop();
+    lines.push(...(lines.length > 0 ? [""] : []), "[test]", replacement);
+  }
+  return `${lines.join("\n").replace(/\n*$/u, "")}\n`;
+}
+
+/** A `/`-separated directory relative to the root, "." for the root itself. */
+function normalizeWorkingDirectory(value) {
+  if (value === ".") return ".";
+  return normalizeRelativeFile(value);
+}
+
+function validTrustedMatchers(value) {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        Object.keys(entry).sort().join(",") === "matchers,path" &&
+        normalizeWorkingDirectory(entry.path) !== undefined &&
+        Array.isArray(entry.matchers) &&
+        entry.matchers.length > 0 &&
+        entry.matchers.every(
+          (name) => typeof name === "string" && /^[A-Za-z_$][\w$]*$/u.test(name),
+        ),
+    )
+  );
+}
+
 /** Validates a designated selection against the files the driver was asked to load or run. */
 function parseDesignatedSelection(value, files) {
   if (value === undefined) return undefined;
@@ -325,9 +439,17 @@ function parseDesignatedSelection(value, files) {
   const fileSet = (tests) => [...new Set(tests.map((test) => normalizeRelativeFile(test.file)))];
   const sameFiles = (tests) =>
     JSON.stringify(fileSet(tests).sort()) === JSON.stringify([...files].sort());
+  const validExecution =
+    typeof selection === "object" &&
+    selection !== null &&
+    normalizeWorkingDirectory(selection.workingDirectory) !== undefined &&
+    typeof selection.isolate === "boolean" &&
+    validTrustedMatchers(selection.trustedMatchers);
   if (
-    selection?.mode === "run" &&
-    Object.keys(selection).sort().join(",") === "expectedFailure,mode,test,testTimeoutMs" &&
+    validExecution &&
+    selection.mode === "run" &&
+    Object.keys(selection).sort().join(",") ===
+      "expectedFailure,isolate,mode,test,testTimeoutMs,trustedMatchers,workingDirectory" &&
     validTest(selection.test) &&
     (selection.expectedFailure === null || typeof selection.expectedFailure === "string") &&
     (selection.testTimeoutMs === null ||
@@ -339,8 +461,10 @@ function parseDesignatedSelection(value, files) {
     return selection;
   }
   if (
-    selection?.mode === "load" &&
-    Object.keys(selection).sort().join(",") === "mode,tests" &&
+    validExecution &&
+    selection.mode === "load" &&
+    Object.keys(selection).sort().join(",") ===
+      "isolate,mode,tests,trustedMatchers,workingDirectory" &&
     Array.isArray(selection.tests) &&
     selection.tests.length > 0 &&
     selection.tests.every(validTest) &&
@@ -383,8 +507,23 @@ async function installHelper(helperSource, root) {
   );
 }
 
-async function runBun(executable, files, junitFile, root, evidenceKey, extraArguments = []) {
-  const exactPath = (file) => `./${file.replaceAll(path.sep, "/")}`;
+/**
+ * Runs `bun test` on `files`, relative to the root. Without `config` the preload comes from the
+ * command line in the root, as for candidate files; with it, Bun runs in `config.cwd` and reads only
+ * the generated bunfig there, whose first preload is AssertLedger's.
+ */
+async function runBun(
+  executable,
+  files,
+  junitFile,
+  root,
+  evidenceKey,
+  extraArguments = [],
+  config = undefined,
+) {
+  const cwd = config?.cwd ?? root;
+  const exactPath = (file) =>
+    `./${path.relative(cwd, path.join(root, file)).replaceAll(path.sep, "/")}`;
   const childEnvironment = { ...process.env };
   delete childEnvironment.TESTFORGE_RESULT_FILE;
   delete childEnvironment.TESTFORGE_CANDIDATE_FILES;
@@ -395,17 +534,21 @@ async function runBun(executable, files, junitFile, root, evidenceKey, extraArgu
     executable,
     [
       "test",
-      "--max-concurrency=1",
-      "--retry=0",
-      "--preload",
-      "./node_modules/assertledger/preload.mjs",
+      ...(config === undefined
+        ? [
+            "--max-concurrency=1",
+            "--retry=0",
+            "--preload",
+            "./node_modules/assertledger/preload.mjs",
+          ]
+        : [`--config=./${config.name}`, "--max-concurrency=1", "--retry=0"]),
       "--reporter=junit",
       `--reporter-outfile=${junitFile}`,
       ...extraArguments,
       ...files.map(exactPath),
     ],
     {
-      cwd: root,
+      cwd,
       env: childEnvironment,
       shell: false,
       stdio: ["ignore", "pipe", "pipe", "pipe", "pipe"],
@@ -534,14 +677,54 @@ async function runDesignated(
   root,
   evidenceKey,
 ) {
-  const pattern =
-    selection.mode === "run"
+  const cwd = path.resolve(root, selection.workingDirectory);
+  const relativeCwd = path.relative(root, cwd);
+  if (
+    relativeCwd === ".." ||
+    relativeCwd.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeCwd)
+  )
+    throw new Error("INVALID_DESIGNATED_SELECTION");
+  let original;
+  try {
+    const bunfig = path.join(cwd, "bunfig.toml");
+    if ((await lstat(bunfig)).isFile()) original = await readFile(bunfig, "utf8");
+    else throw unsupportedConfig();
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      await emit(infrastructureFailure("BUNFIG_TEST_PRELOAD_UNSUPPORTED"));
+      return;
+    }
+  }
+  let generated;
+  try {
+    generated = designatedBunConfig(
+      original,
+      path.join(root, "node_modules", "assertledger", "preload.mjs").replaceAll(path.sep, "/"),
+    );
+  } catch {
+    await emit(infrastructureFailure("BUNFIG_TEST_PRELOAD_UNSUPPORTED"));
+    return;
+  }
+  const config = { cwd, name: `${GENERATED_CONFIG_PREFIX}${randomUUID()}.toml` };
+  await writeFile(path.join(cwd, config.name), generated, { flag: "wx" });
+  const pattern = [
+    ...(selection.isolate ? ["--isolate"] : []),
+    ...(selection.mode === "run"
       ? [
           `--test-name-pattern=^${escapeRegularExpression(selection.test.path.join(" "))}$`,
           ...(selection.testTimeoutMs === null ? [] : [`--timeout=${selection.testTimeoutMs}`]),
         ]
-      : [];
-  const execution = await runBun(executable, testFiles, junitFile, root, evidenceKey, pattern);
+      : []),
+  ];
+  // An isolated run evaluates the preload again in a fresh global for each further file, and the
+  // evidence key can be read only once: an isolated load therefore runs one file per process.
+  const batches =
+    selection.isolate && selection.mode === "load" ? testFiles.map((file) => [file]) : [testFiles];
+  const executions = [];
+  for (const batch of batches) {
+    executions.push(await runBun(executable, batch, junitFile, root, evidenceKey, pattern, config));
+  }
   let outcome;
   try {
     let junit;
@@ -552,21 +735,29 @@ async function runDesignated(
       if (selection.mode === "run" || error?.code !== "ENOENT") throw error;
     }
     // No registration or no matching test leaves the signed channel empty.
-    const events =
-      execution.eventContent === undefined
-        ? undefined
-        : execution.eventContent === ""
-          ? []
-          : parseEvents(execution.eventContent, root, new Set(files), evidenceKey, true);
+    let events = [];
+    for (const execution of executions) {
+      const parsed =
+        execution.eventContent === undefined
+          ? undefined
+          : execution.eventContent === ""
+            ? []
+            : parseEvents(execution.eventContent, root, new Set(files), evidenceKey, true);
+      events = events === undefined || parsed === undefined ? undefined : [...events, ...parsed];
+    }
+    const exitCode = executions.some((execution) => execution.exitCode === null)
+      ? null
+      : (executions.find((execution) => execution.exitCode !== 0)?.exitCode ?? 0);
+    const operationalError = executions.some((execution) => execution.operationalError);
     outcome =
       selection.mode === "run"
-        ? classifyBunDesignatedRun(events, junit, execution.exitCode, execution.operationalError)
+        ? classifyBunDesignatedRun(events, junit, exitCode, operationalError)
         : classifyBunDesignatedLoad(
             events,
             junit,
             selection.tests.length,
-            execution.exitCode,
-            execution.operationalError,
+            exitCode,
+            operationalError,
           );
   } catch {
     outcome = infrastructureFailure("MISSING_OR_INVALID_REPORT");

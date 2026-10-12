@@ -238,6 +238,29 @@ describe("static test module closure", () => {
     assert.deepEqual(closure.links, ["node_modules/@scope/core"]);
   });
 
+  it("keeps the installed link a package resolves through when another package maps the name", async () => {
+    // The mapping belongs to tools/compat's own tsconfig: the runtime applies it only inside that
+    // package, so web/bunfig.toml still reaches the package through its installed link.
+    const sources: Record<string, string> = {
+      "web/package.json": '{"name":"web"}',
+      "web/bunfig.toml": '[test]\npreload = ["@scope/compat/preload"]\n',
+      "web/a.test.ts": "export {};\n",
+      "tools/compat/package.json":
+        '{"name":"@scope/compat","exports":{"./preload":"./src/preload.ts"}}',
+      "tools/compat/tsconfig.json": '{"compilerOptions":{"paths":{"@scope/compat/*":["./src/*"]}}}',
+      "tools/compat/src/preload.ts": "export {};\n",
+    };
+    const closure = await computeTestClosure({
+      files: Object.keys(sources),
+      links: ["web/node_modules/@scope/compat"],
+      linkTargets: new Map([["web/node_modules/@scope/compat", "tools/compat"]]),
+      roots: ["web/a.test.ts"],
+      read: read(sources),
+    });
+    assert.deepEqual(closure.links, ["web/node_modules/@scope/compat"]);
+    assert.ok(closure.files.includes("tools/compat/src/preload.ts"));
+  });
+
   it("marks computed, absolute and escaping specifiers as unbounded edges", async () => {
     const sources: Record<string, string> = {
       "tests/a.test.ts":

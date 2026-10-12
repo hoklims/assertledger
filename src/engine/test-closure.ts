@@ -20,6 +20,17 @@ export interface TestClosureInput {
   roots: readonly string[];
   /** Every text the path can hold during the campaign: the repository bytes and each overlay. */
   read: (file: string) => Promise<readonly string[]>;
+  /**
+   * With this map the closure follows repository-internal links, as Bun resolves modules through
+   * real paths: each link is recorded and its target, a `/`-separated path from the root, is walked
+   * instead. Without it, or for a link absent from it, a link stops the walk and is only recorded.
+   */
+  linkTargets?: ReadonlyMap<string, string>;
+  /**
+   * Specifiers the runner provides itself. `bun test` answers `vitest` and `@jest/globals` with its
+   * own test API, so their installed packages are not on the closure.
+   */
+  runnerModules?: ReadonlySet<string>;
 }
 
 export interface UnboundedClosureEdge {
@@ -160,17 +171,55 @@ interface PathMapping {
   targets: string[];
 }
 
+/** A path read through the links on it: the real path, or the link the walk could not follow. */
+interface ResolvedPath {
+  path: string;
+  links: string[];
+  stopped?: string;
+}
+
+/** Link hops followed for one path before the walk stops at the link, as a resolver would. */
+const LINK_HOP_LIMIT = 40;
+
 class RepositoryIndex {
   readonly fileByKey = new Map<string, string>();
   readonly linkByKey = new Map<string, string>();
+  readonly linkTargetByKey = new Map<string, string>();
   readonly sortedFileKeys: string[];
   readonly sortedLinkKeys: string[];
 
-  constructor(files: readonly string[], links: readonly string[]) {
+  constructor(
+    files: readonly string[],
+    links: readonly string[],
+    linkTargets?: ReadonlyMap<string, string>,
+  ) {
     for (const file of files) this.fileByKey.set(portablePathKey(file), file);
     for (const link of links) this.linkByKey.set(portablePathKey(link), link);
+    for (const [link, target] of linkTargets ?? []) {
+      this.linkTargetByKey.set(portablePathKey(link), target);
+    }
     this.sortedFileKeys = [...this.fileByKey.keys()].sort();
     this.sortedLinkKeys = [...this.linkByKey.keys()].sort();
+  }
+
+  get followsLinks(): boolean {
+    return this.linkTargetByKey.size > 0;
+  }
+
+  /** Replaces each followable link on the path by its target; stops at any other link. */
+  resolve(candidate: string): ResolvedPath {
+    const links: string[] = [];
+    let current = candidate;
+    for (let hop = 0; ; hop += 1) {
+      const link = this.linkOnPath(current);
+      if (link === undefined) return { path: current, links };
+      links.push(link);
+      const target = this.linkTargetByKey.get(portablePathKey(link));
+      if (target === undefined || hop >= LINK_HOP_LIMIT)
+        return { path: current, links, stopped: link };
+      const rest = current.slice(link.length);
+      current = path.posix.normalize(`${target}${rest}`).replace(/\/$/u, "");
+    }
   }
 
   file(candidate: string): string | undefined {
@@ -227,6 +276,7 @@ class ClosureWalk {
     readonly index: RepositoryIndex,
     readonly mappings: readonly PathMapping[],
     readonly workspaces: ReadonlyMap<string, string>,
+    readonly runnerModules: ReadonlySet<string> = new Set(),
   ) {}
 
   addFile(file: string): void {
@@ -235,21 +285,52 @@ class ClosureWalk {
     if (!withinNodeModules(file)) this.queue.push(file);
   }
 
+  /** The real path of `candidate`, recording every link read; undefined at an unfollowable link. */
+  realPath(candidate: string): string | undefined {
+    const resolved = this.index.resolve(candidate);
+    for (const link of resolved.links) this.links.add(link);
+    return resolved.stopped === undefined ? resolved.path : undefined;
+  }
+
   /** Adds an existing file, a link on its path, or nothing. Returns whether it was found. */
   include(candidate: string): boolean {
-    const link = this.index.linkOnPath(candidate);
-    if (link !== undefined) {
-      this.links.add(link);
-      return true;
-    }
-    const file = this.index.file(candidate);
+    const real = this.realPath(candidate);
+    if (real === undefined) return true;
+    const file = this.index.file(real);
     if (file === undefined) return false;
     this.addFile(file);
     return true;
   }
 
+  /**
+   * Keeps the links below a directory the way the runtime can reach them. Without link following
+   * every one is recorded. With it, a dependency link inside a nested node_modules is left to
+   * module resolution, and any other link is followed and its target kept whole.
+   */
+  includeLinksUnder(directory: string): void {
+    for (const link of this.index.linksUnder(directory)) {
+      if (!this.index.followsLinks) {
+        this.links.add(link);
+        continue;
+      }
+      const below = link.slice(directory.length + 1);
+      if (below.split("/").some((segment) => portablePathKey(segment) === "node_modules")) continue;
+      const real = this.realPath(link);
+      if (real === undefined || this.followedTrees.has(portablePathKey(real))) continue;
+      this.followedTrees.add(portablePathKey(real));
+      if (!this.include(real)) {
+        for (const file of this.index.filesUnder(real)) this.addFile(file);
+        this.includeLinksUnder(real);
+      }
+    }
+  }
+
+  readonly followedTrees = new Set<string>();
+
   /** Resolves a path the way a bundler does: exact, with an extension, or a directory index. */
-  includeModulePath(base: string): boolean {
+  includeModulePath(requested: string): boolean {
+    const base = this.realPath(requested);
+    if (base === undefined) return true;
     const extension = path.posix.extname(base);
     const alternatives = [".js", ".jsx", ".mjs", ".cjs"].includes(extension)
       ? [".ts", ".tsx", ".mts", ".cts"].map(
@@ -267,25 +348,22 @@ class ClosureWalk {
     const below = this.index.filesUnder(base);
     const belowLinks = this.index.linksUnder(base);
     if (below.length === 0 && belowLinks.length === 0) return false;
-    for (const link of belowLinks) this.links.add(link);
+    this.includeLinksUnder(base);
     for (const file of below) this.addFile(file);
     return true;
   }
 
   /** A dependency package is kept whole and its declared dependencies are followed. */
-  async includePackage(directory: string, read: TestClosureInput["read"]): Promise<boolean> {
-    const link = this.index.linkOnPath(directory);
-    if (link !== undefined) {
-      this.links.add(link);
-      return true;
-    }
+  async includePackage(requested: string, read: TestClosureInput["read"]): Promise<boolean> {
+    const directory = this.realPath(requested);
+    if (directory === undefined) return true;
     const files = this.index.filesUnder(directory);
     const links = this.index.linksUnder(directory);
     if (files.length === 0 && links.length === 0) return false;
     const key = portablePathKey(directory);
     if (this.packages.has(key)) return true;
     this.packages.add(key);
-    for (const found of links) this.links.add(found);
+    this.includeLinksUnder(directory);
     for (const file of files) this.files.add(file);
     const manifest = this.index.file(`${directory}/package.json`);
     if (manifest === undefined) return true;
@@ -326,6 +404,7 @@ class ClosureWalk {
 
   async resolve(file: string, specifier: string, read: TestClosureInput["read"]): Promise<void> {
     if (BUILTINS.has(specifier) || specifier === "bun" || specifier.startsWith("bun:")) return;
+    if (this.runnerModules.has(specifier)) return;
     if (specifier.startsWith("node:")) return;
     if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(specifier) || specifier.startsWith("/")) {
       this.markUnbounded(file, "ABSOLUTE_MODULE_SPECIFIER");
@@ -367,13 +446,15 @@ class ClosureWalk {
         if (this.includeModulePath(resolved)) mapped = true;
       }
     }
-    if (mapped) return;
+    // The mappings come from every tsconfig, while the runtime applies only the one that governs
+    // the importing file: following links, the installed package stays on the resolution path too.
+    if (mapped && !this.index.followsLinks) return;
     const { name, subpath } = packageName(specifier);
     const workspace = this.workspaces.get(name);
     if (workspace !== undefined) {
       // A workspace package is repository source: keep every file of it and scan them.
       this.includeModulePath(subpath === "" ? workspace : `${workspace}/${subpath}`);
-      for (const link of this.index.linksUnder(workspace)) this.links.add(link);
+      this.includeLinksUnder(workspace);
       for (const found of this.index.filesUnder(workspace)) this.addFile(found);
     }
     const directory = path.posix.dirname(file);
@@ -448,11 +529,12 @@ async function workspacePackages(
 
 /** Computes the module closure of `roots`. */
 export async function computeTestClosure(input: TestClosureInput): Promise<TestClosure> {
-  const index = new RepositoryIndex(input.files, input.links);
+  const index = new RepositoryIndex(input.files, input.links, input.linkTargets);
   const walk = new ClosureWalk(
     index,
     await tsconfigMappings(index, input.read),
     await workspacePackages(index, input.read),
+    input.runnerModules,
   );
   for (const root of input.roots) walk.include(root);
   const scanned = new Set<string>();
@@ -483,11 +565,24 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
       if (directory === ".") break;
       directory = path.posix.dirname(directory);
     }
+    // Following links, the walk also keeps what Bun reads to compile a file: each configuration a
+    // tsconfig or jsconfig extends, and the automatic JSX runtime a .tsx or .jsx file imports.
+    if (index.followsLinks && isProjectConfiguration(file)) {
+      for (const text of await input.read(file)) {
+        for (const specifier of tsconfigExtends(text))
+          await walk.resolve(file, specifier, input.read);
+      }
+      continue;
+    }
     if (!SCANNED_EXTENSIONS.includes(path.posix.extname(file).toLowerCase())) continue;
     for (const text of await input.read(file)) {
       const scan = scanModuleSpecifiers(text, file);
       if (scan.nonLiteral) walk.markUnbounded(file, "NON_LITERAL_MODULE_SPECIFIER");
-      for (const specifier of [...scan.specifiers].sort()) {
+      const implicit =
+        index.followsLinks && /\.[jt]sx$/iu.test(file)
+          ? ["react/jsx-dev-runtime", "react/jsx-runtime"]
+          : [];
+      for (const specifier of [...new Set([...scan.specifiers, ...implicit])].sort()) {
         await walk.resolve(file, specifier, input.read);
       }
     }
@@ -505,6 +600,61 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
           : 1,
     ),
   };
+}
+
+/**
+ * The files and links below each operator path, read through followable links. A path that names
+ * no file, directory or link is missing. Nothing below a path is left out.
+ */
+export function expandIncludedPaths(
+  input: Pick<TestClosureInput, "files" | "links" | "linkTargets">,
+  paths: readonly string[],
+): { files: string[]; links: string[]; missing: string[] } {
+  const index = new RepositoryIndex(input.files, input.links, input.linkTargets);
+  const files = new Set<string>();
+  const links = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (candidate: string): boolean => {
+    const resolved = index.resolve(candidate);
+    for (const link of resolved.links) links.add(link);
+    if (resolved.stopped !== undefined) return true;
+    const key = portablePathKey(resolved.path);
+    if (visited.has(key)) return true;
+    visited.add(key);
+    const file = index.file(resolved.path);
+    if (file !== undefined) {
+      files.add(file);
+      return true;
+    }
+    const below = index.filesUnder(resolved.path);
+    const belowLinks = index.linksUnder(resolved.path);
+    if (below.length === 0 && belowLinks.length === 0) return false;
+    for (const found of below) files.add(found);
+    for (const link of belowLinks) visit(link);
+    return true;
+  };
+  const missing = paths.filter((entry) => !visit(entry));
+  return { files: [...files].sort(), links: [...links].sort(), missing };
+}
+
+function isProjectConfiguration(file: string): boolean {
+  const base = path.posix.basename(file).toLowerCase();
+  return base === "jsconfig.json" || (base.startsWith("tsconfig") && base.endsWith(".json"));
+}
+
+/** The configurations a tsconfig or jsconfig extends, as module specifiers from its directory. */
+function tsconfigExtends(text: string): string[] {
+  let document: unknown;
+  try {
+    document = parseJsonWithComments(text);
+  } catch {
+    return [];
+  }
+  const value = isRecord(document) ? document.extends : undefined;
+  const entries = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
+  return entries
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    .map((entry) => (entry === "." || entry === ".." ? `${entry}/tsconfig.json` : entry));
 }
 
 /** Preload modules a root `bunfig.toml` declares for `bun test`; undefined when unreadable. */

@@ -83,20 +83,148 @@ function scopedAssertSame(...arguments_) {
   }
 }
 
-// Only a built-in matcher, present before any test file can extend expect, can issue an owned
-// failure, and only when its message has Bun's matcher form. Usage errors and custom matchers stay
-// ordinary errors.
+// Only a built-in matcher can issue an owned failure, and only when its message has Bun's matcher
+// form. Usage errors and custom matchers stay ordinary errors. The driver loads this preload before
+// any repository preload, so the functions found here are Bun's own; a matcher is built in only
+// when Bun 1.4.2 ships it under that name and, when called, it is still that function. expect.extend
+// installs a custom matcher, even one reusing a built-in name, as a different native function.
+const BUN_BUILT_IN_MATCHERS = [
+  "fail",
+  "lastCalledWith",
+  "lastReturnedWith",
+  "nthCalledWith",
+  "nthReturnedWith",
+  "pass",
+  "toBe",
+  "toBeArray",
+  "toBeArrayOfSize",
+  "toBeBoolean",
+  "toBeCalled",
+  "toBeCalledTimes",
+  "toBeCalledWith",
+  "toBeCloseTo",
+  "toBeDate",
+  "toBeDefined",
+  "toBeEmpty",
+  "toBeEmptyObject",
+  "toBeEven",
+  "toBeFalse",
+  "toBeFalsy",
+  "toBeFinite",
+  "toBeFunction",
+  "toBeGreaterThan",
+  "toBeGreaterThanOrEqual",
+  "toBeInstanceOf",
+  "toBeInteger",
+  "toBeLessThan",
+  "toBeLessThanOrEqual",
+  "toBeNaN",
+  "toBeNegative",
+  "toBeNil",
+  "toBeNull",
+  "toBeNumber",
+  "toBeObject",
+  "toBeOdd",
+  "toBeOneOf",
+  "toBePositive",
+  "toBeString",
+  "toBeSymbol",
+  "toBeTrue",
+  "toBeTruthy",
+  "toBeTypeOf",
+  "toBeUndefined",
+  "toBeValidDate",
+  "toBeWithin",
+  "toContain",
+  "toContainAllKeys",
+  "toContainAllValues",
+  "toContainAnyKeys",
+  "toContainAnyValues",
+  "toContainEqual",
+  "toContainKey",
+  "toContainKeys",
+  "toContainValue",
+  "toContainValues",
+  "toEndWith",
+  "toEqual",
+  "toEqualIgnoringWhitespace",
+  "toHaveBeenCalled",
+  "toHaveBeenCalledOnce",
+  "toHaveBeenCalledTimes",
+  "toHaveBeenCalledWith",
+  "toHaveBeenLastCalledWith",
+  "toHaveBeenNthCalledWith",
+  "toHaveLastReturnedWith",
+  "toHaveLength",
+  "toHaveNthReturnedWith",
+  "toHaveProperty",
+  "toHaveReturned",
+  "toHaveReturnedTimes",
+  "toHaveReturnedWith",
+  "toInclude",
+  "toIncludeRepeated",
+  "toMatch",
+  "toMatchInlineSnapshot",
+  "toMatchObject",
+  "toMatchSnapshot",
+  "toReturn",
+  "toSatisfy",
+  "toStartWith",
+  "toStrictEqual",
+  "toThrow",
+  "toThrowError",
+  "toThrowErrorMatchingInlineSnapshot",
+  "toThrowErrorMatchingSnapshot",
+];
 const nativeExpect = bunTest.expect;
-const builtInMatchers = new Set();
+const builtInMatchers = new Map();
 const matcherChains = new Set(["not", "resolves", "rejects"]);
 const matcherPrototype =
   designatedSelection === undefined ? null : prototypeOf(nativeExpect(undefined));
-for (const name of matcherPrototype === null ? [] : Reflect.ownKeys(matcherPrototype)) {
-  const descriptor = ownDescriptor(matcherPrototype, name);
-  if (typeof name === "string" && name !== "constructor" && typeof descriptor?.value === "function")
-    builtInMatchers.add(name);
+for (const name of matcherPrototype === null ? [] : BUN_BUILT_IN_MATCHERS) {
+  const value = ownDescriptor(matcherPrototype, name)?.value;
+  if (typeof value === "function") builtInMatchers.set(name, value);
 }
-const hasBuiltInMatcher = Set.prototype.has.bind(builtInMatchers);
+const builtInMatcher = Map.prototype.get.bind(builtInMatchers);
+
+// Matchers the operator declared trusted: those that a module at or below a declared path installs
+// with expect.extend under a declared name. Each one is identified by the function expect.extend
+// installed, so a later extension under the same name, from anywhere, is no longer trusted.
+const trustedSources = (designatedSelection?.trustedMatchers ?? []).map((entry) => ({
+  path: fileKey(path.resolve(root, entry.path)),
+  matchers: new Set(entry.matchers),
+}));
+const trustedMatchers = new Map();
+const trustedMatcher = Map.prototype.get.bind(trustedMatchers);
+const objectKeys = Object.keys;
+function declaredTrusted(file, name) {
+  if (file === undefined) return false;
+  const key = fileKey(file);
+  return trustedSources.some(
+    (source) =>
+      source.matchers.has(name) &&
+      (key === source.path || safeApply(stringStartsWith, key, [`${source.path}${path.sep}`])),
+  );
+}
+if (matcherPrototype !== null) {
+  const nativeExtend = nativeExpect.extend;
+  nativeExpect.extend = function extend(matchers) {
+    const caller = callerFile();
+    const result = safeApply(nativeExtend, this ?? nativeExpect, [matchers]);
+    for (const name of typeof matchers === "object" && matchers !== null
+      ? objectKeys(matchers)
+      : []) {
+      trustedMatchers.delete(name);
+      const installed = ownDescriptor(matcherPrototype, name)?.value;
+      if (typeof installed === "function" && declaredTrusted(caller, name))
+        trustedMatchers.set(name, installed);
+    }
+    return result;
+  };
+}
+const ownedMatcher = (name, value) =>
+  builtInMatcher(name) === value ||
+  (trustedMatcher(name) !== undefined && trustedMatcher(name) === value);
 const isMatcherChain = Set.prototype.has.bind(matcherChains);
 function markMatcherFailure(error, id) {
   if (id === undefined || !isErrorInstance(error)) return;
@@ -110,7 +238,7 @@ function scopedMatchers(matchers) {
       const value = safeGet(target, property, target);
       if (typeof property === "string" && isMatcherChain(property)) return scopedMatchers(value);
       if (typeof value !== "function") return value;
-      if (typeof property !== "string" || !hasBuiltInMatcher(property)) return value.bind(target);
+      if (typeof property !== "string" || !ownedMatcher(property, value)) return value.bind(target);
       return (...arguments_) => {
         const id = currentTestId();
         try {
@@ -163,6 +291,13 @@ function record(event) {
 }
 
 function registrationFile() {
+  const file = callerFile();
+  if (file === undefined) throw new Error("ASSERTLEDGER_BUN_REGISTRATION_FILE_UNAVAILABLE");
+  return file;
+}
+
+/** The first file outside this preload on the current stack, if any. */
+function callerFile() {
   const lines = new Error().stack?.split(/\r?\n/u).slice(1) ?? [];
   for (const line of lines) {
     let location = line.trim().replace(/^at\s+/u, "");
@@ -184,7 +319,7 @@ function registrationFile() {
     if (absolute === preloadPath) continue;
     return absolute;
   }
-  throw new Error("ASSERTLEDGER_BUN_REGISTRATION_FILE_UNAVAILABLE");
+  return undefined;
 }
 
 // Describe names enclosing the registration in progress. A templated (`each`) or non-string name
