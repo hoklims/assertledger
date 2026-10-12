@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { parseEvidenceManifestV5, parseWitnessImportRequestV2 } from "../src/contracts/index.js";
-import { replayEvidenceManifest, sealManifestArtifact } from "../src/core/index.js";
+import { decideEvidence, replayEvidenceManifest, sealManifestArtifact } from "../src/core/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
 
 const bun = process.env.ASSERTLEDGER_BUN_EXECUTABLE ?? "bun";
@@ -170,6 +170,34 @@ describe("witness import v2", () => {
       assert.equal(replay.artifactDigestValid, true, JSON.stringify(tampered));
       assert.equal(replay.decisionDigestValid, false, JSON.stringify(tampered));
       assert.equal(replay.valid, false, JSON.stringify(tampered));
+    }
+    // Digests are unkeyed, so a forger can reseal both with the decision kernel itself. An
+    // inconsistent extent must still never come out as a sealed decision.
+    const input = {
+      schemaVersion: saved.schemaVersion,
+      repositoryDigest: saved.repositoryDigest,
+      evidenceContext: saved.evidenceContext,
+      policy: saved.policy,
+      worlds: saved.worlds,
+      candidates: saved.candidates.map(({ id, digest, sizeBytes }) => ({ id, digest, sizeBytes })),
+      observations: saved.observations,
+    };
+    assert.equal(decideEvidence(input).decisionDigest, saved.decisionDigest);
+    for (const extent of [
+      { snapshot: "repository", include: ["unrelated"] },
+      { include: ["web", "tools"] },
+      { preservedLinkCount: -1 },
+      { unboundedClosureEdges: [{ file: "web/a.ts", reason: "UNKNOWN" }] },
+    ]) {
+      const context = structuredClone(saved.evidenceContext);
+      Object.assign(context.repository, extent);
+      let status: string;
+      try {
+        status = decideEvidence({ ...input, evidenceContext: context }).decision.status;
+      } catch {
+        status = "REFUSED";
+      }
+      assert.notEqual(status, "VERIFIED", JSON.stringify(extent));
     }
     const summary = await readFile(path.join(out, "summary.md"), "utf8");
     assert.match(summary, /Snapshot: test-closure, 2 repository-internal link\(s\) reproduced/u);
