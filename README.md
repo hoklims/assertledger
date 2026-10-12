@@ -175,7 +175,9 @@ failures remain operational failures and cannot count as target detection. See t
 contract. The execution mode is explicitly unsandboxed and intended for trusted local code.
 To verify an existing `bun:test` test by name, or to replay a recorded red/green witness, use a v4
 request or `import-witness`, which also run in a container or a declared Windows-native backend; see
-the [v4 migration guide](docs/migration-verification-v4.md).
+the [v4 migration guide](docs/migration-verification-v4.md). A v5 request or a v2 witness runs the
+test in its package with the package's `bunfig.toml`, through the links of an isolated install; see
+the [v5 migration guide](docs/migration-verification-v5.md).
 
 ### Qualify a committed regression test
 

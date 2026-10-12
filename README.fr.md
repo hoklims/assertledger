@@ -184,6 +184,8 @@ rejeu. Ce mode exécute du code local de confiance sans bac à sable.
 Pour vérifier un test `bun:test` existant désigné par son nom, ou rejouer un témoin rouge/vert
 enregistré, utilisez une requête v4 ou `import-witness`, qui s’exécutent aussi en conteneur ou dans un
 mode Windows natif déclaré ; voir le [guide de migration v4](docs/migration-verification-v4.md).
+Une requête v5 ou un témoin v2 exécute le test dans son paquet, avec le `bunfig.toml` du paquet et
+les liens d’une installation isolée ; voir le [guide de migration v5](docs/migration-verification-v5.md).
 
 ### Qualifier un test de régression commité
 

@@ -74,7 +74,8 @@ not create a sandbox.
 `--allow-windows-native-execution` authorizes a v4 request with `windows-native` isolation on a Windows
 host, recorded as `WINDOWS_NATIVE_UNSANDBOXED`; it cannot be combined with the other backend flags.
 `import-witness` replays a recorded red/green witness under exactly one operator-chosen backend; see
-[witness import](witness-import.md) and the [v4 migration guide](migration-verification-v4.md).
+[witness import](witness-import.md) and the [v4](migration-verification-v4.md) and
+[v5](migration-verification-v5.md) migration guides.
 
 A v2 request with `container` isolation runs without that flag: each execution uses a fresh
 container from a digest-pinned local image through the operator's `--container-runtime` JSON argv,
