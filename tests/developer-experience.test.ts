@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
+  cp,
   link,
   lstat,
   mkdir,
@@ -14,6 +15,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -1660,6 +1662,13 @@ describe("developer entry points", () => {
       windowsHide: true,
     });
     const cli = path.join(outDir, "cli.js");
+    await cp(path.join(process.cwd(), "integrations"), path.join(buildRoot, "integrations"), {
+      recursive: true,
+    });
+    await assert.doesNotReject(
+      () => import(pathToFileURL(cli).href),
+      "built fixture must contain every runtime integration imported by its CLI",
+    );
     const packagedSkillDirectory = path.join(buildRoot, "integrations", "skill");
     await mkdir(packagedSkillDirectory, { recursive: true });
     await writeFile(
