@@ -41,7 +41,8 @@ type QualificationManifest =
 /** The mode fixes a v1 or v2 request, so any other manifest version is an engine fault. */
 function parseQualificationManifest(value: unknown): QualificationManifest {
   const manifest = parseVersionedEvidenceManifest(value);
-  if (manifest.schemaVersion === "4.0.0") throw new Error("GIT_REGRESSION_MANIFEST_UNEXPECTED");
+  if (manifest.schemaVersion === "4.0.0" || manifest.schemaVersion === "5.0.0")
+    throw new Error("GIT_REGRESSION_MANIFEST_UNEXPECTED");
   return manifest;
 }
 

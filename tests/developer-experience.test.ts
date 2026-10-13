@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
+  cp,
   link,
   lstat,
   mkdir,
@@ -14,6 +15,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -84,20 +86,20 @@ function captureIo(cwd: string): { io: CliIo; stdout(): string; stderr(): string
 }
 
 describe("developer entry points", () => {
-  it("keeps 2.0.3 release metadata aligned without rewriting historical campaign provenance", async () => {
-    assert.equal(packageMetadata.version, "2.0.3");
+  it("keeps 2.1.0 release metadata aligned without rewriting historical campaign provenance", async () => {
+    assert.equal(packageMetadata.version, "2.1.0");
     const [readme, readmeFr, changelog, site] = await Promise.all([
       readFile(new URL("../README.md", import.meta.url), "utf8"),
       readFile(new URL("../README.fr.md", import.meta.url), "utf8"),
       readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
       readFile(new URL("../site/index.html", import.meta.url), "utf8"),
     ]);
-    assert.match(readme, /assertledger@2\.0\.3/u);
-    assert.match(readme, /--branch v2\.0\.3/u);
-    assert.match(readmeFr, /assertledger@2\.0\.3/u);
-    assert.match(readmeFr, /--branch v2\.0\.3/u);
-    assert.match(changelog, /^## 2\.0\.3 — 2026-10-11$/mu);
-    assert.equal(site.match(/data-version>2\.0\.3/gmu)?.length, 2);
+    assert.match(readme, /assertledger@2\.1\.0/u);
+    assert.match(readme, /--branch v2\.1\.0/u);
+    assert.match(readmeFr, /assertledger@2\.1\.0/u);
+    assert.match(readmeFr, /--branch v2\.1\.0/u);
+    assert.match(changelog, /^## 2\.1\.0 — 2026-10-13$/mu);
+    assert.equal(site.match(/data-version>2\.1\.0/gmu)?.length, 2);
     assert.equal(site.match(/recorded with\s+assertledger 1\.1\.1/giu)?.length, 2);
   });
 
@@ -1660,6 +1662,13 @@ describe("developer entry points", () => {
       windowsHide: true,
     });
     const cli = path.join(outDir, "cli.js");
+    await cp(path.join(process.cwd(), "integrations"), path.join(buildRoot, "integrations"), {
+      recursive: true,
+    });
+    await assert.doesNotReject(
+      () => import(pathToFileURL(cli).href),
+      "built fixture must contain every runtime integration imported by its CLI",
+    );
     const packagedSkillDirectory = path.join(buildRoot, "integrations", "skill");
     await mkdir(packagedSkillDirectory, { recursive: true });
     await writeFile(

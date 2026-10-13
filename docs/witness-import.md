@@ -1,7 +1,8 @@
 # Witness import
 
-`assertledger import-witness` replays a recorded red/green witness as a v4 campaign and verifies it.
-The witness states what was observed; AssertLedger observes it again under its own taxonomy.
+`assertledger import-witness` replays a recorded red/green witness as a v4 campaign, or a v5
+campaign for a v2 request, and verifies it. The witness states what was observed; AssertLedger
+observes it again under its own taxonomy.
 
 ## Request
 
@@ -18,6 +19,39 @@ A `witness-import-request.v1.json` document names:
 
 Each target must still hold its base bytes (`WITNESS_TARGET_BASE_MISMATCH`) and its content must
 differ from them (`WITNESS_TARGET_UNCHANGED`).
+
+A `witness-import-request.v2.json` document (`schemaVersion: "2.0.0"`) adds the v5 fields:
+`repository.snapshot` and `repository.include`, and the adapter's `workingDirectory`, `isolate` and
+`trustedMatchers`; see the [v5 migration guide](migration-verification-v5.md). A spec of a pnpm
+workspace package, run with the package's `bunfig.toml` preloads and a jest-dom matcher, declares
+for example:
+
+```json
+{
+  "repository": {
+    "root": "/home/me/checkout",
+    "exclude": [".pnpm-store", ".npm-token"],
+    "includeDependencies": true,
+    "git": "excluded",
+    "snapshot": "test-closure",
+    "include": []
+  },
+  "adapter": {
+    "kind": "bun-test-designated",
+    "executable": "bun",
+    "testTimeoutMs": 15000,
+    "workingDirectory": "test-package",
+    "isolate": true,
+    "trustedMatchers": [
+      {
+        "path": "node_modules/.pnpm/@testing-library+jest-dom@7.0.1_@testing-library+dom@10.4.2_vitest@5.0.3/node_modules/@testing-library/jest-dom",
+        "matchers": ["toHaveTextContent"]
+      }
+    ]
+  },
+  "expectedFailure": "expect(received).toHaveTextContent(checkWith, options = { normalizeWhitespace: !0 })"
+}
+```
 
 ## Campaign
 
@@ -62,6 +96,10 @@ bun install --frozen-lockfile --linker hoisted --ignore-scripts
 ```
 
 Set `includeDependencies: true`. Workspace packages stay linked in `node_modules`; a link outside
-the designated test's closure is left out and recorded, and one inside it refuses the import. A
+the designated test's closure is left out and recorded, and one inside it refuses a v1 import. A
 test that asks Git for its tracked files needs `git: "synthesized"`. When a snapshot copy is slow
 to read the first time, for example under on-access scanning, declare a per-test timeout that fits.
+
+A v2 request replays the installed checkout as it is, isolated linker included: the links the
+closure reaches are reproduced, and `snapshot: "test-closure"` keeps the copy to what the test can
+load. Run AssertLedger from Linux or WSL when the dependencies were installed there.

@@ -63,7 +63,7 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
   ],
   BASE_TEST_FILES_LIMIT_EXCEEDED: [
     "The selected built-in adapter inventory contains more than the 1,000 base test files allowed by the contract.",
-    "Scope the test command to an operator-reviewed suite of at most 1,000 base tests, or declare exclusions only for files the campaign does not need. Initialization never truncates the inventory.",
+    "Scope the test command to an operator-reviewed suite of at most 1,000 base tests, or declare exclusions only for files the campaign does not need; a bun-test-designated campaign runs only its designated tests and has no base inventory. Initialization never truncates the inventory.",
   ],
   INIT_EVIDENCE_PATH_LIMIT_EXCEEDED: [
     "An inventoried evidence path exceeds the initialization lock limit of 1,024 characters.",
@@ -416,8 +416,8 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Select the adapter matching the test runner; detection alone does not establish official support.",
   ],
   REPOSITORY_LINK_IN_TEST_CLOSURE: [
-    "A symbolic link is on the module closure of a test that would run, or a runner discovering tests could reach one through it; AssertLedger neither follows nor copies links.",
-    "Replace the named link with a regular file or directory; excluding it would remove code the test needs.",
+    "A symbolic link is on the module closure of a test that would run, or a runner discovering tests could reach one through it; requests before version 5.0.0 neither follow nor copy links.",
+    "Replace the named link with a regular file or directory, or submit a version 5.0.0 request or a version 2.0.0 witness, which reproduces links that stay in the repository; excluding it would remove code the test needs.",
   ],
   REPOSITORY_LINK_ESCAPES_ROOT: [
     "A symbolic link resolves, or would resolve, outside the repository root.",
@@ -458,6 +458,58 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
   DESIGNATED_TEST_TIMEOUT_EXCEEDS_EXECUTION: [
     "Bun's per-test timeout is not shorter than the execution timeout, so it could never be observed.",
     "Declare a per-test timeout below timeoutMsPerExecution, or null for Bun's default.",
+  ],
+  BUNFIG_TEST_PRELOAD_UNSUPPORTED: [
+    "The working directory's bunfig.toml is not a regular file, or declares its test preloads in a form AssertLedger cannot rewrite, so AssertLedger's preload could not be guaranteed to run first.",
+    "Declare [test] preload as one string or one array of string literals; AssertLedger never runs a designated test with a configuration it could not rewrite.",
+  ],
+  DESIGNATED_WORKING_DIRECTORY_MIXED: [
+    "The designated tests of one campaign belong to different packages, so no single package working directory serves them all.",
+    "Split the campaign so that every designated test belongs to one package, or use the repository-root working directory.",
+  ],
+  TRUSTED_MATCHER_PATH_INVALID: [
+    "A trusted matcher source is not a portable repository-relative path.",
+    "Name the module or package directory that registers the matchers by its path from the repository root.",
+  ],
+  TRUSTED_MATCHER_PATH_MISSING: [
+    "A trusted matcher source is absent from the campaign snapshot.",
+    "Check the path against the repository and its exclusions; a dependency path requires includeDependencies.",
+  ],
+  REPOSITORY_INCLUDE_INVALID: [
+    "A repository include entry is not a portable repository-relative path.",
+    "Name each additional file or directory by its path from the repository root.",
+  ],
+  REPOSITORY_INCLUDE_MISSING: [
+    "A repository include entry is absent from the repository, or removed by its exclusions.",
+    "Remove the entry, or check its path against the repository and the declared exclusions.",
+  ],
+  TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED: [
+    "A package import alias cannot be resolved completely into repository files.",
+    "Check the nearest package imports mapping and its targets; use supported repository-relative targets.",
+  ],
+  TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED: [
+    "An inherited compiler configuration cannot be resolved from the repository inventory.",
+    "Check the extends path and dependency installation; use an existing config file or package tsconfig.json.",
+  ],
+  TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED: [
+    "The top-level Bun JSX import source cannot be read as a supported literal string.",
+    "Set jsxImportSource to a quoted package name before preparing the campaign snapshot.",
+  ],
+  REPOSITORY_INCLUDE_REQUIRES_TEST_CLOSURE: [
+    "Repository include entries extend a test-closure snapshot, but the request copies the whole repository.",
+    "Remove the include entries, or set repository.snapshot to test-closure.",
+  ],
+  DUPLICATE_REPOSITORY_INCLUDE: [
+    "A repository include entry is declared more than once.",
+    "Declare each additional path once.",
+  ],
+  REPOSITORY_SNAPSHOT_LINKS_CHANGED: [
+    "The repository links copied into the campaign snapshot differ from the links planned before the copy, so the repository changed during the campaign.",
+    "Wait until the repository is stable, for example after a dependency installation, then rerun the campaign.",
+  ],
+  REPOSITORY_LINK_LIMIT_EXCEEDED: [
+    "The campaign snapshot would omit more than 10,000 repository links outside the test closure.",
+    "Declare as exclusions the local-only directories that hold those links, or reduce the installed dependencies.",
   ],
   REPOSITORY_DEPENDENCIES_EXCLUDED: [
     "The request includes dependency directories but also excludes node_modules.",

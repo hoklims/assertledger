@@ -62,6 +62,9 @@ const EVIDENCE_SCHEMA_VERSION_V2 = "2.0.0";
 const EVIDENCE_SCHEMA_VERSION_V3 = "3.0.0";
 // Version 4.0.0 also binds the repository snapshot scope: dependencies and omitted links.
 const EVIDENCE_SCHEMA_VERSION_V4 = "4.0.0";
+// Version 5.0.0 also binds the snapshot extent, the include paths, the reproduced link count and
+// the closure edges a test-closure snapshot did not follow.
+const EVIDENCE_SCHEMA_VERSION_V5 = "5.0.0";
 const EVIDENCE_POLICY_VERSION = "1.0.0";
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const OBSERVATION_OUTCOMES = new Set([
@@ -131,6 +134,11 @@ export interface EvidenceContext {
     includeDependencies: boolean;
     omittedLinks: string[];
     git: { mode: "synthesized"; treeId: string; gitVersion: string } | null;
+    // Version 5.0.0 only.
+    snapshot?: "repository" | "test-closure";
+    include?: string[];
+    preservedLinkCount?: number;
+    unboundedClosureEdges?: Array<{ file: string; reason: string }>;
   };
   worlds: Array<{
     id: string;
@@ -396,28 +404,100 @@ function sortedUniqueStrings(
   return [...new Set(value)].sort(compareOrdinal);
 }
 
-function parseRepositorySnapshot(value: unknown): NonNullable<EvidenceContext["repository"]> {
+function sortedUniquePaths(value: unknown, key: string, maximumItems: number): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > maximumItems ||
+    value.some(
+      (entry, index) =>
+        typeof entry !== "string" ||
+        entry.length === 0 ||
+        entry.length > 1_024 ||
+        (index > 0 && compareOrdinal(value[index - 1] as string, entry) >= 0),
+    )
+  ) {
+    throw new TypeError(`evidenceContext.repository.${key} must be sorted unique paths`);
+  }
+  return [...(value as string[])];
+}
+
+const UNBOUNDED_CLOSURE_REASONS = new Set([
+  "NON_LITERAL_MODULE_SPECIFIER",
+  "ABSOLUTE_MODULE_SPECIFIER",
+  "MODULE_OUTSIDE_REPOSITORY",
+  "TEST_PRELOAD_UNREADABLE",
+]);
+
+/** The v5 additions: snapshot extent, include paths, reproduced links and unfollowed edges. */
+function parseRepositorySnapshotExtent(
+  value: Record<string, unknown>,
+): Pick<
+  NonNullable<EvidenceContext["repository"]>,
+  "snapshot" | "include" | "preservedLinkCount" | "unboundedClosureEdges"
+> {
+  if (value.snapshot !== "repository" && value.snapshot !== "test-closure") {
+    throw new TypeError("evidenceContext.repository.snapshot must be repository or test-closure");
+  }
+  const include = sortedUniquePaths(value.include, "include", 1_000);
+  if (
+    !Number.isSafeInteger(value.preservedLinkCount) ||
+    (value.preservedLinkCount as number) < 0 ||
+    (value.preservedLinkCount as number) > 10_000_000
+  ) {
+    throw new TypeError("evidenceContext.repository.preservedLinkCount must be a count");
+  }
+  const edges = value.unboundedClosureEdges;
+  if (!Array.isArray(edges) || edges.length > 10_000) {
+    throw new TypeError("evidenceContext.repository.unboundedClosureEdges exceeds its bounds");
+  }
+  const parsedEdges = edges.map((edge) => {
+    if (
+      !isRecord(edge) ||
+      Object.keys(edge).sort().join(",") !== "file,reason" ||
+      typeof edge.file !== "string" ||
+      edge.file.length === 0 ||
+      edge.file.length > 1_024 ||
+      typeof edge.reason !== "string" ||
+      !UNBOUNDED_CLOSURE_REASONS.has(edge.reason)
+    ) {
+      throw new TypeError("evidenceContext.repository.unboundedClosureEdges has an invalid edge");
+    }
+    return { file: edge.file, reason: edge.reason };
+  });
+  const keys = parsedEdges.map((edge) => `${edge.file}\u0000${edge.reason}`);
+  if (keys.some((key, index) => index > 0 && compareOrdinal(keys[index - 1] as string, key) >= 0)) {
+    throw new TypeError("evidenceContext.repository.unboundedClosureEdges must be sorted unique");
+  }
+  if (value.snapshot === "repository" && (include.length > 0 || parsedEdges.length > 0)) {
+    throw new TypeError("A repository snapshot has no include paths or unfollowed closure edges");
+  }
+  return {
+    snapshot: value.snapshot,
+    include,
+    preservedLinkCount: value.preservedLinkCount as number,
+    unboundedClosureEdges: parsedEdges,
+  };
+}
+
+function parseRepositorySnapshot(
+  value: unknown,
+  schemaVersion: string,
+): NonNullable<EvidenceContext["repository"]> {
   if (!isRecord(value)) throw new TypeError("evidenceContext.repository must be an object");
   if (typeof value.includeDependencies !== "boolean") {
     throw new TypeError("evidenceContext.repository.includeDependencies must be boolean");
   }
-  const links = value.omittedLinks;
-  if (
-    !Array.isArray(links) ||
-    links.length > 10_000 ||
-    links.some(
-      (link, index) =>
-        typeof link !== "string" ||
-        link.length === 0 ||
-        link.length > 1_024 ||
-        (index > 0 && compareOrdinal(links[index - 1] as string, link) >= 0),
-    )
-  ) {
-    throw new TypeError("evidenceContext.repository.omittedLinks must be sorted unique paths");
-  }
+  const links = sortedUniquePaths(value.omittedLinks, "omittedLinks", 10_000);
+  const extent =
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V5 ? parseRepositorySnapshotExtent(value) : {};
   const git = value.git;
   if (git === null) {
-    return { includeDependencies: value.includeDependencies, omittedLinks: [...links], git: null };
+    return {
+      includeDependencies: value.includeDependencies,
+      omittedLinks: links,
+      git: null,
+      ...extent,
+    };
   }
   if (
     !isRecord(git) ||
@@ -432,8 +512,9 @@ function parseRepositorySnapshot(value: unknown): NonNullable<EvidenceContext["r
   }
   return {
     includeDependencies: value.includeDependencies,
-    omittedLinks: [...links],
+    omittedLinks: links,
     git: { mode: "synthesized", treeId: git.treeId, gitVersion: git.gitVersion },
+    ...extent,
   };
 }
 
@@ -447,11 +528,13 @@ function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceCo
   const backendRequired =
     schemaVersion === EVIDENCE_SCHEMA_VERSION_V2 ||
     schemaVersion === EVIDENCE_SCHEMA_VERSION_V3 ||
-    schemaVersion === EVIDENCE_SCHEMA_VERSION_V4;
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V4 ||
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V5;
   if (backendRequired && !isRecord(value.execution.backend)) {
     throw new TypeError("evidenceContext.execution.backend must be an object");
   }
-  const repositoryRequired = schemaVersion === EVIDENCE_SCHEMA_VERSION_V4;
+  const repositoryRequired =
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V4 || schemaVersion === EVIDENCE_SCHEMA_VERSION_V5;
   if (repositoryRequired && !isRecord(value.repository)) {
     throw new TypeError("evidenceContext.repository must be an object");
   }
@@ -490,7 +573,9 @@ function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceCo
       candidateRoots: sortedUniqueStrings(value.execution, "candidateRoots", 100, 512),
       ...(backendRequired ? { backend: jsonField(value.execution, "backend") } : {}),
     },
-    ...(repositoryRequired ? { repository: parseRepositorySnapshot(value.repository) } : {}),
+    ...(repositoryRequired
+      ? { repository: parseRepositorySnapshot(value.repository, schemaVersion) }
+      : {}),
     worlds,
   };
 }
@@ -502,7 +587,8 @@ function parseInputUnchecked(input: unknown): EvidenceInput {
     schemaVersion !== EVIDENCE_SCHEMA_VERSION &&
     schemaVersion !== EVIDENCE_SCHEMA_VERSION_V2 &&
     schemaVersion !== EVIDENCE_SCHEMA_VERSION_V3 &&
-    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V4
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V4 &&
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V5
   ) {
     throw new TypeError(`Unsupported schemaVersion: ${schemaVersion}`);
   }

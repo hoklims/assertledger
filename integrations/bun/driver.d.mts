@@ -54,3 +54,9 @@ export function classifyBunInstrumentedEvidence(
   exitCode: number | null,
   operationalError?: boolean,
 ): BunInstrumentedResult;
+
+/**
+ * The bunfig a designated run reads: the repository's own with AssertLedger's preload first in
+ * its [test] preload list. Throws BUNFIG_TEST_PRELOAD_UNSUPPORTED for any other spelling.
+ */
+export function designatedBunConfig(source: string | undefined, preload: string): string;

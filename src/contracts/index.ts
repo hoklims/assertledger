@@ -314,6 +314,83 @@ export const WitnessImportRequestSchema = z
       "A recorded red/green witness to replay: mutated targets, one designated test and its expected failure line.",
   });
 
+export const VERIFICATION_SCHEMA_VERSION_V5 = "5.0.0" as const;
+
+/**
+ * "repository" snapshots every file outside the exclusions. "test-closure" snapshots only the
+ * static module closure of the executed tests, the configuration files on their paths and the
+ * operator's `include` paths, for repositories whose installed dependencies are too large to copy.
+ */
+export const RepositorySnapshotScopeSchema = z.enum(["repository", "test-closure"]);
+
+export const RepositoryV5Schema = z.strictObject({
+  root: z.string().min(1),
+  exclude: z.array(z.string().min(1).max(512)).max(1_000),
+  includeDependencies: z.boolean(),
+  git: RepositoryGitModeSchema,
+  snapshot: RepositorySnapshotScopeSchema,
+  include: z.array(z.string().min(1).max(512)).max(1_000),
+});
+
+/** Matchers that modules at or below `path` install with expect.extend, declared trusted. */
+export const TrustedMatcherSourceSchema = z.strictObject({
+  path: z.string().min(1).max(512),
+  matchers: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z_$][\w$]*$/),
+    )
+    .min(1)
+    .max(256),
+});
+
+export const BunDesignatedTestAdapterV5Schema = z.strictObject({
+  ...BunDesignatedTestAdapterSchema.shape,
+  /** "test-package" runs Bun in the nearest directory above the test that holds a package.json. */
+  workingDirectory: z.enum(["repository-root", "test-package"]),
+  /** Runs `bun test --isolate`. */
+  isolate: z.boolean(),
+  trustedMatchers: z.array(TrustedMatcherSourceSchema).max(100),
+});
+
+export const AdapterV5Schema = z.discriminatedUnion("kind", [
+  NodeTestAdapterSchema,
+  StructuredCommandAdapterSchema,
+  BunTestAdapterSchema,
+  BunDesignatedTestAdapterV5Schema,
+]);
+
+export const VerificationRequestV5Schema = z
+  .strictObject({
+    ...VerificationRequestV4Schema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V5),
+    repository: RepositoryV5Schema,
+    adapter: AdapterV5Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/verification-request.v5.json",
+    title: "AssertLedger verification request v5",
+    description:
+      "A versioned campaign that runs designated Bun tests in their package, preserves repository-internal links and can snapshot only the executed tests' closure.",
+  });
+
+export const WitnessImportRequestV2Schema = z
+  .strictObject({
+    ...WitnessImportRequestSchema.shape,
+    schemaVersion: z.literal("2.0.0"),
+    repository: RepositoryV5Schema,
+    adapter: BunDesignatedTestAdapterV5Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/witness-import-request.v2.json",
+    title: "AssertLedger witness import request v2",
+    description:
+      "A recorded red/green witness replayed as a v5 campaign: the designated test runs in its package with its own Bun configuration.",
+  });
+
 export const RepositoryAnalysisSchema = z
   .strictObject({
     root: z.string().min(1),
@@ -880,6 +957,47 @@ export const EvidenceManifestV4Schema = z
     title: "AssertLedger evidence manifest v4",
     description:
       "A replayable campaign artifact that records designated tests, the repository snapshot scope and the declared isolation level.",
+  });
+
+// The v5 snapshot record adds the scope, the operator's include paths, the number of
+// repository-internal links reproduced in the snapshot (the repository digest binds each one with
+// its target) and the closure edges that a test-closure snapshot could not follow.
+const RepositorySnapshotRecordV5Schema = z.strictObject({
+  ...RepositorySnapshotRecordSchema.shape,
+  snapshot: RepositorySnapshotScopeSchema,
+  include: z.array(z.string().min(1).max(512)).max(1_000),
+  preservedLinkCount: z.int().min(0).max(10_000_000),
+  unboundedClosureEdges: z
+    .array(
+      z.strictObject({
+        file: z.string().min(1).max(1_024),
+        reason: z.enum([
+          "NON_LITERAL_MODULE_SPECIFIER",
+          "ABSOLUTE_MODULE_SPECIFIER",
+          "MODULE_OUTSIDE_REPOSITORY",
+          "TEST_PRELOAD_UNREADABLE",
+        ]),
+      }),
+    )
+    .max(10_000),
+});
+
+const EvidenceContextV5Schema = z.strictObject({
+  ...EvidenceContextV4Schema.shape,
+  repository: RepositorySnapshotRecordV5Schema,
+});
+
+export const EvidenceManifestV5Schema = z
+  .strictObject({
+    ...EvidenceManifestV4Schema.shape,
+    schemaVersion: z.literal(VERIFICATION_SCHEMA_VERSION_V5),
+    evidenceContext: EvidenceContextV5Schema,
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/evidence-manifest.v5.json",
+    title: "AssertLedger evidence manifest v5",
+    description:
+      "A replayable campaign artifact that also records the snapshot scope, the reproduced repository links and the unfollowed closure edges.",
   });
 
 export const ReplayResultSchema = z
@@ -2230,6 +2348,9 @@ export type VerificationRequest = z.infer<typeof VerificationRequestSchema>;
 export type VerificationRequestV2 = z.infer<typeof VerificationRequestV2Schema>;
 export type VerificationRequestV3 = z.infer<typeof VerificationRequestV3Schema>;
 export type VerificationRequestV4 = z.infer<typeof VerificationRequestV4Schema>;
+export type VerificationRequestV5 = z.infer<typeof VerificationRequestV5Schema>;
+export type WitnessImportRequestV2 = z.infer<typeof WitnessImportRequestV2Schema>;
+export type TrustedMatcherSource = z.infer<typeof TrustedMatcherSourceSchema>;
 export type DesignatedTest = z.infer<typeof DesignatedTestSchema>;
 export type DesignatedCandidate = z.infer<typeof DesignatedCandidateSchema>;
 export type WindowsNativeIsolation = z.infer<typeof WindowsNativeIsolationSchema>;
@@ -2253,6 +2374,7 @@ export type EvidenceManifestContract = z.infer<typeof EvidenceManifestSchema>;
 export type EvidenceManifestV2Contract = z.infer<typeof EvidenceManifestV2Schema>;
 export type EvidenceManifestV3Contract = z.infer<typeof EvidenceManifestV3Schema>;
 export type EvidenceManifestV4Contract = z.infer<typeof EvidenceManifestV4Schema>;
+export type EvidenceManifestV5Contract = z.infer<typeof EvidenceManifestV5Schema>;
 export type ExecutionBackendRecord = z.infer<typeof ExecutionBackendRecordSchema>;
 export type ExecutionBackendRecordV4 = z.infer<typeof ExecutionBackendRecordV4Schema>;
 export type ReplayResult = z.infer<typeof ReplayResultSchema>;
@@ -2493,7 +2615,15 @@ export function parseVerificationRequest(value: unknown): VerificationRequest {
 /** Parses a frozen v1/v2/v3 request or a v4 request that adds designated Bun tests. */
 export function parseVersionedVerificationRequest(
   value: unknown,
-): VerificationRequest | VerificationRequestV2 | VerificationRequestV3 | VerificationRequestV4 {
+):
+  | VerificationRequest
+  | VerificationRequestV2
+  | VerificationRequestV3
+  | VerificationRequestV4
+  | VerificationRequestV5 {
+  if (isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V5) {
+    return parseVerificationRequestV5(value);
+  }
   if (
     typeof value === "object" &&
     value !== null &&
@@ -2576,7 +2706,28 @@ export function parseVerificationRequestV4(value: unknown): VerificationRequestV
   if (!parsed.success) {
     throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
   }
-  const request = parsed.data;
+  assertDesignatedCampaign(parsed.data);
+  return parsed.data;
+}
+
+/**
+ * Parses a v5 request: a v4 campaign whose designated adapter also declares its working
+ * directory, isolation and trusted matchers, and whose repository declares its snapshot scope.
+ */
+export function parseVerificationRequestV5(value: unknown): VerificationRequestV5 {
+  if (!isJsonObject(value) || value.schemaVersion !== VERIFICATION_SCHEMA_VERSION_V5) {
+    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
+  }
+  assertVerificationRequestPreconditions(value);
+  const parsed = VerificationRequestV5Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
+  }
+  assertDesignatedCampaign(parsed.data);
+  return parsed.data;
+}
+
+function assertDesignatedCampaign(request: VerificationRequestV4 | VerificationRequestV5): void {
   assertUniqueIdentifiers(request.worlds, "DUPLICATE_WORLD_ID");
   assertUniqueIdentifiers(request.candidates, "DUPLICATE_CANDIDATE_ID");
   assertWorldKinds(request);
@@ -2603,7 +2754,19 @@ export function parseVerificationRequestV4(value: unknown): VerificationRequestV
       throw new ContractError("DUPLICATE_CONTAINER_ENVIRONMENT_VARIABLE");
     }
   }
-  return request;
+  if (request.schemaVersion === VERIFICATION_SCHEMA_VERSION_V5) {
+    const repository = (request as VerificationRequestV5).repository;
+    // A structured command names no test, so no closure can scope its snapshot.
+    if (repository.snapshot === "test-closure" && request.adapter.kind === "testforge-command") {
+      throw new ContractError("TEST_CLOSURE_UNSUPPORTED");
+    }
+    if (repository.include.length > 0 && repository.snapshot !== "test-closure") {
+      throw new ContractError("REPOSITORY_INCLUDE_REQUIRES_TEST_CLOSURE");
+    }
+    if (new Set(repository.include).size !== repository.include.length) {
+      throw new ContractError("DUPLICATE_REPOSITORY_INCLUDE");
+    }
+  }
 }
 
 /** A per-test timeout must end before the execution timeout, or it could never be observed. */
@@ -2627,6 +2790,35 @@ export function parseWitnessImportRequest(value: unknown): WitnessImportRequest 
   }
   assertDesignatedTestTimeout(parsed.data.adapter.testTimeoutMs, parsed.data.timeoutMsPerExecution);
   return parsed.data;
+}
+
+/** Parses a v2 witness import request, replayed as a v5 campaign. */
+export function parseWitnessImportRequestV2(value: unknown): WitnessImportRequestV2 {
+  if (!isJsonObject(value) || value.schemaVersion !== "2.0.0") {
+    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
+  }
+  const parsed = WitnessImportRequestV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("WITNESS_IMPORT_REQUEST_INVALID", z.prettifyError(parsed.error));
+  }
+  assertDesignatedTestTimeout(parsed.data.adapter.testTimeoutMs, parsed.data.timeoutMsPerExecution);
+  const repository = parsed.data.repository;
+  if (repository.include.length > 0 && repository.snapshot !== "test-closure") {
+    throw new ContractError("REPOSITORY_INCLUDE_REQUIRES_TEST_CLOSURE");
+  }
+  if (new Set(repository.include).size !== repository.include.length) {
+    throw new ContractError("DUPLICATE_REPOSITORY_INCLUDE");
+  }
+  return parsed.data;
+}
+
+/** Parses a v1 or v2 witness import request. */
+export function parseVersionedWitnessImportRequest(
+  value: unknown,
+): WitnessImportRequest | WitnessImportRequestV2 {
+  return isJsonObject(value) && value.schemaVersion === "2.0.0"
+    ? parseWitnessImportRequestV2(value)
+    : parseWitnessImportRequest(value);
 }
 
 /** Parses only the v2 request, which adds container isolation to the frozen v1 request. */
@@ -3320,7 +3512,8 @@ function manifestSummariesAreConsistent(
     | EvidenceManifestContract
     | EvidenceManifestV2Contract
     | EvidenceManifestV3Contract
-    | EvidenceManifestV4Contract,
+    | EvidenceManifestV4Contract
+    | EvidenceManifestV5Contract,
 ): boolean {
   const engineError = manifest.decision.status === "ENGINE_ERROR";
   const invalidEvidence =
@@ -3410,14 +3603,46 @@ export function parseEvidenceManifestV4(value: unknown): EvidenceManifestV4Contr
   return manifest;
 }
 
-/** Parses a frozen v1/v2/v3 manifest or a v4 manifest with designated tests. */
+/** Sorted, unique strings: the canonical form of every list a snapshot record carries. */
+function strictlySorted(values: readonly string[]): boolean {
+  return values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
+}
+
+export function parseEvidenceManifestV5(value: unknown): EvidenceManifestV5Contract {
+  const parsed = EvidenceManifestV5Schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError("EVIDENCE_MANIFEST_INVALID", z.prettifyError(parsed.error));
+  }
+  const manifest = parsed.data;
+  const repository = manifest.evidenceContext.repository;
+  const edges = repository.unboundedClosureEdges.map((edge) => `${edge.file}\u0000${edge.reason}`);
+  if (
+    !manifestSummariesAreConsistent(manifest) ||
+    !manifestReferencesAreConsistent(manifest) ||
+    !executionBackendIsConsistent(manifest) ||
+    !strictlySorted(repository.omittedLinks) ||
+    !strictlySorted(repository.include) ||
+    !strictlySorted(edges) ||
+    (repository.snapshot !== "test-closure" &&
+      (repository.include.length > 0 || repository.unboundedClosureEdges.length > 0))
+  ) {
+    throw new ContractError("EVIDENCE_MANIFEST_INCONSISTENT");
+  }
+  return manifest;
+}
+
+/** Parses a frozen v1 to v4 manifest or a v5 manifest. */
 export function parseVersionedEvidenceManifest(
   value: unknown,
 ):
   | EvidenceManifestContract
   | EvidenceManifestV2Contract
   | EvidenceManifestV3Contract
-  | EvidenceManifestV4Contract {
+  | EvidenceManifestV4Contract
+  | EvidenceManifestV5Contract {
+  if (isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V5) {
+    return parseEvidenceManifestV5(value);
+  }
   if (isJsonObject(value) && value.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4) {
     return parseEvidenceManifestV4(value);
   }
@@ -3430,7 +3655,11 @@ export function parseVersionedEvidenceManifest(
 }
 
 function executionBackendIsConsistent(
-  manifest: EvidenceManifestV2Contract | EvidenceManifestV3Contract | EvidenceManifestV4Contract,
+  manifest:
+    | EvidenceManifestV2Contract
+    | EvidenceManifestV3Contract
+    | EvidenceManifestV4Contract
+    | EvidenceManifestV5Contract,
 ): boolean {
   const execution = manifest.evidenceContext.execution;
   const backend = execution.backend;
@@ -3450,7 +3679,8 @@ function manifestReferencesAreConsistent(
     | EvidenceManifestContract
     | EvidenceManifestV2Contract
     | EvidenceManifestV3Contract
-    | EvidenceManifestV4Contract,
+    | EvidenceManifestV4Contract
+    | EvidenceManifestV5Contract,
 ): boolean {
   const worldIds = new Set(manifest.worlds.map((world) => world.id));
   const candidateIds = new Set(manifest.candidates.map((candidate) => candidate.id));
@@ -4463,6 +4693,27 @@ export function witnessImportRequestJsonSchema(): Record<string, unknown> {
   return jsonSchemaFor(
     WitnessImportRequestSchema,
     "https://testforge.dev/schemas/witness-import-request.v1.json",
+  );
+}
+
+export function verificationRequestV5JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    VerificationRequestV5Schema,
+    "https://testforge.dev/schemas/verification-request.v5.json",
+  );
+}
+
+export function evidenceManifestV5JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    EvidenceManifestV5Schema,
+    "https://testforge.dev/schemas/evidence-manifest.v5.json",
+  );
+}
+
+export function witnessImportRequestV2JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    WitnessImportRequestV2Schema,
+    "https://testforge.dev/schemas/witness-import-request.v2.json",
   );
 }
 

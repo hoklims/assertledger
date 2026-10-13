@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 2.1.0 — 2026-10-13
+
+- Add verification request and evidence manifest v5 and witness import request v2. A designated
+  Bun test can run in its package (`workingDirectory: "test-package"`) with the package's
+  `bunfig.toml`, under `bun test --isolate`, with operator-declared trusted custom matchers.
+  Repository-internal links are reproduced and bound in the digest, and a `test-closure` snapshot
+  copies only what the executed tests can load, plus declared `include` paths. V1 to v4 schemas,
+  parsers and manifests are unchanged. See the
+  [v5 migration guide](docs/migration-verification-v5.md).
+- Harden designated campaigns, v4 included: Bun runs with a generated configuration that puts
+  AssertLedger's preload before every repository preload, so a built-in matcher that a repository
+  preload replaced is no longer treated as a built-in assertion; v5 can explicitly trust its
+  replacement. A `bunfig.toml` whose test preloads cannot
+  be rewritten refuses the campaign (`BUNFIG_TEST_PRELOAD_UNSUPPORTED`). The designated preflight
+  adds probes for replaced built-ins, preload and trusted matchers and isolated runs.
+- `init` and `doctor` with the `bun:test` framework inventory specs that import `vitest` or
+  `@jest/globals`, which `bun test` answers itself.
+
+- Preserve extended compiler settings, package import aliases, multiline test preloads, configured
+  JSX runtimes and included empty directories in closure snapshots. Retained empty directories are
+  bound in v5 repository digests. Preserve typed v1 witness-import SDK return compatibility.
+- Update MCP server and client to 2.3.0, Biome to 2.5.15, Node types to 22.20.5 and tsx to 4.23.15.
+  Keep Zod 4.4.3 to preserve frozen schema projections and public validation behavior.
+
 ## 2.0.3 — 2026-10-11
 
 - Reduce container runtime launches through a qualified generic `system dial-stdio` connection,

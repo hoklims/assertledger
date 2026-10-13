@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, readlink } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { createGzip } from "node:zlib";
@@ -365,13 +365,15 @@ function padding(size: number): Buffer {
 
 function ustarHeader(
   name: string,
-  type: "0" | "5" | "x",
+  type: "0" | "2" | "5" | "x",
   size: number,
   mode: number,
   owner: number,
+  linkName = "",
 ): Buffer {
   const header = Buffer.alloc(TAR_BLOCK_BYTES, 0);
   header.write(name, 0, 100, "utf8");
+  header.write(linkName, 157, 100, "utf8");
   writeOctal(header, 100, 8, mode);
   writeOctal(header, 108, 8, owner);
   writeOctal(header, 116, 8, owner);
@@ -388,15 +390,18 @@ function ustarHeader(
 
 function* entryHeaders(
   name: string,
-  type: "0" | "5",
+  type: "0" | "2" | "5",
   size: number,
   mode: number,
   owner: number,
+  linkName = "",
 ): Generator<Buffer> {
   // Names that do not fit an ASCII ustar field, and sizes beyond its octal range, use PAX records.
   const asciiName = /^[\x20-\x7e]*$/u.test(name) && Buffer.byteLength(name) <= 100;
+  const asciiLink = /^[\x20-\x7e]*$/u.test(linkName) && Buffer.byteLength(linkName) <= 100;
   const records = [
     ...(asciiName ? [] : [paxRecord("path", name)]),
+    ...(asciiLink ? [] : [paxRecord("linkpath", linkName)]),
     ...(size < 8 ** 11 ? [] : [paxRecord("size", String(size))]),
   ];
   if (records.length > 0) {
@@ -411,10 +416,31 @@ function* entryHeaders(
     size < 8 ** 11 ? size : 0,
     mode,
     owner,
+    asciiLink ? linkName : "link",
   );
 }
 
-async function* workspaceEntries(directory: string, archivePath: string): AsyncGenerator<Buffer> {
+/**
+ * The relative, `/`-separated target of a workspace link, or undefined when it leaves the
+ * workspace. A Windows junction stores an absolute target; it is written relative to the link.
+ */
+async function workspaceLinkTarget(
+  workspace: string,
+  hostPath: string,
+): Promise<string | undefined> {
+  const absolute = path.resolve(path.dirname(hostPath), await readlink(hostPath));
+  const fromRoot = path.relative(workspace, absolute);
+  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+    return undefined;
+  }
+  return path.relative(path.dirname(hostPath), absolute).split(path.sep).join("/") || ".";
+}
+
+async function* workspaceEntries(
+  directory: string,
+  archivePath: string,
+  workspace = directory,
+): AsyncGenerator<Buffer> {
   const names = (await readdir(directory)).sort((left, right) =>
     left < right ? -1 : left > right ? 1 : 0,
   );
@@ -424,7 +450,12 @@ async function* workspaceEntries(directory: string, archivePath: string): AsyncG
     const stats = await lstat(hostPath);
     if (stats.isDirectory()) {
       yield* entryHeaders(`${entryPath}/`, "5", 0, 0o755, SANDBOX_ID);
-      yield* workspaceEntries(hostPath, entryPath);
+      yield* workspaceEntries(hostPath, entryPath, workspace);
+    } else if (stats.isSymbolicLink()) {
+      // A v5 workspace reproduces repository-internal links; one leaving the workspace is refused.
+      const target = await workspaceLinkTarget(workspace, hostPath);
+      if (target === undefined) throw new Error("CONTAINER_WORKSPACE_ENTRY_UNSUPPORTED");
+      yield* entryHeaders(entryPath, "2", 0, 0o777, SANDBOX_ID, target);
     } else if (stats.isFile()) {
       yield* entryHeaders(entryPath, "0", stats.size, 0o644, SANDBOX_ID);
       let streamed = 0;

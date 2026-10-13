@@ -90,7 +90,7 @@ Commands:
           evidence-export-replay-result>
                                                Print a JSON Schema
   verify [request.json|-] [--container-transport MODE] [--container-runtime JSON_ARGV | --allow-unsafe-execution
-        | --allow-windows-native-execution]   Execute a v2-v4 container, trusted-local or
+        | --allow-windows-native-execution]   Execute a v2-v5 container, trusted-local or
                                                declared Windows-native campaign
   import-witness [request.json|-] --out DIRECTORY
         (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV] [--container-transport MODE]
@@ -671,6 +671,9 @@ const VALIDATION_ERROR_CODES = new Set([
   "REPOSITORY_LINK_IN_TEST_CLOSURE",
   "REPOSITORY_LINK_ESCAPES_ROOT",
   "TEST_CLOSURE_UNBOUNDED",
+  "TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED",
+  "TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED",
+  "TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED",
   "WINDOWS_NATIVE_HOST_REQUIRED",
   "WINDOWS_NATIVE_EXECUTION_NOT_ACKNOWLEDGED",
   "DESIGNATED_TEST_OVERLAID",
@@ -1413,6 +1416,7 @@ export async function runCli(
         const version2 = isRecord(request) && request.schemaVersion === "2.0.0";
         const version3 = isRecord(request) && request.schemaVersion === "3.0.0";
         const version4 = isRecord(request) && request.schemaVersion === "4.0.0";
+        const version5 = isRecord(request) && request.schemaVersion === "5.0.0";
         const runtimeOptions =
           runtimeArgument === undefined && transportArgument === undefined
             ? {}
@@ -1426,13 +1430,15 @@ export async function runCli(
                     : { transport: parseContainerTransport(transportArgument) }),
                 },
               };
-        if (version4) {
+        if (version4 || version5) {
           const authorized = containerRequest
             ? request
             : windowsNativeRequest
               ? authorizeWindowsNativeExecution(request)
               : authorizeTrustedLocalExecution(request);
-          const manifest = await ledger.verifyV4(authorized, runtimeOptions);
+          const manifest = version5
+            ? await ledger.verifyV5(authorized, runtimeOptions)
+            : await ledger.verifyV4(authorized, runtimeOptions);
           writeJson(io, manifest);
           return decisionExitCode(manifest);
         }
