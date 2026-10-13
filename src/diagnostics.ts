@@ -491,6 +491,10 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "An inherited compiler configuration cannot be resolved from the repository inventory.",
     "Check the extends path and dependency installation; use an existing config file or package tsconfig.json.",
   ],
+  TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED: [
+    "The top-level Bun JSX import source cannot be read as a supported literal string.",
+    "Set jsxImportSource to a quoted package name before preparing the campaign snapshot.",
+  ],
   REPOSITORY_INCLUDE_REQUIRES_TEST_CLOSURE: [
     "Repository include entries extend a test-closure snapshot, but the request copies the whole repository.",
     "Remove the include entries, or set repository.snapshot to test-closure.",

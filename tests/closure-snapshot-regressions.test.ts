@@ -3,6 +3,22 @@ import { it } from "node:test";
 import { designatedBunConfig } from "../integrations/bun/driver.mjs";
 import { bunTestPreloads, computeTestClosure } from "../src/engine/test-closure.js";
 
+it("keeps the JSX runtime selected by top-level bunfig settings", async () => {
+  const sources: Record<string, string> = {
+    "test.tsx": "export const view = <div />;",
+    "bunfig.toml": 'jsxImportSource = "preact"\n[test]\nroot = "."\n',
+    "node_modules/preact/package.json": '{"name":"preact"}',
+    "node_modules/preact/jsx-runtime.js": "export const jsx = () => {};",
+  };
+  const closure = await computeTestClosure({
+    files: Object.keys(sources),
+    links: [],
+    roots: ["test.tsx"],
+    read: async (file) => [sources[file] ?? ""],
+  });
+  assert.ok(closure.files.includes("node_modules/preact/jsx-runtime.js"));
+});
+
 it("uses paths and JSX sources inherited from installed package configurations", async () => {
   const sources: Record<string, string> = {
     "test.tsx": 'import "@src/foo"; export const view = <div />;',

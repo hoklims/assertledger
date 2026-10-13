@@ -663,6 +663,8 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
         if (name !== "bunfig.toml" || found === undefined || configurations.has(found)) continue;
         configurations.add(found);
         for (const text of await input.read(found)) {
+          const jsxSource = bunJsxImportSource(text);
+          if (jsxSource !== undefined) jsxSources.add(jsxSource);
           const preloads = bunTestPreloads(text);
           if (preloads === undefined) {
             walk.markUnbounded(found, "TEST_PRELOAD_UNREADABLE");
@@ -787,6 +789,29 @@ function tsconfigExtends(text: string): string[] {
   return entries
     .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
     .map((entry) => (entry === "." || entry === ".." ? `${entry}/tsconfig.json` : entry));
+}
+
+/** Supported top-level Bun JSX source strings; other tables cannot set this option. */
+function bunJsxImportSource(text: string): string | undefined {
+  let source: string | undefined;
+  for (const line of text.split(/\r?\n/u)) {
+    if (/^\s*\[/u.test(line)) break;
+    const assignment =
+      /^\s*(?:jsxImportSource|"jsxImportSource"|'jsxImportSource')\s*=\s*(.*)$/u.exec(line);
+    if (assignment === null) continue;
+    const value = assignment[1] ?? "";
+    const basic = /^("(?:[^"\\]|\\.)*")\s*(?:#.*)?$/u.exec(value);
+    const literal = /^'([^']*)'\s*(?:#.*)?$/u.exec(value);
+    try {
+      source = basic === null ? literal?.[1] : JSON.parse(basic[1] as string);
+    } catch {
+      throw new Error("TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED");
+    }
+    if (source === undefined || source.length === 0) {
+      throw new Error("TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED");
+    }
+  }
+  return source;
 }
 
 /** Preload modules a root `bunfig.toml` declares for `bun test`; undefined when unreadable. */
