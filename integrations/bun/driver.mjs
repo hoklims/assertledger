@@ -316,7 +316,7 @@ const TABLE_HEADER = /^\s*\[/u;
 const TEST_PRELOAD = /^\s*preload\s*=(.*)$/u;
 // Spellings that could set test.preload without the plain key inside a [test] table.
 const INDIRECT_TEST_PRELOAD =
-  /^\s*(?:test\s*\.\s*preload|["']?test["']?\s*=|\[\s*["']test["']\s*\]|["']preload["']\s*=)/u;
+  /^\s*(?:(?:test|"test"|'test')\s*\.\s*(?:preload|"preload"|'preload')\s*=|["']?test["']?\s*=|\[\s*["']test["']\s*\]|["']preload["']\s*=)/u;
 
 function unsupportedConfig() {
   return new Error("BUNFIG_TEST_PRELOAD_UNSUPPORTED");

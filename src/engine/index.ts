@@ -598,6 +598,7 @@ async function runBoundedProcess(
 
 interface RepositoryInventory {
   files: string[];
+  directories: string[];
   spellings: Map<string, string>;
   totalBytes: number;
 }
@@ -663,6 +664,7 @@ async function walkFiles(
   links?: string[],
 ): Promise<RepositoryInventory> {
   const files: string[] = [];
+  const directories: string[] = [];
   const spellings = new Map<string, string>();
   let totalBytes = 0;
   async function visit(relativeDirectory: string): Promise<void> {
@@ -680,8 +682,10 @@ async function walkFiles(
         continue;
       }
       registerPortablePath(spellings, relative);
-      if (entryStats.isDirectory()) await visit(relative);
-      else if (entryStats.isFile()) {
+      if (entryStats.isDirectory()) {
+        directories.push(relative);
+        await visit(relative);
+      } else if (entryStats.isFile()) {
         files.push(relative);
         totalBytes += entryStats.size;
       }
@@ -690,7 +694,7 @@ async function walkFiles(
   await visit("");
   files.sort(comparePortablePaths);
   links?.sort(comparePortablePaths);
-  return { files, spellings, totalBytes };
+  return { files, directories: directories.sort(comparePortablePaths), spellings, totalBytes };
 }
 
 /** Whether a link resolves, or would resolve when dangling, outside the repository root. */
@@ -960,6 +964,7 @@ const BUN_RUNNER_MODULES: ReadonlySet<string> = new Set(["vitest", "@jest/global
 /** The files and links a v5 campaign snapshots, with what it records about the links. */
 interface SnapshotPlan {
   files: string[];
+  directories?: string[];
   links: PreservedLink[];
   omittedLinks: string[];
   unbounded: UnboundedClosureEdge[];
@@ -978,6 +983,7 @@ async function planCampaignSnapshot(
   files: readonly string[],
   links: readonly string[],
   excludes: ReadonlySet<string>,
+  directories: readonly string[],
 ): Promise<SnapshotPlan> {
   const { internal, external, escaping } = await classifyRepositoryLinks(root, links, excludes);
   const overlays = new Map<string, { path: string; contents: string[] }>();
@@ -1032,7 +1038,13 @@ async function planCampaignSnapshot(
   if (roots === undefined) {
     // A structured command names no test: only a repository without external links is snapshot.
     refuseExternal(external);
-    return { files: [...files], links: [...internal.values()], omittedLinks: [], unbounded: [] };
+    return {
+      files: [...files],
+      directories: [...directories],
+      links: [...internal.values()],
+      omittedLinks: [],
+      unbounded: [],
+    };
   }
   const bunRunner =
     request.adapter.kind === "bun-test" || request.adapter.kind === "bun-test-designated";
@@ -1051,12 +1063,16 @@ async function planCampaignSnapshot(
     }
     return {
       files: [...files],
+      directories: [...directories],
       links: [...internal.values()],
       omittedLinks: external,
       unbounded: [],
     };
   }
-  const included = expandIncludedPaths({ files, links, linkTargets }, request.repository.include);
+  const included = expandIncludedPaths(
+    { files, links, linkTargets, directories },
+    request.repository.include,
+  );
   if (included.missing.length > 0) {
     throw new Error("REPOSITORY_INCLUDE_MISSING", { cause: included.missing[0] });
   }
@@ -1077,6 +1093,19 @@ async function planCampaignSnapshot(
   }
   return {
     files: [...selected.values()].sort(comparePortablePaths),
+    directories: [
+      ...new Set([
+        ...included.directories,
+        ...[...selectedLinks.values()]
+          .filter((link) => link.type === "dir")
+          .flatMap((link) =>
+            directories.filter(
+              (directory) =>
+                directory === link.resolved || directory.startsWith(`${link.resolved}/`),
+            ),
+          ),
+      ]),
+    ].sort(comparePortablePaths),
     links: [...selectedLinks.values()].sort((left, right) =>
       comparePortablePaths(left.path, right.path),
     ),
@@ -4398,6 +4427,7 @@ async function copyRepository(
 /** Files and links copied by a v5 snapshot or workspace, both `/`-separated from the root. */
 interface CopyPlan {
   files: readonly string[];
+  directories?: readonly string[];
   links: ReadonlyArray<Pick<PreservedLink, "path" | "target" | "type">>;
 }
 
@@ -4410,6 +4440,9 @@ const COPY_CONCURRENCY = 16;
  */
 async function copyPlannedTree(source: string, destination: string, plan: CopyPlan): Promise<void> {
   await mkdir(destination, { recursive: false });
+  for (const directory of plan.directories ?? []) {
+    await mkdir(path.join(destination, ...directory.split("/")), { recursive: true });
+  }
   const directories = new Set<string>();
   const ensureParent = async (relative: string) => {
     const parent = path.posix.dirname(relative);
@@ -4469,13 +4502,27 @@ async function snapshotTreeDigest(
   root: string,
   files: readonly string[],
   links: readonly PreservedLink[],
+  directories: readonly string[],
 ): Promise<string> {
+  const occupied = [...files, ...links.map((link) => link.path), ...directories];
+  const emptyDirectories = directories.filter(
+    (directory) => !occupied.some((entry) => entry.startsWith(`${directory}/`)),
+  );
   const entries = [
-    ...files.map((file) => ({ path: file, link: undefined as PreservedLink | undefined })),
-    ...links.map((link) => ({ path: link.path, link })),
+    ...files.map((file) => ({
+      path: file,
+      link: undefined as PreservedLink | undefined,
+      directory: false,
+    })),
+    ...links.map((link) => ({ path: link.path, link, directory: false })),
+    ...emptyDirectories.map((directory) => ({ path: directory, link: undefined, directory: true })),
   ].sort((left, right) => comparePortablePaths(left.path, right.path));
   const digest = createHash("sha256");
   for (const entry of entries) {
+    if (entry.directory) {
+      digest.update(Buffer.from(`D\0${entry.path}\0`, "utf8"));
+      continue;
+    }
     if (entry.link !== undefined) {
       digest.update(
         Buffer.from(`L\0${entry.path}\0${entry.link.type}\0${entry.link.target}\0`, "utf8"),
@@ -5243,6 +5290,7 @@ async function verifyPreparedCampaign(
         sourceInventory.files,
         sourceLinks ?? [],
         excludes,
+        sourceInventory.directories,
       )
     : undefined;
   const omittedLinks =
@@ -5393,6 +5441,7 @@ async function verifyPreparedCampaign(
             );
             return {
               files: inventory.files,
+              directories: inventory.directories,
               links: await readTreeLinks(repositorySnapshot, links),
             };
           })();
@@ -5432,7 +5481,12 @@ async function verifyPreparedCampaign(
     // A v4 digest covers exactly the snapshot, dependencies included when the request says so; a
     // v5 digest also binds every reproduced link and its target.
     const repositoryDigest = version5
-      ? await snapshotTreeDigest(repositorySnapshot, snapshotInventory.files, snapshotLinks)
+      ? await snapshotTreeDigest(
+          repositorySnapshot,
+          snapshotInventory.files,
+          snapshotLinks,
+          snapshotInventory.directories,
+        )
       : version4
         ? await repositoryInventoryDigest(repositorySnapshot, snapshotInventory.files)
         : ((await analyzeRepository(repositorySnapshot)) as { repositoryDigest: string })

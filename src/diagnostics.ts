@@ -483,6 +483,14 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "A repository include entry is absent from the repository, or removed by its exclusions.",
     "Remove the entry, or check its path against the repository and the declared exclusions.",
   ],
+  TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED: [
+    "A package import alias cannot be resolved completely into repository files.",
+    "Check the nearest package imports mapping and its targets; use supported repository-relative targets.",
+  ],
+  TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED: [
+    "An inherited compiler configuration cannot be resolved from the repository inventory.",
+    "Check the extends path and dependency installation; use an existing config file or package tsconfig.json.",
+  ],
   REPOSITORY_INCLUDE_REQUIRES_TEST_CLOSURE: [
     "Repository include entries extend a test-closure snapshot, but the request copies the whole repository.",
     "Remove the include entries, or set repository.snapshot to test-closure.",

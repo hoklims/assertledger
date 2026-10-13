@@ -18,8 +18,11 @@ AssertLedger records the achieved isolation level in each manifest.
 
 Candidate files are restricted to configured test roots. Absolute paths, traversal segments, path
 segments ending in a dot or space, and NTFS alternate data stream syntax are rejected. Repository
-symlinks are not silently omitted: AssertLedger rejects a symlink unless an excluded path segment keeps
-it outside the inventory and snapshot. Overlay writes also reject symlink destinations discovered in
+symlinks are not silently omitted: v1 to v3 reject inventoried links; v4 refuses links reached by
+the executed test closure and records omitted unrelated links. V5 reproduces repository-internal
+links with their relative targets and binds them in its digest, while refusing external, dangling
+or escaping links reached by the test closure or explicit include paths. Overlay writes also reject
+symlink destinations discovered in
 the workspace. Commands run from executable and argument arrays with `shell: false`.
 
 Environment allowlists and container environment declarations cannot include `NODE_OPTIONS` or

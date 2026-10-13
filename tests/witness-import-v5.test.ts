@@ -146,6 +146,41 @@ async function importInto(request: unknown) {
 }
 
 describe("witness import v2", () => {
+  it("preserves internal links to empty directories in repository snapshots", async () => {
+    const root = await workspace();
+    await mkdir(path.join(root, "runtime/empty"), { recursive: true });
+    await symlink(
+      path.join(root, "runtime/empty"),
+      path.join(root, "empty-link"),
+      directoryLinkType,
+    );
+    const { manifest } = await importInto(witness(root, { snapshot: "repository" }));
+    assert.equal(manifest.decision.status, "VERIFIED", manifest.decision.reasonCodes.join(","));
+    assert.equal(
+      parseEvidenceManifestV5(manifest).evidenceContext.repository.preservedLinkCount,
+      3,
+    );
+  });
+  it("preserves explicitly included empty directories in every execution workspace", async () => {
+    const root = await workspace({
+      "web/src/names.spec.ts": `import { expect, it } from "bun:test";
+import { statSync } from "node:fs";
+import { names } from "./names";
+it("keeps docs", () => {
+  expect(statSync("../runtime/empty").isDirectory()).toBe(true);
+  expect(names()).toContain("docs");
+});`,
+    });
+    await mkdir(path.join(root, "runtime/empty"), { recursive: true });
+    const request = witness(root, { include: ["runtime"] });
+    request.test.path = ["keeps docs"];
+    const { manifest } = await importInto(request);
+    assert.equal(manifest.decision.status, "VERIFIED", manifest.decision.reasonCodes.join(","));
+    await mkdir(path.join(root, "runtime/another-empty"));
+    const changed = await importInto(request);
+    assert.equal(changed.manifest.decision.status, "VERIFIED");
+    assert.notEqual(changed.manifest.repositoryDigest, manifest.repositoryDigest);
+  });
   it("replays a witness in its package, through installed links, to replay-valid evidence", async () => {
     const root = await workspace();
     const { manifest, out } = await importInto(witness(root));

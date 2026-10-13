@@ -33,6 +33,18 @@ v5 campaign; see [witness import](witness-import.md).
 
 ## Repository links
 
+Explicit `include` directories retain their empty descendants in both the snapshot and execution
+workspaces. The v5 repository digest adds a `D\0path\0` entry for each retained empty leaf directory
+to the existing sorted file/link sequence. Snapshots without retained empty directories keep the
+previous digest projection byte for byte; historical manifests remain replayable. Adding or removing
+a retained empty directory changes the repository digest even when no file bytes change.
+
+Package `imports` aliases are resolved in the nearest package scope, including wildcard targets
+and all conditional branches conservatively. External, recursive, missing or unsupported alias
+targets refuse preparation with `TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED`, rather than silently
+omitting runtime code. Extended compiler configurations and implicit JSX dependencies are retained
+even in repositories with no links.
+
 A v5 campaign reproduces the links that resolve inside the repository with their relative targets,
 and binds each link and its target in the repository digest: every such link for a `repository`
 snapshot, those the closure reaches for a `test-closure` snapshot. The closure follows those links,

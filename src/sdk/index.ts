@@ -43,6 +43,8 @@ import {
   type EvidenceManifestV3Contract,
   type EvidenceManifestV4Contract,
   type EvidenceManifestV5Contract,
+  type WitnessImportRequest,
+  type WitnessImportRequestV2,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
@@ -338,6 +340,18 @@ export class AssertLedger {
    * failure line. The operator chooses the isolation in `options`; the witness cannot. A v1
    * witness yields v4 evidence and a v2 witness v5 evidence.
    */
+  importWitness(
+    witness: WitnessImportRequest,
+    options: WitnessImportOptions,
+  ): Promise<EvidenceManifestV4Contract>;
+  importWitness(
+    witness: WitnessImportRequestV2,
+    options: WitnessImportOptions,
+  ): Promise<EvidenceManifestV5Contract>;
+  importWitness(
+    witness: unknown,
+    options: WitnessImportOptions,
+  ): Promise<EvidenceManifestV4Contract | EvidenceManifestV5Contract>;
   async importWitness(
     witness: unknown,
     options: WitnessImportOptions,

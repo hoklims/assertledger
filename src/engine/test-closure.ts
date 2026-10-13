@@ -1,6 +1,7 @@
 import { builtinModules } from "node:module";
 import path from "node:path";
 import { SyntaxKind } from "typescript/unstable/ast";
+import { designatedBunConfig } from "../../integrations/bun/driver.mjs";
 import { portablePathKey } from "../core/index.js";
 import { scanJavaScriptTokens } from "./javascript-tokens.js";
 
@@ -31,6 +32,8 @@ export interface TestClosureInput {
    * own test API, so their installed packages are not on the closure.
    */
   runnerModules?: ReadonlySet<string>;
+  /** Existing regular directories, including empty runtime inputs. */
+  directories?: readonly string[];
 }
 
 export interface UnboundedClosureEdge {
@@ -405,6 +408,10 @@ class ClosureWalk {
   async resolve(file: string, specifier: string, read: TestClosureInput["read"]): Promise<void> {
     if (BUILTINS.has(specifier) || specifier === "bun" || specifier.startsWith("bun:")) return;
     if (this.runnerModules.has(specifier)) return;
+    if (specifier.startsWith("#")) {
+      await this.resolvePackageImport(file, specifier, read);
+      return;
+    }
     if (specifier.startsWith("node:")) return;
     if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(specifier) || specifier.startsWith("/")) {
       this.markUnbounded(file, "ABSOLUTE_MODULE_SPECIFIER");
@@ -463,11 +470,82 @@ class ClosureWalk {
     // Absent from the inventory, a package is external: its directory is not repository content.
     await this.includeNodeModule(directory === "." ? "" : directory, name, read);
   }
+
+  async resolvePackageImport(
+    file: string,
+    specifier: string,
+    read: TestClosureInput["read"],
+  ): Promise<void> {
+    let directory = path.posix.dirname(file);
+    for (;;) {
+      const manifest = this.index.file(
+        directory === "." ? "package.json" : `${directory}/package.json`,
+      );
+      if (manifest !== undefined) {
+        this.addFile(manifest);
+        for (const text of await read(manifest)) {
+          const document: unknown = JSON.parse(text);
+          const imports = isRecord(document) ? document.imports : undefined;
+          if (!isRecord(imports)) throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          const matching = Object.keys(imports)
+            .filter((key) => {
+              const star = key.indexOf("*");
+              return star < 0
+                ? key === specifier
+                : specifier.startsWith(key.slice(0, star)) &&
+                    specifier.endsWith(key.slice(star + 1)) &&
+                    specifier.length >= key.length - 1;
+            })
+            .sort((a, b) =>
+              a === specifier
+                ? -1
+                : b === specifier
+                  ? 1
+                  : b.indexOf("*") - a.indexOf("*") || b.length - a.length,
+            );
+          const key = matching[0];
+          if (key === undefined) throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          const star = key.indexOf("*");
+          const capture =
+            star < 0 ? "" : specifier.slice(star, specifier.length - (key.length - star - 1));
+          const targets = (value: unknown): string[] => {
+            if (typeof value === "string") return [value];
+            if (Array.isArray(value)) return value.flatMap(targets);
+            if (isRecord(value)) return Object.values(value).flatMap(targets);
+            if (value === null) return [];
+            throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          };
+          const resolved = targets(imports[key]);
+          if (resolved.length === 0) throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          for (const target of resolved) {
+            // Follow all conditional branches conservatively; unsupported external/recursive
+            // aliases must refuse before a closure snapshot can silently omit runtime inputs.
+            if (!target.startsWith("./"))
+              throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+            const relative = path.posix.normalize(
+              path.posix.join(directory, target.replaceAll("*", capture)),
+            );
+            if (
+              relative.startsWith("../") ||
+              relative === ".." ||
+              !this.includeModulePath(relative)
+            ) {
+              throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+            }
+          }
+        }
+        return;
+      }
+      if (directory === ".") throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+      directory = path.posix.dirname(directory);
+    }
+  }
 }
 
 async function tsconfigMappings(
   index: RepositoryIndex,
   read: TestClosureInput["read"],
+  jsxSources: Set<string>,
 ): Promise<PathMapping[]> {
   const mappings: PathMapping[] = [];
   const configs = [...index.fileByKey.values()].filter((file) => {
@@ -477,7 +555,10 @@ async function tsconfigMappings(
       (base === "jsconfig.json" || (base.startsWith("tsconfig") && base.endsWith(".json")))
     );
   });
+  const seen = new Set<string>();
   for (const config of configs.sort()) {
+    if (seen.has(config)) continue;
+    seen.add(config);
     for (const text of await read(config)) {
       let document: unknown;
       try {
@@ -485,7 +566,33 @@ async function tsconfigMappings(
       } catch {
         continue;
       }
+      for (const specifier of tsconfigExtends(text)) {
+        let directory = path.posix.dirname(config);
+        let inherited: string | undefined;
+        let stopped = false;
+        for (;;) {
+          const candidate = specifier.startsWith(".")
+            ? path.posix.join(directory, specifier)
+            : path.posix.join(directory, "node_modules", specifier);
+          const resolved = index.resolve(candidate);
+          if (resolved.stopped !== undefined) {
+            stopped = true;
+            break;
+          }
+          inherited =
+            index.file(resolved.path) ??
+            index.file(`${resolved.path}.json`) ??
+            index.file(`${resolved.path}/tsconfig.json`);
+          if (inherited !== undefined || specifier.startsWith(".") || directory === ".") break;
+          directory = path.posix.dirname(directory);
+        }
+        if (inherited !== undefined) configs.push(inherited);
+        else if (!stopped) throw new Error("TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED");
+      }
       const options = isRecord(document) ? document.compilerOptions : undefined;
+      if (isRecord(options) && typeof options.jsxImportSource === "string") {
+        jsxSources.add(options.jsxImportSource);
+      }
       if (!isRecord(options) || !isRecord(options.paths)) continue;
       const directory = path.posix.dirname(config);
       const baseUrl = typeof options.baseUrl === "string" ? options.baseUrl : ".";
@@ -530,15 +637,17 @@ async function workspacePackages(
 /** Computes the module closure of `roots`. */
 export async function computeTestClosure(input: TestClosureInput): Promise<TestClosure> {
   const index = new RepositoryIndex(input.files, input.links, input.linkTargets);
+  const jsxSources = new Set(["react"]);
   const walk = new ClosureWalk(
     index,
-    await tsconfigMappings(index, input.read),
+    await tsconfigMappings(index, input.read, jsxSources),
     await workspacePackages(index, input.read),
     input.runnerModules,
   );
   for (const root of input.roots) walk.include(root);
   const scanned = new Set<string>();
   const configurations = new Set<string>();
+  const compilerConfigurations = new Set<string>();
   while (walk.queue.length > 0) {
     const file = walk.queue.shift() as string;
     if (scanned.has(file)) continue;
@@ -565,12 +674,17 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
       if (directory === ".") break;
       directory = path.posix.dirname(directory);
     }
-    // Following links, the walk also keeps what Bun reads to compile a file: each configuration a
+    // The walk also keeps what Bun reads to compile a file: each configuration a
     // tsconfig or jsconfig extends, and the automatic JSX runtime a .tsx or .jsx file imports.
-    if (index.followsLinks && isProjectConfiguration(file)) {
+    if (isProjectConfiguration(file) || compilerConfigurations.has(file)) {
       for (const text of await input.read(file)) {
-        for (const specifier of tsconfigExtends(text))
+        for (const specifier of tsconfigExtends(text)) {
+          const previous = new Set(walk.files);
           await walk.resolve(file, specifier, input.read);
+          for (const added of walk.files) {
+            if (!previous.has(added) && added.endsWith(".json")) compilerConfigurations.add(added);
+          }
+        }
       }
       continue;
     }
@@ -578,10 +692,16 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
     for (const text of await input.read(file)) {
       const scan = scanModuleSpecifiers(text, file);
       if (scan.nonLiteral) walk.markUnbounded(file, "NON_LITERAL_MODULE_SPECIFIER");
-      const implicit =
-        index.followsLinks && /\.[jt]sx$/iu.test(file)
-          ? ["react/jsx-dev-runtime", "react/jsx-runtime"]
-          : [];
+      const fileJsxSources = new Set(jsxSources);
+      for (const directive of text.matchAll(/@jsxImportSource\s+([^\s*]+)/gu)) {
+        fileJsxSources.add(directive[1] as string);
+      }
+      const implicit = /\.[jt]sx$/iu.test(file)
+        ? [...fileJsxSources].flatMap((source) => [
+            `${source}/jsx-dev-runtime`,
+            `${source}/jsx-runtime`,
+          ])
+        : [];
       for (const specifier of [...new Set([...scan.specifiers, ...implicit])].sort()) {
         await walk.resolve(file, specifier, input.read);
       }
@@ -607,12 +727,13 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
  * no file, directory or link is missing. Nothing below a path is left out.
  */
 export function expandIncludedPaths(
-  input: Pick<TestClosureInput, "files" | "links" | "linkTargets">,
+  input: Pick<TestClosureInput, "files" | "links" | "linkTargets" | "directories">,
   paths: readonly string[],
-): { files: string[]; links: string[]; missing: string[] } {
+): { files: string[]; links: string[]; directories: string[]; missing: string[] } {
   const index = new RepositoryIndex(input.files, input.links, input.linkTargets);
   const files = new Set<string>();
   const links = new Set<string>();
+  const directories = new Set<string>();
   const visited = new Set<string>();
   const visit = (candidate: string): boolean => {
     const resolved = index.resolve(candidate);
@@ -628,13 +749,24 @@ export function expandIncludedPaths(
     }
     const below = index.filesUnder(resolved.path);
     const belowLinks = index.linksUnder(resolved.path);
-    if (below.length === 0 && belowLinks.length === 0) return false;
+    const selectedDirectories = (input.directories ?? []).filter(
+      (directory) =>
+        portablePathKey(directory) === key || portablePathKey(directory).startsWith(`${key}/`),
+    );
+    if (below.length === 0 && belowLinks.length === 0 && selectedDirectories.length === 0)
+      return false;
+    for (const directory of selectedDirectories) directories.add(directory);
     for (const found of below) files.add(found);
     for (const link of belowLinks) visit(link);
     return true;
   };
   const missing = paths.filter((entry) => !visit(entry));
-  return { files: [...files].sort(), links: [...links].sort(), missing };
+  return {
+    files: [...files].sort(),
+    links: [...links].sort(),
+    directories: [...directories].sort(),
+    missing,
+  };
 }
 
 function isProjectConfiguration(file: string): boolean {
@@ -659,16 +791,17 @@ function tsconfigExtends(text: string): string[] {
 
 /** Preload modules a root `bunfig.toml` declares for `bun test`; undefined when unreadable. */
 export function bunTestPreloads(bunfig: string): string[] | undefined {
-  const preloads: string[] = [];
-  const assignments = [...bunfig.matchAll(/^\s*preload\s*=\s*(.*)$/gmu)];
-  for (const assignment of assignments) {
-    const value = (assignment[1] ?? "").trim();
-    const strings = [...value.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/gu)].map(
-      (match) => match[1] ?? match[2] ?? "",
-    );
-    const literal = value.startsWith("[") ? value.endsWith("]") : strings.length === 1;
-    if (!literal || strings.length === 0) return undefined;
-    preloads.push(...strings);
+  const marker = "./__assertledger_closure_preload__.mjs";
+  try {
+    // Share the runner's parser so every supported multiline/string/escape spelling has the
+    // same closure, and top-level preload settings cannot become test module edges.
+    const rewritten = designatedBunConfig(bunfig, marker);
+    for (const match of rewritten.matchAll(/^preload = (\[.*\])$/gmu)) {
+      const entries = JSON.parse(match[1] as string) as string[];
+      if (entries[0] === marker) return entries.slice(1);
+    }
+  } catch {
+    return undefined;
   }
-  return preloads;
+  return undefined;
 }
