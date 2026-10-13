@@ -1,0 +1,10 @@
+definitions:
+  steps:
+    - step: &gate
+        name: Public qualification gate
+        script:
+          - bun wrapper.mjs
+pipelines:
+  pull-requests:
+    '**':
+      - step: *gate

@@ -85,6 +85,14 @@ async function copyCandidate(target: string): Promise<void> {
       path.join(SOURCE_SCRIPTS, "conformance-v1-lock.ts"),
       path.join(target, "scripts", "conformance-v1-lock.ts"),
     ),
+    cp(
+      path.join(SOURCE_SCRIPTS, "qualification-schema-lock.ts"),
+      path.join(target, "scripts", "qualification-schema-lock.ts"),
+    ),
+    cp(
+      path.join(SOURCE_SCRIPTS, "audit-schema-lock.ts"),
+      path.join(target, "scripts", "audit-schema-lock.ts"),
+    ),
   ]);
   await symlink(
     path.join(REPOSITORY, "node_modules"),

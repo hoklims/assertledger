@@ -60,6 +60,8 @@ const EVIDENCE_SCHEMA_VERSION = "1.0.0";
 // Version 2.0.0 adds a decision-bound execution backend record; its absence stays a v1 manifest.
 const EVIDENCE_SCHEMA_VERSION_V2 = "2.0.0";
 const EVIDENCE_SCHEMA_VERSION_V3 = "3.0.0";
+// Version 4.0.0 also binds the repository snapshot scope: dependencies and omitted links.
+const EVIDENCE_SCHEMA_VERSION_V4 = "4.0.0";
 const EVIDENCE_POLICY_VERSION = "1.0.0";
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const OBSERVATION_OUTCOMES = new Set([
@@ -124,6 +126,11 @@ export interface EvidenceContext {
     budgets: JsonValue;
     candidateRoots: string[];
     backend?: JsonValue;
+  };
+  repository?: {
+    includeDependencies: boolean;
+    omittedLinks: string[];
+    git: { mode: "synthesized"; treeId: string; gitVersion: string } | null;
   };
   worlds: Array<{
     id: string;
@@ -389,6 +396,47 @@ function sortedUniqueStrings(
   return [...new Set(value)].sort(compareOrdinal);
 }
 
+function parseRepositorySnapshot(value: unknown): NonNullable<EvidenceContext["repository"]> {
+  if (!isRecord(value)) throw new TypeError("evidenceContext.repository must be an object");
+  if (typeof value.includeDependencies !== "boolean") {
+    throw new TypeError("evidenceContext.repository.includeDependencies must be boolean");
+  }
+  const links = value.omittedLinks;
+  if (
+    !Array.isArray(links) ||
+    links.length > 10_000 ||
+    links.some(
+      (link, index) =>
+        typeof link !== "string" ||
+        link.length === 0 ||
+        link.length > 1_024 ||
+        (index > 0 && compareOrdinal(links[index - 1] as string, link) >= 0),
+    )
+  ) {
+    throw new TypeError("evidenceContext.repository.omittedLinks must be sorted unique paths");
+  }
+  const git = value.git;
+  if (git === null) {
+    return { includeDependencies: value.includeDependencies, omittedLinks: [...links], git: null };
+  }
+  if (
+    !isRecord(git) ||
+    git.mode !== "synthesized" ||
+    typeof git.treeId !== "string" ||
+    !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(git.treeId) ||
+    typeof git.gitVersion !== "string" ||
+    git.gitVersion.length === 0 ||
+    git.gitVersion.length > 256
+  ) {
+    throw new TypeError("evidenceContext.repository.git must be null or a synthesized tree record");
+  }
+  return {
+    includeDependencies: value.includeDependencies,
+    omittedLinks: [...links],
+    git: { mode: "synthesized", treeId: git.treeId, gitVersion: git.gitVersion },
+  };
+}
+
 function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceContext {
   if (!isRecord(value)) throw new TypeError("evidenceContext must be an object");
   if (!isRecord(value.engine)) throw new TypeError("evidenceContext.engine must be an object");
@@ -397,9 +445,15 @@ function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceCo
     throw new TypeError("evidenceContext.execution must be an object");
   }
   const backendRequired =
-    schemaVersion === EVIDENCE_SCHEMA_VERSION_V2 || schemaVersion === EVIDENCE_SCHEMA_VERSION_V3;
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V2 ||
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V3 ||
+    schemaVersion === EVIDENCE_SCHEMA_VERSION_V4;
   if (backendRequired && !isRecord(value.execution.backend)) {
     throw new TypeError("evidenceContext.execution.backend must be an object");
+  }
+  const repositoryRequired = schemaVersion === EVIDENCE_SCHEMA_VERSION_V4;
+  if (repositoryRequired && !isRecord(value.repository)) {
+    throw new TypeError("evidenceContext.repository must be an object");
   }
   if (!Array.isArray(value.worlds) || value.worlds.length === 0) {
     throw new TypeError("evidenceContext.worlds must be non-empty");
@@ -436,6 +490,7 @@ function parseEvidenceContext(value: unknown, schemaVersion: string): EvidenceCo
       candidateRoots: sortedUniqueStrings(value.execution, "candidateRoots", 100, 512),
       ...(backendRequired ? { backend: jsonField(value.execution, "backend") } : {}),
     },
+    ...(repositoryRequired ? { repository: parseRepositorySnapshot(value.repository) } : {}),
     worlds,
   };
 }
@@ -446,7 +501,8 @@ function parseInputUnchecked(input: unknown): EvidenceInput {
   if (
     schemaVersion !== EVIDENCE_SCHEMA_VERSION &&
     schemaVersion !== EVIDENCE_SCHEMA_VERSION_V2 &&
-    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V3
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V3 &&
+    schemaVersion !== EVIDENCE_SCHEMA_VERSION_V4
   ) {
     throw new TypeError(`Unsupported schemaVersion: ${schemaVersion}`);
   }

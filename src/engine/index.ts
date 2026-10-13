@@ -11,6 +11,7 @@ import {
   open,
   readdir,
   readFile,
+  readlink,
   realpath,
   rename,
   rm,
@@ -22,7 +23,8 @@ import path from "node:path";
 import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createScanner, SyntaxKind } from "typescript/unstable/ast";
+import { SyntaxKind } from "typescript/unstable/ast";
+import type { BunPreflightRefusal } from "../contracts/diagnostics.js";
 import {
   AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
@@ -33,7 +35,7 @@ import {
   parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
   parseEvidenceManifest,
-  parseRepositoryAudit,
+  parseRepositoryAuditV2,
   parseRepositoryInitConfig,
   parseRepositoryInitConfigV2,
   parseRepositoryInitLock,
@@ -44,7 +46,7 @@ import {
   parseVersionedRepositoryInitConfig,
   parseVersionedRepositoryInitLock,
   parseVersionedVerificationRequest,
-  type RepositoryAudit,
+  type RepositoryAuditV2,
   type RepositoryInitConfigV2,
   type RepositoryInitDetections,
   RepositoryInitDetectionsSchema,
@@ -57,6 +59,7 @@ import {
   repositoryInitConfigV2Digest,
   repositoryInitLockDigest,
   repositoryInitLockV2Digest,
+  VERIFICATION_SCHEMA_VERSION_V4,
   type VerificationRequest as VerificationRequestContract,
 } from "../contracts/index.js";
 import {
@@ -70,6 +73,7 @@ import {
   sealManifestArtifact,
   sha256Canonical,
 } from "../core/index.js";
+import { BUN_TEST_DESIGNATED_ADAPTER_PROFILE } from "./adapters/bun-test-designated-profile.js";
 import { BUN_TEST_ADAPTER_PROFILE } from "./adapters/bun-test-profile.js";
 import { NODE_TEST_ADAPTER_PROFILE } from "./adapters/node-test-profile.js";
 import {
@@ -78,17 +82,23 @@ import {
   runNodeTestRuntimePreflight,
 } from "./adapters/node-test-runtime.js";
 import { normalizeRuntimeFacts, RUNTIME_FACTS_VERSION } from "./adapters/runtime-facts.js";
+import { BunPreflightError } from "./bun-preflight.js";
 import {
   type BoundedProcessResult,
+  CONTAINER_ASSET_DIRECTORY,
   CONTAINER_LIMITATIONS,
   CONTAINER_REPORTER_FILE,
   CONTAINER_RESULT_FILE,
   CONTAINER_WORKSPACE,
   type ContainerBackend,
+  type ContainerTransport,
   DEFAULT_CONTAINER_RUNTIME_COMMAND,
+  parseContainerTransport,
   prepareContainerBackend,
   runContainerExecution,
 } from "./container.js";
+import { openDockerStdioControl } from "./docker-stdio.js";
+import { scanJavaScriptTokens } from "./javascript-tokens.js";
 import { NODE_TEST_REPORTER_SOURCE } from "./node-test-reporter.js";
 import {
   type RuntimeDoctorResult,
@@ -96,6 +106,12 @@ import {
   runBunRuntimeDoctorChecks,
   runRuntimeDoctorChecks,
 } from "./runtime-doctor.js";
+import { traceOperation, withRuntimeTrace } from "./runtime-trace.js";
+import {
+  computeTestClosure,
+  type TestClosureInput,
+  type UnboundedClosureEdge,
+} from "./test-closure.js";
 
 const DEFAULT_EXCLUDES = new Set([".git", ".testforge", "node_modules"]);
 const SHA256_PREFIX = "sha256:";
@@ -137,6 +153,8 @@ export interface RepositoryInitOptions {
   framework?: string;
   testCommand?: { executable: string; arguments: string[] };
   afterEvidenceSnapshot?: () => void | Promise<void>;
+  /** Receives how repository links were judged, so a facade can name a refused link. */
+  onLinkAssessment?: (assessment: RepositoryLinkAssessment) => void;
 }
 
 export interface RepositoryInitWriteDependencies {
@@ -220,14 +238,27 @@ interface World {
   files: FileOverlay[];
 }
 
+/** An existing repository test selected by file and describe path; it overlays no file. */
+interface DesignatedSelection {
+  file: string;
+  path: string[];
+  expectedFailure: string | null;
+}
+
 interface Candidate {
   id: string;
   files: FileOverlay[];
+  designated?: DesignatedSelection;
 }
 
 interface VerificationRequest {
   schemaVersion: string;
-  repository: { root: string; exclude: string[] };
+  repository: {
+    root: string;
+    exclude: string[];
+    includeDependencies: boolean;
+    git: "excluded" | "synthesized";
+  };
   adapter:
     | {
         kind: "node-test";
@@ -241,6 +272,11 @@ interface VerificationRequest {
         baseTestFiles: string[];
       }
     | {
+        kind: "bun-test-designated";
+        executable: string;
+        testTimeoutMs: number | null;
+      }
+    | {
         kind: "testforge-command";
         executable: string;
         arguments: string[];
@@ -248,7 +284,7 @@ interface VerificationRequest {
       };
   isolation:
     | {
-        kind: "trusted-local";
+        kind: "trusted-local" | "windows-native";
         acknowledgedUnsafeExecution: boolean;
         environmentAllowlist: string[];
       }
@@ -599,9 +635,12 @@ function repositoryLinkError(relative: string): Error {
   });
 }
 
+/** Walks the regular files of a repository. A link refuses the walk unless `links` collects it;
+ * a collected link is never followed. */
 async function walkFiles(
   root: string,
   excludes: ReadonlySet<string>,
+  links?: string[],
 ): Promise<RepositoryInventory> {
   const files: string[] = [];
   const spellings = new Map<string, string>();
@@ -614,7 +653,12 @@ async function walkFiles(
       if (excludes.has(portablePathKey(entry.name))) continue;
       const relative = path.posix.join(relativeDirectory.split(path.sep).join("/"), entry.name);
       const entryStats = await lstat(path.join(root, ...relative.split("/")));
-      if (entryStats.isSymbolicLink()) throw repositoryLinkError(relative);
+      if (entryStats.isSymbolicLink()) {
+        if (links === undefined) throw repositoryLinkError(relative);
+        registerPortablePath(spellings, relative);
+        links.push(relative);
+        continue;
+      }
       registerPortablePath(spellings, relative);
       if (entryStats.isDirectory()) await visit(relative);
       else if (entryStats.isFile()) {
@@ -625,7 +669,220 @@ async function walkFiles(
   }
   await visit("");
   files.sort(comparePortablePaths);
+  links?.sort(comparePortablePaths);
   return { files, spellings, totalBytes };
+}
+
+/** Whether a link resolves, or would resolve when dangling, outside the repository root. */
+async function linkEscapesRoot(root: string, relative: string): Promise<boolean> {
+  const linkPath = path.join(root, ...relative.split("/"));
+  let target: string;
+  try {
+    target = await realpath(linkPath);
+  } catch {
+    try {
+      target = path.resolve(path.dirname(linkPath), await readlink(linkPath));
+    } catch {
+      return true;
+    }
+  }
+  const fromRoot = path.relative(root, target);
+  return fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot);
+}
+
+export type RepositoryLinkRefusalCode =
+  | "REPOSITORY_LINK_ESCAPES_ROOT"
+  | "REPOSITORY_LINK_IN_TEST_CLOSURE"
+  | "TEST_CLOSURE_UNBOUNDED"
+  | "TEST_CLOSURE_UNSUPPORTED";
+
+/** How the links of an inventory relate to the module closure of the tests that would run. */
+export interface RepositoryLinkAssessment {
+  links: string[];
+  refused: { path: string; reasonCode: RepositoryLinkRefusalCode } | undefined;
+  omitted: string[];
+  unbounded: UnboundedClosureEdge[];
+}
+
+const LINK_DISCOVERY_ENTRY_LIMIT = 100_000;
+
+/**
+ * Whether a runner discovering tests from the root could reach one through this link: the link
+ * is itself named as a test, or it resolves to a directory holding one. A nested link, or a tree
+ * past the entry limit, is assumed to reach one.
+ */
+async function linkReachesDiscoverableTest(
+  root: string,
+  link: string,
+  discoverable: (file: string) => boolean,
+): Promise<boolean> {
+  if (discoverable(link)) return true;
+  let target: string;
+  try {
+    target = await realpath(path.join(root, ...link.split("/")));
+    if (!(await stat(target)).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  let seen = 0;
+  const pending = [""];
+  for (let relative = pending.pop(); relative !== undefined; relative = pending.pop()) {
+    for (const entry of await readdir(path.join(target, relative), { withFileTypes: true })) {
+      seen += 1;
+      if (seen > LINK_DISCOVERY_ENTRY_LIMIT || entry.isSymbolicLink()) return true;
+      const child = relative === "" ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isDirectory()) pending.push(child);
+      else if (discoverable(`${link}/${child}`)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Refuses a link that leaves the root or lies in the closure of `roots`; every other link stays
+ * outside the evidence. With `discoverable`, the tests a runner finds by itself, a link through
+ * which one can be reached is in the closure too. `strictUnbounded` also refuses any link when the
+ * closure is unbounded, as a campaign must; a static diagnostic reports that case without refusing.
+ * Without `roots` the closure is unknown and every link refuses.
+ */
+async function assessRepositoryLinks(
+  root: string,
+  files: readonly string[],
+  links: readonly string[],
+  roots: readonly string[] | undefined,
+  read: TestClosureInput["read"],
+  strictUnbounded: boolean,
+  discoverable?: (file: string) => boolean,
+): Promise<RepositoryLinkAssessment> {
+  const assessment: RepositoryLinkAssessment = {
+    links: [...links],
+    refused: undefined,
+    omitted: [],
+    unbounded: [],
+  };
+  if (links.length === 0) return assessment;
+  for (const link of links) {
+    if (await linkEscapesRoot(root, link)) {
+      assessment.refused = { path: link, reasonCode: "REPOSITORY_LINK_ESCAPES_ROOT" };
+      return assessment;
+    }
+  }
+  if (roots === undefined) {
+    assessment.refused = { path: links[0] as string, reasonCode: "TEST_CLOSURE_UNSUPPORTED" };
+    return assessment;
+  }
+  if (discoverable !== undefined) {
+    for (const link of links) {
+      if (await linkReachesDiscoverableTest(root, link, discoverable)) {
+        assessment.refused = { path: link, reasonCode: "REPOSITORY_LINK_IN_TEST_CLOSURE" };
+        return assessment;
+      }
+    }
+  }
+  const closure = await computeTestClosure({ files, links, roots, read });
+  assessment.unbounded = closure.unbounded;
+  const linked = closure.links[0];
+  if (linked !== undefined) {
+    assessment.refused = { path: linked, reasonCode: "REPOSITORY_LINK_IN_TEST_CLOSURE" };
+    return assessment;
+  }
+  if (strictUnbounded && closure.unbounded.length > 0) {
+    assessment.refused = { path: links[0] as string, reasonCode: "TEST_CLOSURE_UNBOUNDED" };
+    return assessment;
+  }
+  assessment.omitted = [...links];
+  return assessment;
+}
+
+/** The digest analyzeRepository computes, over an inventory already walked. */
+async function repositoryInventoryDigest(root: string, files: readonly string[]): Promise<string> {
+  const digest = createHash("sha256");
+  for (const file of files) {
+    const content = await readFile(path.join(root, ...file.split("/")));
+    digest.update(Buffer.from(`${file}\0${content.byteLength}\0`, "utf8"));
+    digest.update(content);
+  }
+  return `${SHA256_PREFIX}${digest.digest("hex")}`;
+}
+
+/**
+ * Judges a v4 campaign's links against the module closure of every test the adapter executes,
+ * read with each world's and candidate's overlay. A link that leaves the root or lies in that
+ * closure refuses the campaign and is named; so does any link when the closure is unbounded or
+ * unknown, as for a structured command. The others are left out of the snapshot and recorded.
+ */
+async function campaignOmittedLinks(
+  request: VerificationRequest,
+  root: string,
+  files: readonly string[],
+  links: readonly string[],
+): Promise<string[]> {
+  const overlays = new Map<string, { path: string; contents: string[] }>();
+  for (const overlay of [
+    ...request.worlds.flatMap((world) => world.files),
+    ...request.candidates.flatMap((candidate) => candidate.files),
+  ]) {
+    const key = portablePathKey(overlay.path);
+    const entry = overlays.get(key) ?? { path: overlay.path, contents: [] };
+    entry.contents.push(overlay.content);
+    overlays.set(key, entry);
+  }
+  const repositoryFiles = new Set(files.map(portablePathKey));
+  const roots =
+    request.adapter.kind === "node-test" || request.adapter.kind === "bun-test"
+      ? [
+          ...request.adapter.baseTestFiles,
+          ...request.candidates.flatMap((candidate) => candidate.files.map((file) => file.path)),
+        ]
+      : request.adapter.kind === "bun-test-designated"
+        ? request.candidates.flatMap((candidate) =>
+            candidate.designated === undefined ? [] : [candidate.designated.file],
+          )
+        : undefined;
+  const assessment = await assessRepositoryLinks(
+    root,
+    [
+      ...files,
+      ...[...overlays.entries()]
+        .filter(([key]) => !repositoryFiles.has(key))
+        .map(([, entry]) => entry.path),
+    ],
+    links,
+    roots,
+    async (file) => {
+      const key = portablePathKey(file);
+      const texts = overlays.get(key)?.contents ?? [];
+      return repositoryFiles.has(key)
+        ? [await readFile(path.join(root, ...file.split("/")), "utf8"), ...texts]
+        : texts;
+    },
+    true,
+  );
+  const refused = assessment.refused;
+  if (refused !== undefined) {
+    throw new Error(
+      refused.reasonCode === "TEST_CLOSURE_UNSUPPORTED"
+        ? "UNSUPPORTED_REPOSITORY_SYMLINK"
+        : refused.reasonCode,
+      { cause: refused.path },
+    );
+  }
+  return assessment.omitted;
+}
+
+/** The closure roots of a test framework's discovered sources; undefined when not analyzable. */
+function frameworkClosureRoots(framework: string, files: readonly string[]): string[] | undefined {
+  if (framework === "bun:test") {
+    return files.filter((file) => /(?:^|\/)[^/]+[._](?:test|spec)\.[cm]?[jt]sx?$/u.test(file));
+  }
+  if (framework === "node:test" || framework === "vitest" || framework === "jest") {
+    return files.filter(
+      (file) =>
+        (initEvidenceKind(file) === "TEST_SOURCE" && /\.[cm]?[jt]sx?$/u.test(file)) ||
+        /(?:^|\/)(?:vitest|jest)\.config\.[cm]?[jt]s$/u.test(file),
+    );
+  }
+  return undefined;
 }
 
 function rawSha256(content: string | Uint8Array): string {
@@ -815,40 +1072,8 @@ function initCommandPathMatchers(
     .map(initPathPatternMatcher);
 }
 
-function initJavaScriptModuleSpecifiers(source: string): Set<string> {
-  const tokens: Array<{ kind: SyntaxKind; text: string; value: string }> = [];
-  const scanner = createScanner(true, undefined, source);
-  const templateExpressionBraceDepths: number[] = [];
-  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
-    const tokenStart = scanner.getTokenStart();
-    if (scanner.getTokenEnd() <= tokenStart) {
-      // Context-free scanning can leave a private identifier empty (for example '#' in a regex).
-      // Never collect a non-EOF token without consuming source text.
-      scanner.resetTokenState(Math.min(source.length, tokenStart + 1));
-      continue;
-    }
-    const templateDepthIndex = templateExpressionBraceDepths.length - 1;
-    if (
-      kind === SyntaxKind.CloseBraceToken &&
-      templateDepthIndex >= 0 &&
-      templateExpressionBraceDepths[templateDepthIndex] === 0
-    ) {
-      kind = scanner.reScanTemplateToken(false);
-      tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
-      if (kind === SyntaxKind.TemplateTail) templateExpressionBraceDepths.pop();
-      continue;
-    }
-    tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
-    if (kind === SyntaxKind.TemplateHead) {
-      templateExpressionBraceDepths.push(0);
-    } else if (templateDepthIndex >= 0 && kind === SyntaxKind.OpenBraceToken) {
-      templateExpressionBraceDepths[templateDepthIndex] =
-        (templateExpressionBraceDepths[templateDepthIndex] ?? 0) + 1;
-    } else if (templateDepthIndex >= 0 && kind === SyntaxKind.CloseBraceToken) {
-      templateExpressionBraceDepths[templateDepthIndex] =
-        (templateExpressionBraceDepths[templateDepthIndex] ?? 0) - 1;
-    }
-  }
+function initJavaScriptModuleSpecifiers(source: string, file?: string): Set<string> {
+  const tokens = [...scanJavaScriptTokens(source, file)];
   const specifiers = new Set<string>();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -1038,15 +1263,34 @@ export async function initializeRepository(
       const fileKey = portablePathKey(file);
       return fileKey === rootKey || fileKey.startsWith(`${rootKey}/`);
     });
-  let inventory: RepositoryInventory;
-  try {
-    inventory = await walkFiles(root, inventoryExcludes);
-  } catch (error) {
-    if (!(error instanceof Error) || error.message !== "UNSUPPORTED_REPOSITORY_SYMLINK")
-      throw error;
-    return initTerminalResult("CONFLICT", initEmptyDetections(["UNSUPPORTED_REPOSITORY_SYMLINK"]), [
+  const links: string[] = [];
+  const inventory = await walkFiles(root, inventoryExcludes, links);
+  // A link is judged against the tests that would run, once the framework is known; one that
+  // leaves the root refuses the repository whatever the framework.
+  const linkConflict = (
+    assessment: RepositoryLinkAssessment,
+    detections: RepositoryInitDetections,
+  ) => {
+    options.onLinkAssessment?.(assessment);
+    const code = assessment.refused?.reasonCode;
+    const codes = [
       "UNSUPPORTED_REPOSITORY_SYMLINK",
-    ]);
+      ...(code === undefined || code === "TEST_CLOSURE_UNSUPPORTED" ? [] : [code]),
+    ];
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: codes }, codes);
+  };
+  for (const link of links) {
+    if (await linkEscapesRoot(root, link)) {
+      return linkConflict(
+        {
+          links: [...links],
+          refused: { path: link, reasonCode: "REPOSITORY_LINK_ESCAPES_ROOT" },
+          omitted: [],
+          unbounded: [],
+        },
+        initEmptyDetections([]),
+      );
+    }
   }
   const inScopeFiles = inventory.files.filter(outsideCandidateRoots);
   const contents = new Map<string, string>();
@@ -1129,7 +1373,7 @@ export async function initializeRepository(
     )
       continue;
     if (/\.[cm]?[jt]sx?$/u.test(file)) {
-      const specifiers = initJavaScriptModuleSpecifiers(content);
+      const specifiers = initJavaScriptModuleSpecifiers(content, file);
       if (specifiers.has("node:test")) frameworkFacts.add("node:test");
       if ([...specifiers].some((name) => name === "vitest" || name.startsWith("@vitest/"))) {
         frameworkFacts.add("vitest");
@@ -1182,6 +1426,28 @@ export async function initializeRepository(
     const detections = initEmptyDetections(["FRAMEWORK_UNDETECTED"]);
     detections.packageManager = packageManager;
     return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_UNDETECTED"]);
+  }
+
+  const linkReasonCodes: string[] = [];
+  if (links.length > 0) {
+    const assessment = await assessRepositoryLinks(
+      root,
+      inScopeFiles,
+      links,
+      frameworkClosureRoots(framework, inScopeFiles),
+      async (file) => [await readFile(path.join(root, ...file.split("/")), "utf8")],
+      false,
+      (file) => frameworkClosureRoots(framework, [file])?.length === 1,
+    );
+    if (assessment.refused !== undefined) {
+      const detections = initEmptyDetections([]);
+      detections.packageManager = packageManager;
+      detections.framework = framework;
+      return linkConflict(assessment, detections);
+    }
+    options.onLinkAssessment?.(assessment);
+    linkReasonCodes.push("REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE");
+    if (assessment.unbounded.length > 0) linkReasonCodes.push("TEST_CLOSURE_UNBOUNDED");
   }
 
   let testCommand =
@@ -1283,7 +1549,7 @@ export async function initializeRepository(
     const testSources = inScopeFiles.filter(
       (file) =>
         initBunTestSource(file) &&
-        initJavaScriptModuleSpecifiers(contents.get(file) ?? "").has("bun:test"),
+        initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file).has("bun:test"),
     );
     const pathMatchers = initCommandPathMatchers(testCommand, testSources);
     const baseTestFiles =
@@ -1296,14 +1562,16 @@ export async function initializeRepository(
     }
   }
 
-  const reasonCodes =
-    adapter === undefined
+  const reasonCodes = [
+    ...(adapter === undefined
       ? [
           framework === "node:test" || framework === "bun:test"
             ? "BASE_TEST_FILES_UNAVAILABLE"
             : "OFFICIAL_ADAPTER_UNAVAILABLE",
         ]
-      : [];
+      : []),
+    ...linkReasonCodes,
+  ].sort();
   const detections: RepositoryInitDetectionsV2 = {
     packageManager,
     framework,
@@ -1313,6 +1581,13 @@ export async function initializeRepository(
     reasonCodes,
   };
   if (adapter === undefined) return initTerminalResult("BLOCKED", detections, reasonCodes);
+  if (
+    (adapter.kind === "node-test" || adapter.kind === "bun-test") &&
+    adapter.baseTestFiles.length > 1_000
+  ) {
+    const code = "BASE_TEST_FILES_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   await options.afterEvidenceSnapshot?.();
 
   const bunBuiltIn = adapter.kind === "bun-test";
@@ -1329,6 +1604,10 @@ export async function initializeRepository(
     ? parseRepositoryInitConfigV2(configValue)
     : parseRepositoryInitConfig(configValue);
   const configContent = initJsonBytes(config);
+  if (configContent.length > 16 * 1024 * 1024) {
+    const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   const configDigest =
     config.schemaVersion === "2.0.0"
       ? repositoryInitConfigV2Digest(config)
@@ -1336,6 +1615,10 @@ export async function initializeRepository(
   const evidenceFiles = inScopeFiles.filter((file) => initEvidenceKind(file) !== undefined);
   if (adapterEvidencePath !== undefined && !evidenceFiles.includes(adapterEvidencePath))
     evidenceFiles.push(adapterEvidencePath);
+  if (evidenceFiles.some((file) => file.length > 1_024)) {
+    const code = "INIT_EVIDENCE_PATH_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   evidenceFiles.sort(comparePortablePaths);
   const evidence: RepositoryInitLock["evidence"] = [];
   for (const file of evidenceFiles) {
@@ -1377,19 +1660,26 @@ export async function initializeRepository(
     });
   }
   const lockContent = initJsonBytes(lock);
+  if (lockContent.length > 16 * 1024 * 1024) {
+    const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
+    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+  }
   const plannedFiles: RepositoryInitResult["files"] = [
     { path: INIT_CONFIG_FILE, digest: rawSha256(configContent), content: configContent },
     { path: INIT_LOCK_FILE, digest: rawSha256(lockContent), content: lockContent },
   ];
 
   let finalInScopeFiles: string[];
+  const finalLinks: string[] = [];
   try {
-    const finalInventory = await walkFiles(root, inventoryExcludes);
+    const finalInventory = await walkFiles(root, inventoryExcludes, finalLinks);
     finalInScopeFiles = finalInventory.files.filter(outsideCandidateRoots);
   } catch {
     finalInScopeFiles = [];
   }
-  let repositoryChanged = JSON.stringify(finalInScopeFiles) !== JSON.stringify(inScopeFiles);
+  let repositoryChanged =
+    JSON.stringify(finalInScopeFiles) !== JSON.stringify(inScopeFiles) ||
+    JSON.stringify(finalLinks) !== JSON.stringify(links);
   if (!repositoryChanged) {
     for (const [file, snapshot] of evidenceBytes) {
       try {
@@ -1463,7 +1753,7 @@ export async function initializeRepository(
     const result = {
       schemaVersion: bunBuiltIn ? "2.0.0" : "1.0.0",
       status: "UNCHANGED",
-      reasonCodes: [],
+      reasonCodes: detections.reasonCodes,
       detections,
       actions: [],
       files: plannedFiles,
@@ -1481,7 +1771,8 @@ export async function initializeRepository(
   const resultValue = {
     schemaVersion: bunBuiltIn ? "2.0.0" : "1.0.0",
     status,
-    reasonCodes: [],
+    // Only non-blocking link findings can remain here; the contract mirrors the detections.
+    reasonCodes: detections.reasonCodes,
     detections,
     actions,
     files: plannedFiles,
@@ -1590,10 +1881,12 @@ export async function doctorRepositoryRuntime(
       probeTemporaryWorkspace: probeRuntimeTemporaryWorkspace,
       runSyntheticPreflight: async () => {
         await runBunTestRuntimePreflight(
-          resolvedExecutable,
-          environmentAllowlist,
-          5_000,
-          CONTROLLED_REPORT_MAXIMUM_BYTES,
+          localBunDriverExecutor(
+            resolvedExecutable,
+            environmentAllowlist,
+            5_000,
+            CONTROLLED_REPORT_MAXIMUM_BYTES,
+          ),
         );
       },
     });
@@ -1962,8 +2255,10 @@ async function resolveRepositoryRoot(rootInput: unknown): Promise<string> {
 }
 
 export interface RepositoryAnalysisOptions {
-  /** Also skip a valid configuration's names; campaign and audit inventories never pass this. */
+  /** Also skip a valid configuration's names; campaign inventories never pass this. */
   configuredExcludes?: boolean;
+  /** Explicit snapshotted names override configuration for audit inventory consistency. */
+  excludes?: readonly string[];
 }
 
 export async function analyzeRepository(
@@ -1972,7 +2267,8 @@ export async function analyzeRepository(
 ): Promise<unknown> {
   const root = await resolveRepositoryRoot(rootInput);
   const declaredExcludes =
-    options.configuredExcludes === true ? await configuredRepositoryExcludes(root) : [];
+    options.excludes ??
+    (options.configuredExcludes === true ? await configuredRepositoryExcludes(root) : []);
   const { files } = await walkFiles(root, effectiveExcludes(declaredExcludes));
   const digest = createHash("sha256");
   const languageCounts = new Map<string, number>();
@@ -2011,7 +2307,18 @@ export interface RepositoryAuditOptions {
   afterInitialInventory?: () => Promise<void>;
 }
 
-type AuditFile = RepositoryAudit["files"][number];
+export class RepositoryAuditInventoryError extends Error {
+  constructor(
+    message: string,
+    readonly appliedExcludes: RepositoryAuditV2["appliedExcludes"],
+    cause: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "RepositoryAuditInventoryError";
+  }
+}
+
+type AuditFile = RepositoryAuditV2["files"][number];
 type WeakAssertionCategory =
   | "TRUTHINESS_ONLY"
   | "CONSTANT_BOOLEAN_EQUALITY"
@@ -2030,7 +2337,10 @@ function isAuditTest(file: string): boolean {
   );
 }
 
-function auditAst(text: string): {
+function auditAst(
+  text: string,
+  file: string,
+): {
   decisionPoints: number;
   exports: string[];
   identifiers: Set<string>;
@@ -2043,7 +2353,6 @@ function auditAst(text: string): {
   const lexicalTokens: string[] = [];
   const addWeak = (category: WeakAssertionCategory) =>
     weak.set(category, (weak.get(category) ?? 0) + 1);
-  const scanner = createScanner(true, undefined, text);
   const decisionKinds = new Set([
     SyntaxKind.IfKeyword,
     SyntaxKind.ForKeyword,
@@ -2056,8 +2365,9 @@ function auditAst(text: string): {
     SyntaxKind.BarBarToken,
     SyntaxKind.QuestionQuestionToken,
   ]);
-  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
-    if (kind === SyntaxKind.Identifier) identifiers.add(scanner.getTokenValue());
+  for (const token of scanJavaScriptTokens(text, file)) {
+    const { kind } = token;
+    if (kind === SyntaxKind.Identifier) identifiers.add(token.value);
     if (decisionKinds.has(kind)) decisionPoints += 1;
     lexicalTokens.push(
       kind === SyntaxKind.StringLiteral ||
@@ -2066,7 +2376,7 @@ function auditAst(text: string): {
         kind === SyntaxKind.TemplateMiddle ||
         kind === SyntaxKind.TemplateTail
         ? '"__LITERAL__"'
-        : scanner.getTokenText(),
+        : token.text,
     );
   }
   const lexicalText = lexicalTokens.join(" ");
@@ -2140,9 +2450,55 @@ function auditModulePrefix(file: string): string {
 export async function auditRepository(
   rootInput: string,
   options: RepositoryAuditOptions = {},
-): Promise<RepositoryAudit> {
+): Promise<RepositoryAuditV2> {
   const root = await resolveRepositoryRoot(rootInput);
-  const initial = (await analyzeRepository(root)) as { repositoryDigest: string; files: string[] };
+  let verificationRequest: VerificationRequestContract | null = null;
+  let declaredExcludes: readonly string[] = [];
+  let source: RepositoryAuditV2["appliedExcludes"]["source"] = "defaults";
+  if (options.verificationRequest !== undefined) {
+    verificationRequest = parseVerificationRequest(options.verificationRequest);
+    const requestRoot = await resolveRepositoryRoot(
+      path.isAbsolute(verificationRequest.repository.root)
+        ? verificationRequest.repository.root
+        : path.resolve(root, verificationRequest.repository.root),
+    );
+    if (requestRoot !== root) throw new TypeError("VERIFICATION_REQUEST_REPOSITORY_MISMATCH");
+    verificationRequest = {
+      ...verificationRequest,
+      repository: { ...verificationRequest.repository, root },
+      isolation: { ...verificationRequest.isolation, acknowledgedUnsafeExecution: false },
+    };
+    declaredExcludes = verificationRequest.repository.exclude;
+    source = "request";
+  } else {
+    try {
+      const configPath = path.join(root, INIT_CONFIG_FILE);
+      if ((await lstat(configPath)).isFile()) {
+        const config = parseVersionedRepositoryInitConfig(
+          JSON.parse(await readFile(configPath, "utf8")),
+        );
+        declaredExcludes = config.repository.exclude;
+        source = "config";
+      }
+    } catch {
+      /* Invalid configurations retain the default inventory. */
+    }
+  }
+  const appliedExcludes = { source, entries: [...effectiveExcludes(declaredExcludes)].sort() };
+  const inventory = async () => {
+    try {
+      return (await analyzeRepository(root, { excludes: appliedExcludes.entries })) as {
+        repositoryDigest: string;
+        files: string[];
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNSUPPORTED_REPOSITORY_SYMLINK") {
+        throw new RepositoryAuditInventoryError(error.message, appliedExcludes, error.cause);
+      }
+      throw error;
+    }
+  };
+  const initial = await inventory();
   const fileContents = new Map<string, Buffer>();
   let repositoryBytes = 0;
   for (const file of initial.files) {
@@ -2156,7 +2512,7 @@ export async function auditRepository(
   const astByFile = new Map<string, ReturnType<typeof auditAst>>();
   for (const [file, content] of fileContents) {
     if (!isAuditJavaScript(file)) continue;
-    const ast = auditAst(content.toString("utf8"));
+    const ast = auditAst(content.toString("utf8"), file);
     astByFile.set(file, ast);
     if (isAuditTest(file))
       for (const identifier of ast.identifiers) testIdentifiers.add(identifier);
@@ -2323,21 +2679,7 @@ export async function auditRepository(
     })
     .map((module, index) => ({ ...module, rank: index + 1 }));
 
-  let verificationRequest: VerificationRequestContract | null = null;
-  if (options.verificationRequest !== undefined) {
-    verificationRequest = parseVerificationRequest(options.verificationRequest);
-    const requestRoot = await resolveRepositoryRoot(
-      path.isAbsolute(verificationRequest.repository.root)
-        ? verificationRequest.repository.root
-        : path.resolve(root, verificationRequest.repository.root),
-    );
-    if (requestRoot !== root) throw new TypeError("VERIFICATION_REQUEST_REPOSITORY_MISMATCH");
-    verificationRequest = {
-      ...verificationRequest,
-      repository: { ...verificationRequest.repository, root },
-      isolation: { ...verificationRequest.isolation, acknowledgedUnsafeExecution: false },
-    };
-  } else reasonCodes.add("VERIFICATION_REQUEST_UNAVAILABLE");
+  if (verificationRequest === null) reasonCodes.add("VERIFICATION_REQUEST_UNAVAILABLE");
 
   const candidates = verificationRequest?.candidates.length ?? 0;
   const worlds = verificationRequest?.worlds.length ?? 0;
@@ -2361,11 +2703,12 @@ export async function auditRepository(
     ) ?? 0,
   );
   const overlayBytes = A * ((C + 1n) * sumWorldBytes + W * sumCandidateBytes);
-  const final = (await analyzeRepository(root)) as { repositoryDigest: string };
+  const final = await inventory();
   if (final.repositoryDigest !== initial.repositoryDigest)
     throw new Error("REPOSITORY_CHANGED_DURING_AUDIT");
-  return parseRepositoryAudit({
-    schemaVersion: "1.0.0",
+  return parseRepositoryAuditV2({
+    schemaVersion: "2.0.0",
+    appliedExcludes,
     root,
     repositoryDigest: initial.repositoryDigest,
     fileCount: initial.files.length,
@@ -2454,6 +2797,7 @@ function parseRequest(value: unknown): VerificationRequest {
   if (
     adapter.kind !== "node-test" &&
     adapter.kind !== "bun-test" &&
+    adapter.kind !== "bun-test-designated" &&
     adapter.kind !== "testforge-command"
   ) {
     throw new TypeError("UNSUPPORTED_ADAPTER");
@@ -2472,9 +2816,19 @@ function parseRequest(value: unknown): VerificationRequest {
         })()
       : undefined;
   if (containerIsolation === undefined) {
-    if (isolation.kind !== "trusted-local") throw new TypeError("UNSUPPORTED_ISOLATION");
+    if (isolation.kind !== "trusted-local" && isolation.kind !== "windows-native") {
+      throw new TypeError("UNSUPPORTED_ISOLATION");
+    }
     if (isolation.acknowledgedUnsafeExecution !== true) {
-      throw new Error("UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED");
+      throw new Error(
+        isolation.kind === "windows-native"
+          ? "WINDOWS_NATIVE_EXECUTION_NOT_ACKNOWLEDGED"
+          : "UNSAFE_LOCAL_EXECUTION_NOT_ACKNOWLEDGED",
+      );
+    }
+    // The declared level names a Windows host; it is never claimed for any other platform.
+    if (isolation.kind === "windows-native" && process.platform !== "win32") {
+      throw new Error("WINDOWS_NATIVE_HOST_REQUIRED");
     }
   }
   const parsedBudgets = {
@@ -2540,6 +2894,30 @@ function parseRequest(value: unknown): VerificationRequest {
   });
   const candidates = request.candidates.map((value): Candidate => {
     const candidate = requireRecord(value, "candidate");
+    if (candidate.test !== undefined) {
+      const test = requireRecord(candidate.test, "designated_test");
+      let file: string;
+      try {
+        file = assertSafeRelativePath(
+          requireString(test.file, "designated_test_file"),
+          candidateRoots,
+        );
+      } catch {
+        throw new Error("FORBIDDEN_CANDIDATE_PATH");
+      }
+      return {
+        id: requireString(candidate.id, "candidate_id"),
+        files: [],
+        designated: {
+          file,
+          path: requireStringArray(test.path, "designated_test_path"),
+          expectedFailure:
+            candidate.expectedFailure === null
+              ? null
+              : requireString(candidate.expectedFailure, "expected_failure"),
+        },
+      };
+    }
     if (!Array.isArray(candidate.files) || candidate.files.length === 0) {
       throw new TypeError("INVALID_CANDIDATE_FILES");
     }
@@ -2625,21 +3003,50 @@ function parseRequest(value: unknown): VerificationRequest {
             ...(extraArguments === undefined ? {} : { extraArguments }),
           };
         })()
-      : {
-          kind: "testforge-command",
-          executable: requireString(adapter.executable, "adapter_executable"),
-          arguments: requireStringArray(adapter.arguments, "adapter_arguments"),
-          protocolVersion: "1.0.0",
-        };
+      : adapter.kind === "bun-test-designated"
+        ? {
+            kind: "bun-test-designated",
+            executable: requireString(adapter.executable, "adapter_executable"),
+            testTimeoutMs:
+              adapter.testTimeoutMs === null || adapter.testTimeoutMs === undefined
+                ? null
+                : requirePositiveInteger(adapter.testTimeoutMs, "adapter_test_timeout_ms"),
+          }
+        : {
+            kind: "testforge-command",
+            executable: requireString(adapter.executable, "adapter_executable"),
+            arguments: requireStringArray(adapter.arguments, "adapter_arguments"),
+            protocolVersion: "1.0.0",
+          };
+  // A designated test runs with the same bytes in every world: no world may overlay it.
+  const designatedFiles = new Set(
+    candidates.flatMap((candidate) =>
+      candidate.designated === undefined ? [] : [portablePathKey(candidate.designated.file)],
+    ),
+  );
+  if (
+    worlds.some((world) =>
+      world.files.some((file) => designatedFiles.has(portablePathKey(file.path))),
+    )
+  ) {
+    throw new Error("DESIGNATED_TEST_OVERLAID");
+  }
+  const includeDependencies = repository.includeDependencies === true;
+  const exclude = requireStringArray(repository.exclude, "repository_exclude");
+  if (includeDependencies && exclude.some((entry) => portablePathKey(entry) === "node_modules")) {
+    throw new Error("REPOSITORY_DEPENDENCIES_EXCLUDED");
+  }
   return {
     schemaVersion: requireString(request.schemaVersion, "schema_version"),
     repository: {
       root: requireString(repository.root, "repository_root"),
-      exclude: requireStringArray(repository.exclude, "repository_exclude"),
+      exclude,
+      includeDependencies,
+      git: repository.git === "synthesized" ? "synthesized" : "excluded",
     },
     adapter: normalizedAdapter,
     isolation: containerIsolation ?? {
-      kind: "trusted-local",
+      kind: isolation.kind === "windows-native" ? "windows-native" : "trusted-local",
       acknowledgedUnsafeExecution: true,
       environmentAllowlist,
     },
@@ -3120,7 +3527,7 @@ async function runContainerNodeProbe(
   maximumOutputBytes: number,
 ): Promise<{ execPath: string; nodeVersion: string; executableDigest: string }> {
   const { process: result } = await runContainerExecution(
-    container,
+    { ...container, traceContext: { kind: "identity", probe: "node" } },
     {
       workspace,
       executable,
@@ -3207,7 +3614,7 @@ function containerPreflightExecutor(
       });
       const candidate = `${CONTAINER_WORKSPACE}/${probe.name}.test.mjs`;
       const executed = await runContainerExecution(
-        container,
+        { ...container, traceContext: { kind: "preflight", probe: probe.name } },
         {
           workspace,
           reporterSource: probe.reporterSource,
@@ -3244,14 +3651,192 @@ interface AdapterExecution {
   nodeTestReport: NodeTestReport | undefined;
 }
 
+const CONTAINER_BUN_PROBE_SOURCE =
+  'const fs = require("node:fs"); const crypto = require("node:crypto"); const execPath = fs.realpathSync(process.execPath); console.log(JSON.stringify({ digest: "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(execPath)).digest("hex"), execPath, bunVersion: Bun.version, bunRevision: Bun.revision }));';
+
+async function runContainerBunProbe(
+  container: ContainerBackend,
+  executable: string,
+  workspace: string,
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<{
+  execPath: string;
+  bunVersion: string;
+  bunRevision: string;
+  executableDigest: string;
+}> {
+  const { process: result } = await runContainerExecution(
+    { ...container, traceContext: { kind: "identity", probe: "bun" } },
+    {
+      workspace,
+      executable,
+      args: ["-e", CONTAINER_BUN_PROBE_SOURCE],
+      environment: {},
+      timeoutMs: Math.min(timeoutMs, 30_000),
+      maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+    },
+    runBoundedProcess,
+    os.tmpdir(),
+  );
+  if (result.outcome !== "PASS" || result.stdout.truncated || result.stderr.totalBytes > 0) {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  let report: unknown;
+  try {
+    report = JSON.parse(result.stdout.text.trim()) as unknown;
+  } catch {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  if (
+    !isRecord(report) ||
+    Object.keys(report).sort().join("\0") !== "bunRevision\0bunVersion\0digest\0execPath" ||
+    typeof report.execPath !== "string" ||
+    !report.execPath.startsWith("/") ||
+    typeof report.digest !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/u.test(report.digest) ||
+    typeof report.bunVersion !== "string" ||
+    typeof report.bunRevision !== "string"
+  ) {
+    throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+  }
+  if (
+    report.bunVersion !== BUN_TEST_ADAPTER_PROFILE.bunVersion ||
+    report.bunRevision !== BUN_TEST_ADAPTER_PROFILE.bunRevision
+  ) {
+    throw new Error("BUN_TEST_VERSION_UNSUPPORTED");
+  }
+  return {
+    execPath: report.execPath,
+    bunVersion: report.bunVersion,
+    bunRevision: report.bunRevision,
+    executableDigest: report.digest,
+  };
+}
+
+/** Resolves the image's Bun twice, as the local probe does, and binds its digest. */
+async function probeContainerBunExecutable(
+  container: ContainerBackend,
+  requestedExecutable: string,
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<BunExecutableIdentity> {
+  return withEmptyWorkspace(async (workspace) => {
+    const first = await runContainerBunProbe(
+      container,
+      requestedExecutable,
+      workspace,
+      timeoutMs,
+      maximumOutputBytes,
+    );
+    const second = await runContainerBunProbe(
+      container,
+      first.execPath,
+      workspace,
+      timeoutMs,
+      maximumOutputBytes,
+    );
+    if (
+      second.execPath !== first.execPath ||
+      second.bunVersion !== first.bunVersion ||
+      second.bunRevision !== first.bunRevision ||
+      second.executableDigest !== first.executableDigest
+    ) {
+      throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
+    }
+    return {
+      requestedExecutable,
+      resolvedExecutable: first.execPath,
+      executableDigest: first.executableDigest,
+      bunVersion: first.bunVersion,
+      bunRevision: first.bunRevision,
+    };
+  });
+}
+
+/** The driver, its preload and the assertion helper, as one container asset set. */
+async function bunContainerAssets(): Promise<Array<{ name: string; content: string }>> {
+  return [
+    { name: "driver.mjs", content: await readFile(BUN_TEST_DRIVER_PATH, "utf8") },
+    { name: "preload.mjs", content: await readFile(BUN_TEST_PRELOAD_PATH, "utf8") },
+    { name: "assertions.mjs", content: await readFile(BUN_TEST_HELPER_PATH, "utf8") },
+  ];
+}
+
+/** Runs the Bun driver under the image's own Bun; the report comes back as result.json only. */
+async function runContainerBunDriver(
+  container: ContainerBackend,
+  workspace: string,
+  executable: string,
+  files: readonly string[],
+  environment: Record<string, string>,
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): Promise<{ result: ProcessResult; report: StructuredCommandReport | undefined }> {
+  const executed = await runContainerExecution(
+    container,
+    {
+      workspace,
+      assets: await bunContainerAssets(),
+      executable,
+      args: [
+        `${CONTAINER_ASSET_DIRECTORY}/driver.mjs`,
+        executable,
+        `${CONTAINER_ASSET_DIRECTORY}/assertions.mjs`,
+        ...files,
+      ],
+      environment: { ...environment, ASSERTLEDGER_BUN_RESULT_FILE: CONTAINER_RESULT_FILE },
+      timeoutMs,
+      maximumOutputBytes,
+      resultMaximumBytes: CONTROLLED_REPORT_MAXIMUM_BYTES,
+    },
+    runBoundedProcess,
+    os.tmpdir(),
+  );
+  const result = executed.process;
+  const document =
+    result.outcome === "TIMEOUT" || result.outcome === "INFRA_ERROR"
+      ? undefined
+      : parseJsonBytes(executed.result);
+  return { result, report: parseStructuredCommandReport(document, result) };
+}
+
+async function executeContainerBunAdapter(
+  request: VerificationRequest,
+  container: ContainerBackend,
+  workspace: string,
+  candidate: Candidate | null,
+  candidateFiles: string[],
+): Promise<AdapterExecution> {
+  const adapter = request.adapter;
+  if (adapter.kind !== "bun-test" && adapter.kind !== "bun-test-designated") {
+    throw new Error("UNSUPPORTED_ADAPTER");
+  }
+  const { result, report } = await runContainerBunDriver(
+    container,
+    workspace,
+    adapter.executable,
+    adapter.kind === "bun-test" ? adapter.baseTestFiles : designatedFiles(request, candidate),
+    adapter.kind === "bun-test"
+      ? { TESTFORGE_CANDIDATE_FILES: JSON.stringify(candidateFiles) }
+      : { ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(designatedSelection(request, candidate)) },
+    request.budgets.timeoutMsPerExecution,
+    request.budgets.maximumOutputBytes,
+  );
+  return { result, structuredReport: report, nodeTestReport: undefined };
+}
+
 async function executeContainerAdapter(
   request: VerificationRequest,
   container: ContainerBackend,
   workspace: string,
+  candidate: Candidate | null,
   candidateFiles: string[],
 ): Promise<AdapterExecution> {
   const adapter = request.adapter;
-  if (adapter.kind === "bun-test") throw new Error("BUN_TEST_CONTAINER_UNSUPPORTED");
+  if (adapter.kind === "bun-test" || adapter.kind === "bun-test-designated") {
+    return executeContainerBunAdapter(request, container, workspace, candidate, candidateFiles);
+  }
   const executed = await runContainerExecution(
     container,
     {
@@ -3304,7 +3889,122 @@ async function executeContainerAdapter(
 }
 
 function trustedLocalEnvironmentAllowlist(request: VerificationRequest): string[] {
-  return request.isolation.kind === "trusted-local" ? request.isolation.environmentAllowlist : [];
+  return request.isolation.kind === "container" ? [] : request.isolation.environmentAllowlist;
+}
+
+/** The snapshot exclusions: the defaults and the request's names, keeping dependencies on request. */
+function campaignExcludes(request: VerificationRequest): Set<string> {
+  const excludes = effectiveExcludes(request.repository.exclude);
+  if (request.repository.includeDependencies) excludes.delete(portablePathKey("node_modules"));
+  return excludes;
+}
+
+/** A workspace copy keeps the snapshot's synthesized Git metadata; the source's own never enters. */
+function workspaceExcludes(request: VerificationRequest): Set<string> {
+  const excludes = campaignExcludes(request);
+  if (request.repository.git === "synthesized") excludes.delete(portablePathKey(".git"));
+  return excludes;
+}
+
+/**
+ * Commits the snapshot once into a fresh repository with a fixed identity and date, no template,
+ * hooks or global configuration, honoring the snapshot's own .gitignore. Returns the tree identity.
+ */
+async function synthesizeGitWorktree(
+  snapshot: string,
+): Promise<{ mode: "synthesized"; treeId: string; gitVersion: string }> {
+  // An empty file outside the snapshot: Git for Windows cannot open os.devNull as a config file.
+  const globalConfig = path.join(path.dirname(snapshot), "git-global-config");
+  await writeFile(globalConfig, "", { flag: "wx" });
+  const environment = {
+    ...environmentFromAllowlist(["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"]),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_GLOBAL: globalConfig,
+    GIT_AUTHOR_NAME: "AssertLedger",
+    GIT_AUTHOR_EMAIL: "snapshot@assertledger.invalid",
+    GIT_AUTHOR_DATE: "1970-01-01T00:00:00Z",
+    GIT_COMMITTER_NAME: "AssertLedger",
+    GIT_COMMITTER_EMAIL: "snapshot@assertledger.invalid",
+    GIT_COMMITTER_DATE: "1970-01-01T00:00:00Z",
+  };
+  const git = async (args: string[]): Promise<string> => {
+    const result = await runProcess({
+      executable: "git",
+      args: [
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        "core.safecrlf=false",
+        "-c",
+        "core.fileMode=false",
+        "-c",
+        "core.hooksPath=",
+        "-c",
+        "commit.gpgsign=false",
+        ...args,
+      ],
+      cwd: snapshot,
+      environment,
+      timeoutMs: 600_000,
+      maximumOutputBytes: CONTROLLED_REPORT_MAXIMUM_BYTES,
+    });
+    if (result.outcome !== "PASS" || result.stdout.truncated) {
+      throw new Error("REPOSITORY_GIT_SYNTHESIS_FAILED", {
+        cause: result.stderr.text.slice(0, 500),
+      });
+    }
+    return result.stdout.text.trim();
+  };
+  const gitVersion = await git(["--version"]);
+  await git(["init", "--quiet", "--template="]);
+  await git(["add", "--all"]);
+  await git([
+    "commit",
+    "--quiet",
+    "--no-verify",
+    "--allow-empty",
+    "--message",
+    "AssertLedger snapshot",
+  ]);
+  const treeId = await git(["rev-parse", "HEAD^{tree}"]);
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(treeId)) {
+    throw new Error("REPOSITORY_GIT_SYNTHESIS_FAILED");
+  }
+  return { mode: "synthesized", treeId, gitVersion };
+}
+
+/** The selection a designated campaign gives the Bun driver: load every test, or run one. */
+function designatedSelection(request: VerificationRequest, candidate: Candidate | null): unknown {
+  if (candidate !== null) {
+    const designated = candidate.designated;
+    if (designated === undefined) throw new Error("DESIGNATED_CANDIDATE_REQUIRED");
+    return {
+      mode: "run",
+      test: { file: designated.file, path: designated.path },
+      expectedFailure: designated.expectedFailure,
+      testTimeoutMs:
+        request.adapter.kind === "bun-test-designated" ? request.adapter.testTimeoutMs : null,
+    };
+  }
+  return {
+    mode: "load",
+    tests: request.candidates.map((entry) => {
+      if (entry.designated === undefined) throw new Error("DESIGNATED_CANDIDATE_REQUIRED");
+      return { file: entry.designated.file, path: entry.designated.path };
+    }),
+  };
+}
+
+/** The test files a designated run loads: every designated file for a control, one for a run. */
+function designatedFiles(request: VerificationRequest, candidate: Candidate | null): string[] {
+  const files = (candidate === null ? request.candidates : [candidate]).map(
+    (entry) => entry.designated?.file ?? "",
+  );
+  return [...new Map(files.map((file) => [portablePathKey(file), file])).values()].sort(
+    comparePortablePaths,
+  );
 }
 
 function classifyNodeTest(
@@ -3331,6 +4031,7 @@ async function copyRepository(
   source: string,
   destination: string,
   excludes: ReadonlySet<string>,
+  omittedLinks: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   await cp(source, destination, {
     recursive: true,
@@ -3343,6 +4044,8 @@ async function copyRepository(
         return false;
       }
       if ((await lstat(sourcePath)).isSymbolicLink()) {
+        // Only a link already judged outside every executed test's closure is left out.
+        if (omittedLinks.has(portablePathKey(relative.split(path.sep).join("/")))) return false;
         throw new Error("UNSUPPORTED_REPOSITORY_SYMLINK");
       }
       return true;
@@ -3354,6 +4057,7 @@ async function executeTrustedLocalAdapter(
   request: VerificationRequest,
   workspace: string,
   temporaryRoot: string,
+  candidate: Candidate | null,
   candidateFiles: string[],
   nodeTestReporterPath: string | undefined,
 ): Promise<AdapterExecution> {
@@ -3364,6 +4068,10 @@ async function executeTrustedLocalAdapter(
     environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
   } else if (request.adapter.kind === "bun-test") {
     environment.TESTFORGE_CANDIDATE_FILES = JSON.stringify(candidateFiles);
+  } else if (request.adapter.kind === "bun-test-designated") {
+    environment.ASSERTLEDGER_BUN_DESIGNATED = JSON.stringify(
+      designatedSelection(request, candidate),
+    );
   } else {
     if (nodeTestReporterPath === undefined) throw new Error("NODE_TEST_REPORTER_MISSING");
     environment.TESTFORGE_NODE_CANDIDATE_FILES = JSON.stringify(
@@ -3388,9 +4096,19 @@ async function executeTrustedLocalAdapter(
             BUN_TEST_HELPER_PATH,
             ...request.adapter.baseTestFiles,
           ]
-        : request.adapter.arguments;
+        : request.adapter.kind === "bun-test-designated"
+          ? [
+              BUN_TEST_DRIVER_PATH,
+              request.adapter.executable,
+              BUN_TEST_HELPER_PATH,
+              ...designatedFiles(request, candidate),
+            ]
+          : request.adapter.arguments;
   const result = await runProcess({
-    executable: request.adapter.kind === "bun-test" ? process.execPath : request.adapter.executable,
+    executable:
+      request.adapter.kind === "bun-test" || request.adapter.kind === "bun-test-designated"
+        ? process.execPath
+        : request.adapter.executable,
     args,
     cwd: workspace,
     environment,
@@ -3400,7 +4118,7 @@ async function executeTrustedLocalAdapter(
   const structuredReport =
     request.adapter.kind === "testforge-command"
       ? await readStructuredCommandReport(resultFile, result, CONTROLLED_REPORT_MAXIMUM_BYTES)
-      : request.adapter.kind === "bun-test"
+      : request.adapter.kind === "bun-test" || request.adapter.kind === "bun-test-designated"
         ? readBunDriverReport(result)
         : undefined;
   return {
@@ -3425,7 +4143,16 @@ async function executeObservation(
   const temporaryRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-run-")));
   const workspace = path.join(temporaryRoot, "repository");
   try {
-    await copyRepository(repositoryRoot, workspace, effectiveExcludes(request.repository.exclude));
+    await traceOperation(
+      "host-workspace-copy",
+      {
+        kind: candidate === null ? "campaign-load" : "campaign-test",
+        worldId: world.id,
+        candidateId: candidate?.id ?? null,
+        attempt,
+      },
+      () => copyRepository(repositoryRoot, workspace, workspaceExcludes(request)),
+    );
     await applyFiles(workspace, world.files);
     if (candidate) await applyFiles(workspace, candidate.files);
     const candidateFiles = candidate ? candidate.files.map((file) => file.path) : [];
@@ -3435,10 +4162,30 @@ async function executeObservation(
             request,
             workspace,
             temporaryRoot,
+            candidate,
             candidateFiles,
             nodeTestReporterPath,
           )
-        : await executeContainerAdapter(request, container, workspace, candidateFiles);
+        : await executeContainerAdapter(
+            request,
+            {
+              ...container,
+              traceContext: {
+                kind: candidate === null ? "campaign-load" : "campaign-test",
+                worldId: world.id,
+                candidateId: candidate?.id ?? null,
+                attempt,
+              },
+              workspaceIdentity: sha256Canonical({
+                snapshot: repositoryRoot,
+                world: world.files,
+                candidate: candidate?.files ?? [],
+              }),
+            },
+            workspace,
+            candidate,
+            candidateFiles,
+          );
     const nodeClassification =
       request.adapter.kind === "node-test"
         ? classifyNodeTest(result, nodeTestReport, candidate !== null)
@@ -3473,7 +4220,7 @@ async function executeObservation(
 
 export interface VerifyCampaignOptions {
   /** Operator-owned argv prefix of a Docker-compatible CLI; requests cannot provide it. */
-  containerRuntime?: { command: readonly string[] };
+  containerRuntime?: { command?: readonly string[]; transport?: ContainerTransport };
 }
 
 interface BunTestRuntimePreflight {
@@ -3487,11 +4234,286 @@ interface BunTestRuntimePreflight {
   }>;
 }
 
-async function runBunTestRuntimePreflight(
+/** Runs the Bun driver in a prepared probe workspace and returns its validated report. */
+type BunDriverExecutor = (
+  workspace: string,
+  files: readonly string[],
+  environment: Record<string, string>,
+  probe?: string,
+) => Promise<{ report: StructuredCommandReport | undefined; result: ProcessResult }>;
+
+function localBunDriverExecutor(
   executable: string,
   environmentAllowlist: string[],
   timeoutMs: number,
   maximumOutputBytes: number,
+): BunDriverExecutor {
+  return async (workspace, files, environment) => {
+    const result = await runProcess({
+      executable: process.execPath,
+      args: [BUN_TEST_DRIVER_PATH, executable, BUN_TEST_HELPER_PATH, ...files],
+      cwd: workspace,
+      environment: { ...environmentFromAllowlist(environmentAllowlist), ...environment },
+      timeoutMs: Math.min(timeoutMs, 5_000),
+      maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+    });
+    return { result, report: readBunDriverReport(result) };
+  };
+}
+
+function containerBunDriverExecutor(
+  container: ContainerBackend,
+  executable: string,
+  timeoutMs: number,
+  maximumOutputBytes: number,
+): BunDriverExecutor {
+  return async (workspace, files, environment, probe) =>
+    runContainerBunDriver(
+      {
+        ...container,
+        traceContext: { kind: "preflight", ...(probe === undefined ? {} : { probe }) },
+      },
+      workspace,
+      executable,
+      files,
+      environment,
+      Math.min(timeoutMs, 30_000),
+      Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
+    );
+}
+
+/** Both Bun modes use the same four qualification predicates and refusal representation. */
+async function qualifyBunProbe(
+  profile: BunPreflightRefusal["profile"],
+  probe: string,
+  expected: BunPreflightRefusal["expected"],
+  execute: () => ReturnType<BunDriverExecutor>,
+): Promise<StructuredCommandReport> {
+  let executed: Awaited<ReturnType<BunDriverExecutor>>;
+  try {
+    executed = await execute();
+  } catch (cause) {
+    throw new BunPreflightError(
+      {
+        schemaVersion: "1.0.0",
+        status: "REFUSED",
+        code: "BUN_TEST_PROFILE_PREFLIGHT_FAILED",
+        profile,
+        probe,
+        failure: "EXECUTION_ERROR",
+        expected,
+        observed: {
+          outcome: null,
+          attributed: null,
+          testsDiscovered: null,
+          candidateTestsDiscovered: null,
+        },
+        process: null,
+        detail: cause instanceof Error ? cause.message : String(cause),
+      },
+      cause,
+    );
+  }
+  const { report, result } = executed;
+  if (
+    report?.outcome !== expected.outcome ||
+    report.attributed !== expected.attributed ||
+    report.testsDiscovered !== expected.testsDiscovered ||
+    report.candidateTestsDiscovered !== expected.candidateTestsDiscovered
+  ) {
+    throw new BunPreflightError(
+      {
+        schemaVersion: "1.0.0",
+        status: "REFUSED",
+        code: "BUN_TEST_PROFILE_PREFLIGHT_FAILED",
+        profile,
+        probe,
+        failure: report === undefined ? "REPORT_UNAVAILABLE" : "REPORT_MISMATCH",
+        expected,
+        observed: {
+          outcome: report?.outcome ?? null,
+          attributed: report?.attributed ?? null,
+          testsDiscovered: report?.testsDiscovered ?? null,
+          candidateTestsDiscovered: report?.candidateTestsDiscovered ?? null,
+        },
+        process: {
+          outcome: result.outcome,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          timedOut: result.timedOut,
+          durationMs: result.durationMs,
+        },
+        detail: result.error ?? null,
+      },
+      probe,
+    );
+  }
+  return report;
+}
+
+interface BunDesignatedProbe {
+  name: string;
+  body: string;
+  mode: "run" | "load";
+  expectedFailure?: string;
+  testTimeoutMs?: number;
+  outcome: Observation["outcome"];
+  attributed: boolean;
+  testsDiscovered: number;
+  candidateTestsDiscovered: number;
+}
+
+const DESIGNATED_PROBES: readonly BunDesignatedProbe[] = (() => {
+  const run = (
+    name: string,
+    body: string,
+    outcome: Observation["outcome"],
+    expectedFailure?: string,
+  ): BunDesignatedProbe => {
+    const counted = outcome !== "NO_TEST_DISCOVERED" && outcome !== "INFRA_ERROR";
+    return {
+      name,
+      body,
+      mode: "run",
+      ...(expectedFailure === undefined ? {} : { expectedFailure }),
+      outcome,
+      attributed: outcome === "PASS" || outcome === "ASSERTION_FAILURE",
+      testsDiscovered: counted ? 1 : 0,
+      candidateTestsDiscovered: counted ? 1 : 0,
+    };
+  };
+  const failing = 'test("probe", () => expect(1).toBe(2));';
+  return [
+    run("expect-assertion", failing, "ASSERTION_FAILURE"),
+    run("expected-line", failing, "ASSERTION_FAILURE", "error: expect(received).toBe(expected)"),
+    run("other-line", failing, "PROCESS_CRASH", "expect(received).toEqual(expected)"),
+    run("assert-same", 'test("probe", () => assertSame(1, 2));', "ASSERTION_FAILURE"),
+    run(
+      "async-matcher",
+      'test("probe", async () => { await expect(Promise.resolve(1)).resolves.toBe(2); });',
+      "ASSERTION_FAILURE",
+    ),
+    run(
+      "forged-message",
+      'test("probe", () => { throw new Error("expect(received).toBe(expected)"); });',
+      "PROCESS_CRASH",
+    ),
+    run(
+      "caught-expect",
+      'test("probe", () => { try { expect(1).toBe(2); } catch {} throw new Error("generic"); });',
+      "PROCESS_CRASH",
+    ),
+    run(
+      "replayed-expect",
+      'let saved; try { expect(1).toBe(2); } catch (error) { saved = error; } test("probe", () => { throw saved; });',
+      "PROCESS_CRASH",
+    ),
+    run("matcher-usage", 'test("probe", () => expect(1).toContain());', "PROCESS_CRASH"),
+    run(
+      "custom-matcher",
+      'expect.extend({ toFail() { throw new Error("expect(received).toFail()"); } }); test("probe", () => expect(1).toFail());',
+      "PROCESS_CRASH",
+    ),
+    run("passing", 'test("probe", () => expect(1).toBe(1));', "PASS"),
+    run("absent", 'test("other", () => expect(1).toBe(2));', "NO_TEST_DISCOVERED"),
+    run(
+      "hook-failure",
+      'afterEach(() => { throw new Error("hook"); }); test("probe", () => expect(1).toBe(2));',
+      "INFRA_ERROR",
+    ),
+    {
+      // The callback fails its matcher only after Bun's per-test timeout: never an assertion.
+      ...run(
+        "late-after-timeout",
+        'test("probe", () => { const end = Date.now() + 300; while (Date.now() < end); expect(1).toBe(2); });',
+        "INFRA_ERROR",
+      ),
+      testTimeoutMs: 50,
+    },
+    {
+      name: "load",
+      body: 'test("probe", () => expect(1).toBe(2)); test("other", () => {});',
+      mode: "load",
+      outcome: "PASS",
+      attributed: false,
+      testsDiscovered: 2,
+      candidateTestsDiscovered: 0,
+    },
+    {
+      name: "load-failure",
+      body: 'import "./missing-module"; test("probe", () => {});',
+      mode: "load",
+      outcome: "INFRA_ERROR",
+      attributed: false,
+      testsDiscovered: 0,
+      candidateTestsDiscovered: 0,
+    },
+  ];
+})();
+
+/**
+ * Qualifies the designated mode before a campaign: only a built-in matcher's or assertSame's
+ * failure inside the designated test, with the declared first line, is an assertion; forged,
+ * caught, replayed, misused and custom failures, hook and load failures and an absent test are not.
+ */
+async function runBunDesignatedPreflight(
+  executor: BunDriverExecutor,
+): Promise<BunTestRuntimePreflight> {
+  const header =
+    'import { afterEach, expect, test } from "bun:test"; import { assertSame } from "assertledger/bun";';
+  try {
+    const recorded: BunTestRuntimePreflight["probes"] = [];
+    for (const probe of DESIGNATED_PROBES) {
+      const report = await qualifyBunProbe(
+        "bun-test-designated",
+        probe.name,
+        {
+          outcome: probe.outcome,
+          attributed: probe.attributed,
+          testsDiscovered: probe.testsDiscovered,
+          candidateTestsDiscovered: probe.candidateTestsDiscovered,
+        },
+        () =>
+          withEmptyWorkspace(async (workspace) => {
+            await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
+            await writeFile(path.join(workspace, "probe.test.ts"), `${header} ${probe.body}\n`);
+            const test = { file: "probe.test.ts", path: ["probe"] };
+            return executor(
+              workspace,
+              ["probe.test.ts"],
+              {
+                ASSERTLEDGER_BUN_DESIGNATED: JSON.stringify(
+                  probe.mode === "run"
+                    ? {
+                        mode: "run",
+                        test,
+                        expectedFailure: probe.expectedFailure ?? null,
+                        testTimeoutMs: probe.testTimeoutMs ?? null,
+                      }
+                    : { mode: "load", tests: [test] },
+                ),
+              },
+              probe.name,
+            );
+          }),
+      );
+      recorded.push({
+        name: probe.name,
+        outcome: report.outcome,
+        attributed: report.attributed,
+        testsDiscovered: report.testsDiscovered,
+        candidateTestsDiscovered: report.candidateTestsDiscovered,
+      });
+    }
+    return { protocolVersion: "1.0.0", probes: recorded };
+  } catch (error) {
+    if (error instanceof BunPreflightError) throw error;
+    throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED", { cause: error });
+  }
+}
+
+async function runBunTestRuntimePreflight(
+  executor: BunDriverExecutor,
 ): Promise<BunTestRuntimePreflight> {
   const probeSources = [
     {
@@ -3567,55 +4589,53 @@ async function runBunTestRuntimePreflight(
   try {
     const probes: BunTestRuntimePreflight["probes"] = [];
     for (const probe of probeSources) {
-      const evidence = await withEmptyWorkspace(async (workspace) => {
-        await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
-        await writeFile(
-          path.join(workspace, "base.test.ts"),
-          'import { test } from "bun:test"; test("control", () => {});\n',
-        );
-        const candidatePath = path.join(workspace, "candidate.test.ts");
-        await writeFile(candidatePath, probe.source);
-        const result = await runProcess({
-          executable: process.execPath,
-          args: [BUN_TEST_DRIVER_PATH, executable, BUN_TEST_HELPER_PATH, "base.test.ts"],
-          cwd: workspace,
-          environment: {
-            ...environmentFromAllowlist(environmentAllowlist),
-            TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
-          },
-          timeoutMs: Math.min(timeoutMs, 5_000),
-          maximumOutputBytes: Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES),
-        });
-        const report = readBunDriverReport(result);
-        const expectedCandidateCount =
-          probe.name === "hook-failure"
-            ? 0
-            : probe.name === "replayed-row" ||
-                probe.name === "async-cross-test" ||
-                probe.name === "multi-assertion-rows"
-              ? 2
-              : 1;
-        if (
-          report?.outcome !== probe.outcome ||
-          report.attributed !== probe.attributed ||
-          report.testsDiscovered !==
-            (expectedCandidateCount === 0 ? 0 : expectedCandidateCount + 1) ||
-          report.candidateTestsDiscovered !== expectedCandidateCount
-        ) {
-          throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED");
-        }
-        return {
-          name: probe.name,
-          outcome: report.outcome,
-          attributed: report.attributed,
-          testsDiscovered: report.testsDiscovered,
-          candidateTestsDiscovered: report.candidateTestsDiscovered,
-        };
+      const expectedCandidateCount =
+        probe.name === "hook-failure"
+          ? 0
+          : probe.name === "replayed-row" ||
+              probe.name === "async-cross-test" ||
+              probe.name === "multi-assertion-rows"
+            ? 2
+            : 1;
+      const report = await qualifyBunProbe(
+        "bun-test",
+        probe.name,
+        {
+          outcome: probe.outcome,
+          attributed: probe.attributed,
+          testsDiscovered: expectedCandidateCount === 0 ? 0 : expectedCandidateCount + 1,
+          candidateTestsDiscovered: expectedCandidateCount,
+        },
+        () =>
+          withEmptyWorkspace(async (workspace) => {
+            await writeFile(path.join(workspace, "package.json"), '{"type":"module"}\n');
+            await writeFile(
+              path.join(workspace, "base.test.ts"),
+              'import { test } from "bun:test"; test("control", () => {});\n',
+            );
+            const candidatePath = path.join(workspace, "candidate.test.ts");
+            await writeFile(candidatePath, probe.source);
+            return executor(
+              workspace,
+              ["base.test.ts"],
+              {
+                TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
+              },
+              probe.name,
+            );
+          }),
+      );
+      probes.push({
+        name: probe.name,
+        outcome: report.outcome,
+        attributed: report.attributed,
+        testsDiscovered: report.testsDiscovered,
+        candidateTestsDiscovered: report.candidateTestsDiscovered,
       });
-      probes.push(evidence);
     }
     return { protocolVersion: "1.0.0", probes };
   } catch (error) {
+    if (error instanceof BunPreflightError) throw error;
     throw new Error("BUN_TEST_PROFILE_PREFLIGHT_FAILED", { cause: error });
   }
 }
@@ -3625,6 +4645,16 @@ export async function verifyCampaign(
   options: VerifyCampaignOptions = {},
 ): Promise<unknown> {
   const request = parseRequest(value);
+  return withRuntimeTrace([request.repository.root], () =>
+    verifyCampaignWithTrace(request, options),
+  );
+}
+
+async function verifyCampaignWithTrace(
+  request: VerificationRequest,
+  options: VerifyCampaignOptions,
+): Promise<unknown> {
+  const transport = parseContainerTransport(options.containerRuntime?.transport);
   const container =
     request.isolation.kind === "container"
       ? await prepareContainerBackend(
@@ -3634,15 +4664,49 @@ export async function verifyCampaign(
           os.tmpdir(),
         )
       : undefined;
+  if (container === undefined || transport === "cli")
+    return verifyPreparedCampaign(request, container);
+  let control: Awaited<ReturnType<typeof openDockerStdioControl>> | undefined;
+  try {
+    control = await traceOperation(
+      "stdio-connect",
+      { transport: "stdio-api" },
+      () => openDockerStdioControl(container.runtimeCommand, os.tmpdir(), container.record),
+      () => ({ runtimeInvocations: 1 }),
+    );
+  } catch (error) {
+    if (transport === "stdio") throw error;
+    // Capability negotiation has made no mutable request. CLI-compatible runtimes remain valid.
+  }
+  if (control === undefined) return verifyPreparedCampaign(request, container);
+  container.controlRunner = control.run;
+  try {
+    return await verifyPreparedCampaign(request, container);
+  } finally {
+    await traceOperation("stdio-close", {}, () => control.close());
+  }
+}
+
+async function verifyPreparedCampaign(
+  request: VerificationRequest,
+  container: ContainerBackend | undefined,
+): Promise<unknown> {
   const repositoryRoot = await resolveRepositoryRoot(request.repository.root);
-  const excludes = effectiveExcludes(request.repository.exclude);
-  const sourceInventory = await walkFiles(repositoryRoot, excludes);
+  const version4 = request.schemaVersion === VERIFICATION_SCHEMA_VERSION_V4;
+  const excludes = campaignExcludes(request);
+  // Before v4 any link refuses the walk; v4 collects them and judges each one below.
+  const sourceLinks: string[] | undefined = version4 ? [] : undefined;
+  const sourceInventory = await walkFiles(repositoryRoot, excludes, sourceLinks);
   if (sourceInventory.files.length > request.budgets.maximumRepositoryFiles) {
     throw new Error("REPOSITORY_FILE_BUDGET_EXCEEDED");
   }
   if (sourceInventory.totalBytes > request.budgets.maximumRepositoryBytes) {
     throw new Error("REPOSITORY_BYTES_BUDGET_EXCEEDED");
   }
+  const omittedLinks =
+    sourceLinks === undefined || sourceLinks.length === 0
+      ? []
+      : await campaignOmittedLinks(request, repositoryRoot, sourceInventory.files, sourceLinks);
   const nodeIdentity =
     request.adapter.kind !== "node-test"
       ? undefined
@@ -3663,25 +4727,34 @@ export async function verifyCampaign(
   if (request.adapter.kind === "node-test" && nodeIdentity !== undefined) {
     request.adapter.executable = nodeIdentity.resolvedExecutable;
   }
+  const bunAdapter =
+    request.adapter.kind === "bun-test" || request.adapter.kind === "bun-test-designated";
   const bunIdentity =
-    request.adapter.kind === "bun-test"
-      ? await probeBunTestExecutable(
-          request.adapter.executable,
-          repositoryRoot,
-          trustedLocalEnvironmentAllowlist(request),
-          request.budgets.timeoutMsPerExecution,
-          request.budgets.maximumOutputBytes,
-        )
-      : undefined;
-  if (request.adapter.kind === "bun-test" && bunIdentity !== undefined) {
+    request.adapter.kind !== "bun-test" && request.adapter.kind !== "bun-test-designated"
+      ? undefined
+      : container === undefined
+        ? await probeBunTestExecutable(
+            request.adapter.executable,
+            repositoryRoot,
+            trustedLocalEnvironmentAllowlist(request),
+            request.budgets.timeoutMsPerExecution,
+            request.budgets.maximumOutputBytes,
+          )
+        : await probeContainerBunExecutable(
+            container,
+            request.adapter.executable,
+            request.budgets.timeoutMsPerExecution,
+            request.budgets.maximumOutputBytes,
+          );
+  if (
+    (request.adapter.kind === "bun-test" || request.adapter.kind === "bun-test-designated") &&
+    bunIdentity !== undefined
+  ) {
     request.adapter.executable = bunIdentity.resolvedExecutable;
   }
-  const bunDriverDigest =
-    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_DRIVER_PATH) : undefined;
-  const bunHelperDigest =
-    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_HELPER_PATH) : undefined;
-  const bunPreloadDigest =
-    request.adapter.kind === "bun-test" ? await sha256File(BUN_TEST_PRELOAD_PATH) : undefined;
+  const bunDriverDigest = bunAdapter ? await sha256File(BUN_TEST_DRIVER_PATH) : undefined;
+  const bunHelperDigest = bunAdapter ? await sha256File(BUN_TEST_HELPER_PATH) : undefined;
+  const bunPreloadDigest = bunAdapter ? await sha256File(BUN_TEST_PRELOAD_PATH) : undefined;
   const nodeRuntimePreflight: NodeTestRuntimePreflight | undefined =
     request.adapter.kind === "node-test" && nodeIdentity !== undefined
       ? await runNodeTestRuntimePreflight({
@@ -3701,19 +4774,39 @@ export async function verifyCampaign(
               }),
         })
       : undefined;
+  const bunExecutor =
+    bunIdentity === undefined
+      ? undefined
+      : container === undefined
+        ? localBunDriverExecutor(
+            bunIdentity.resolvedExecutable,
+            trustedLocalEnvironmentAllowlist(request),
+            request.budgets.timeoutMsPerExecution,
+            request.budgets.maximumOutputBytes,
+          )
+        : containerBunDriverExecutor(
+            container,
+            bunIdentity.resolvedExecutable,
+            request.budgets.timeoutMsPerExecution,
+            request.budgets.maximumOutputBytes,
+          );
   const bunRuntimePreflight =
-    request.adapter.kind === "bun-test" && bunIdentity !== undefined
-      ? await runBunTestRuntimePreflight(
-          bunIdentity.resolvedExecutable,
-          trustedLocalEnvironmentAllowlist(request),
-          request.budgets.timeoutMsPerExecution,
-          request.budgets.maximumOutputBytes,
-        )
-      : undefined;
+    bunExecutor === undefined
+      ? undefined
+      : request.adapter.kind === "bun-test-designated"
+        ? await runBunDesignatedPreflight(bunExecutor)
+        : await runBunTestRuntimePreflight(bunExecutor);
   const campaignRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-")));
   const repositorySnapshot = path.join(campaignRoot, "repository");
   try {
-    await copyRepository(repositoryRoot, repositorySnapshot, excludes);
+    await traceOperation("host-snapshot", { kind: "snapshot" }, () =>
+      copyRepository(
+        repositoryRoot,
+        repositorySnapshot,
+        excludes,
+        new Set(omittedLinks.map(portablePathKey)),
+      ),
+    );
     const snapshotInventory = await walkFiles(repositorySnapshot, excludes);
     if (snapshotInventory.files.length > request.budgets.maximumRepositoryFiles) {
       throw new Error("REPOSITORY_FILE_BUDGET_EXCEEDED");
@@ -3721,9 +4814,21 @@ export async function verifyCampaign(
     if (snapshotInventory.totalBytes > request.budgets.maximumRepositoryBytes) {
       throw new Error("REPOSITORY_BYTES_BUDGET_EXCEEDED");
     }
+    const gitRecord =
+      request.repository.git === "synthesized"
+        ? await synthesizeGitWorktree(repositorySnapshot)
+        : null;
+    const designatedTestFiles = request.candidates.flatMap((candidate) =>
+      candidate.designated === undefined ? [] : [candidate.designated.file],
+    );
+    const snapshotFiles = new Set(snapshotInventory.files.map(portablePathKey));
+    if (designatedTestFiles.some((file) => !snapshotFiles.has(portablePathKey(file)))) {
+      throw new Error("DESIGNATED_TEST_FILE_MISSING");
+    }
     const inputPaths = [
       ...request.worlds.flatMap((world) => world.files.map((file) => file.path)),
       ...request.candidates.flatMap((candidate) => candidate.files.map((file) => file.path)),
+      ...designatedTestFiles,
       ...(request.adapter.kind === "node-test" || request.adapter.kind === "bun-test"
         ? request.adapter.baseTestFiles
         : []),
@@ -3746,8 +4851,15 @@ export async function verifyCampaign(
     if (nodeTestReporterPath !== undefined) {
       await writeFile(nodeTestReporterPath, NODE_TEST_REPORTER_SOURCE, { flag: "wx" });
     }
-    const analysis = (await analyzeRepository(repositorySnapshot)) as { repositoryDigest: string };
+    // A v4 digest covers exactly the snapshot, dependencies included when the request says so.
+    const repositoryDigest = version4
+      ? await repositoryInventoryDigest(repositorySnapshot, snapshotInventory.files)
+      : ((await analyzeRepository(repositorySnapshot)) as { repositoryDigest: string })
+          .repositoryDigest;
     const observations: Observation[] = [];
+    // Qualification always ran above. Only deterministic upload bytes may be reused here.
+    if (container !== undefined)
+      container.uploadArchives = { entries: new Map(), bytes: 0, maximumBytes: 32 * 1024 * 1024 };
 
     for (const world of request.worlds) {
       for (let attempt = 1; attempt <= request.policy.requiredAttempts; attempt += 1) {
@@ -3782,9 +4894,32 @@ export async function verifyCampaign(
       }
     }
 
+    // A designated candidate is identified by its selection and the bytes of its test file.
+    const designatedIdentities = new Map<string, { digest: string; sizeBytes: number }>();
+    for (const candidate of request.candidates) {
+      if (candidate.designated === undefined) continue;
+      const bytes = await readFile(
+        path.join(repositorySnapshot, ...candidate.designated.file.split("/")),
+      );
+      designatedIdentities.set(candidate.id, {
+        digest: sha256Canonical({
+          test: { file: candidate.designated.file, path: candidate.designated.path },
+          expectedFailure: candidate.designated.expectedFailure,
+          testFileDigest: rawSha256(bytes),
+        }),
+        sizeBytes: bytes.byteLength,
+      });
+    }
+    const windowsNative = request.isolation.kind === "windows-native";
+    const isolationLevel =
+      container !== undefined
+        ? "CONTAINER"
+        : windowsNative
+          ? "WINDOWS_NATIVE_UNSANDBOXED"
+          : "UNSANDBOXED";
     const evidence = {
       schemaVersion: request.schemaVersion,
-      repositoryDigest: analysis.repositoryDigest,
+      repositoryDigest,
       evidenceContext: {
         engine: { name: "testforge", version: "0.1.0" },
         adapter: {
@@ -3792,7 +4927,7 @@ export async function verifyCampaign(
           version:
             request.adapter.kind === "testforge-command"
               ? request.adapter.protocolVersion
-              : request.adapter.kind === "bun-test"
+              : bunAdapter
                 ? (bunIdentity?.bunVersion ?? "unprobed")
                 : (nodeIdentity?.nodeVersion ?? "unprobed"),
           configuration:
@@ -3842,10 +4977,45 @@ export async function verifyCampaign(
                       ...request.adapter.baseTestFiles,
                     ],
                   }
-                : request.adapter,
+                : request.adapter.kind === "bun-test-designated" && bunIdentity !== undefined
+                  ? {
+                      kind: "bun-test-designated",
+                      profile: BUN_TEST_DESIGNATED_ADAPTER_PROFILE,
+                      requestedExecutable: bunIdentity.requestedExecutable,
+                      resolvedExecutable: bunIdentity.resolvedExecutable,
+                      executableDigest: bunIdentity.executableDigest,
+                      bunVersion: bunIdentity.bunVersion,
+                      bunRevision: bunIdentity.bunRevision,
+                      driverDigest: bunDriverDigest,
+                      helperDigest: bunHelperDigest,
+                      preloadDigest: bunPreloadDigest,
+                      runtimePreflight: bunRuntimePreflight,
+                      arguments: [
+                        "test",
+                        "--max-concurrency=1",
+                        "--retry=0",
+                        "--preload",
+                        "./node_modules/assertledger/preload.mjs",
+                        "--reporter=junit",
+                        "--reporter-outfile=<generated-junit-file>",
+                        "--test-name-pattern=<anchored-designated-test-path>",
+                        ...(request.adapter.testTimeoutMs === null
+                          ? []
+                          : [`--timeout=${request.adapter.testTimeoutMs}`]),
+                        "<designated-test-file>",
+                      ],
+                      testTimeoutMs: request.adapter.testTimeoutMs,
+                      designatedTests: request.candidates.map((candidate) => ({
+                        candidateId: candidate.id,
+                        file: candidate.designated?.file ?? null,
+                        path: candidate.designated?.path ?? [],
+                        expectedFailure: candidate.designated?.expectedFailure ?? null,
+                      })),
+                    }
+                  : request.adapter,
         },
         execution: {
-          isolation: container === undefined ? "UNSANDBOXED" : "CONTAINER",
+          isolation: isolationLevel,
           environmentAllowlist:
             container === undefined
               ? trustedLocalEnvironmentAllowlist(request)
@@ -3856,11 +5026,26 @@ export async function verifyCampaign(
             ? {}
             : {
                 backend:
-                  container === undefined
-                    ? { kind: "trusted-local", level: "UNSANDBOXED" }
-                    : container.record,
+                  container !== undefined
+                    ? container.record
+                    : windowsNative
+                      ? {
+                          kind: "windows-native",
+                          level: "WINDOWS_NATIVE_UNSANDBOXED",
+                          platform: "win32",
+                        }
+                      : { kind: "trusted-local", level: "UNSANDBOXED" },
               }),
         },
+        ...(version4
+          ? {
+              repository: {
+                includeDependencies: request.repository.includeDependencies,
+                omittedLinks: [...omittedLinks].sort(),
+                git: gitRecord,
+              },
+            }
+          : {}),
         worlds: request.worlds.map((world) => ({
           id: world.id,
           provenance: world.provenance ?? "unspecified",
@@ -3872,17 +5057,46 @@ export async function verifyCampaign(
       },
       policy: request.policy,
       worlds: request.worlds.map(({ files: _files, provenance: _provenance, ...world }) => world),
-      candidates: request.candidates.map((candidate) => ({
-        id: candidate.id,
-        digest: sha256Canonical(candidate.files),
-        sizeBytes: candidate.files.reduce(
-          (total, file) => total + Buffer.byteLength(file.content),
-          0,
-        ),
-      })),
+      candidates: request.candidates.map((candidate) => {
+        const designated = designatedIdentities.get(candidate.id);
+        return {
+          id: candidate.id,
+          digest: designated?.digest ?? sha256Canonical(candidate.files),
+          sizeBytes:
+            designated?.sizeBytes ??
+            candidate.files.reduce((total, file) => total + Buffer.byteLength(file.content), 0),
+        };
+      }),
       observations,
     };
     const manifest = decideEvidence(evidence);
+    const designatedLimitations =
+      request.adapter.kind === "bun-test-designated"
+        ? [
+            "Only a failure thrown inside the designated test by a bun:test built-in matcher, in Bun's matcher message form, or by assertSame is admitted as an assertion; with a declared expected line, its first message line must equal it. Custom matchers, usage errors and every other error are not assertion evidence.",
+            "Controls load every designated test file without running a test: they show that each world evaluates the file and its imports and still registers the designated test, not that other tests pass.",
+            "Bun callback instrumentation determines assertion ownership; JUnit counts only check completeness and never classify assertions.",
+          ]
+        : [];
+    const snapshotLimitations = version4
+      ? [
+          ...(request.repository.includeDependencies
+            ? [
+                "Dependency directories (node_modules) are part of the snapshot and its digest as found; AssertLedger did not install or verify them.",
+              ]
+            : []),
+          ...(gitRecord !== null
+            ? [
+                "Each execution ran in a synthesized Git repository: the snapshot committed once with a fixed identity and date; the source repository's own Git metadata and history were not used.",
+              ]
+            : []),
+          ...(omittedLinks.length > 0
+            ? [
+                `${omittedLinks.length} repository link(s) outside the module closure of every executed test were left out of the snapshot; the closure follows literal module specifiers only and does not cover files read at run time.`,
+              ]
+            : []),
+        ]
+      : [];
     const finalManifest = {
       ...manifest,
       adapter:
@@ -3890,17 +5104,29 @@ export async function verifyCampaign(
           ? { kind: request.adapter.kind, protocolVersion: request.adapter.protocolVersion }
           : { kind: request.adapter.kind },
       isolation:
-        container === undefined
-          ? {
-              kind: "trusted-local",
-              level: "UNSANDBOXED",
-              acknowledgedUnsafeExecution: true,
-            }
-          : { kind: "container", level: "CONTAINER", runtimeCommand: container.runtimeCommand },
+        container !== undefined
+          ? { kind: "container", level: "CONTAINER", runtimeCommand: container.runtimeCommand }
+          : windowsNative
+            ? {
+                kind: "windows-native",
+                level: "WINDOWS_NATIVE_UNSANDBOXED",
+                acknowledgedUnsafeExecution: true,
+              }
+            : {
+                kind: "trusted-local",
+                level: "UNSANDBOXED",
+                acknowledgedUnsafeExecution: true,
+              },
       limitations:
         container === undefined
           ? [
-              "UNSANDBOXED trusted-local execution cannot safely contain hostile candidate code.",
+              ...(windowsNative
+                ? [
+                    "WINDOWS_NATIVE_UNSANDBOXED execution ran directly on the Windows host at the operator's explicit request; it cannot safely contain hostile code.",
+                  ]
+                : [
+                    "UNSANDBOXED trusted-local execution cannot safely contain hostile candidate code.",
+                  ]),
               "Process-tree termination is best effort and depends on host operating-system facilities.",
               ...(request.adapter.kind === "bun-test"
                 ? [
@@ -3908,11 +5134,13 @@ export async function verifyCampaign(
                     "Bun callback instrumentation determines assertion ownership; JUnit counts only check completeness and never classify assertions.",
                   ]
                 : []),
+              ...designatedLimitations,
+              ...snapshotLimitations,
             ]
-          : [...CONTAINER_LIMITATIONS],
+          : [...CONTAINER_LIMITATIONS, ...designatedLimitations, ...snapshotLimitations],
     };
     if (
-      request.adapter.kind === "bun-test" &&
+      bunAdapter &&
       ((await sha256File(BUN_TEST_DRIVER_PATH)) !== bunDriverDigest ||
         (await sha256File(BUN_TEST_HELPER_PATH)) !== bunHelperDigest ||
         (await sha256File(BUN_TEST_PRELOAD_PATH)) !== bunPreloadDigest)

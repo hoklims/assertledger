@@ -1,0 +1,29 @@
+{
+  "package": "assertledger@2.0.2",
+  "tarballSha256": "df2fe6a5f0835f851758b4ced8ec22e76433931b5cfc4bccf0b9994061f625c0",
+  "npmIntegrity": "sha512-tQWiVltvAmezAtb0PCl7SmaVPzIYU7gDMWdb2GLC+KJWeSsWIlr9CpYHce7AfHFiu0LD0r71ewL9ASYg2aSQMQ==",
+  "traceOnlyChanges": [
+    {
+      "path": "dist/engine/container.js",
+      "releasedSha256": "0ed40b08b9280b7526c34ced636f34af0ee69628e35f1840dd8ff1aba44e1b5e",
+      "measuredSha256": "659b1b933533cf4e5906f453c0b81ab4792dd4f620d7cbea15668a4993cf9cbb"
+    },
+    {
+      "path": "dist/engine/index.js",
+      "releasedSha256": "fcf8a4fb3c4574a7a913f5304b905663e4ef749ff18dcade0a5d13c3bb4c93de",
+      "measuredSha256": "397ea7e3d3e9c47e9bbc4e0a61264991e0bb6bd1a86be1cd7c8d04e9097f3e15"
+    },
+    {
+      "path": "dist/engine/runtime-trace.js",
+      "releasedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "measuredSha256": "687b40b0e32670ef24fd22ade49083b83d88061d94ee21d0f72deacc97846c10"
+    }
+  ],
+  "buildInfo": {
+    "sourceRevision": {
+      "status": "RECORDED",
+      "commit": "b803de9626bd7265cf835322f9d47ef6f1e694d4",
+      "worktree": "DIRTY"
+    }
+  }
+}

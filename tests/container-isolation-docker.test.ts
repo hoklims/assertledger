@@ -5,8 +5,16 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.js";
-import { parseEvidenceManifestV2 } from "../src/contracts/index.js";
+import { parseEvidenceManifestV2, parseEvidenceManifestV4 } from "../src/contracts/index.js";
+import { replayEvidenceManifest } from "../src/core/index.js";
 import { runProcess, verifyCampaign } from "../src/engine/index.js";
+import {
+  designatedCampaign,
+  designatedRepository,
+  FAULT,
+  KEEPS_DOCS,
+  OVERRUNS_UNDER_FAULT,
+} from "./support/designated-campaign.js";
 
 // Hostile scenarios against a real Docker Engine. They need an operator-provided runtime argv and a
 // locally present digest-pinned Node.js image, never pull, and fail instead of skipping when
@@ -380,5 +388,69 @@ describe("real container isolation", { skip, concurrency: false }, () => {
     assert.equal(manifest.evidenceContext.execution.backend.kind, "container");
     assert.equal(await runCli(["replay", manifestPath], io), 0, stderr);
     await assertCleanedUp(volumesBefore);
+  });
+});
+
+// The designated Bun adapter in the same real daemon, serialized with the scenarios above because
+// both observe the daemon's labeled containers. It also needs a locally present, digest-pinned Bun
+// image, for example the native WSL2 engine with ["wsl.exe","-d","Ubuntu","--exec","docker"].
+const bunImage = process.env.ASSERTLEDGER_BUN_CONTAINER_IMAGE ?? "";
+
+describe("real container isolation for designated Bun tests", {
+  skip:
+    configured && bunImage.length > 0
+      ? false
+      : "set ASSERTLEDGER_CONTAINER_RUNTIME, ASSERTLEDGER_CONTAINER_IMAGE and ASSERTLEDGER_BUN_CONTAINER_IMAGE to run",
+  concurrency: false,
+}, () => {
+  const isolation = {
+    kind: "container",
+    image: bunImage,
+    environment: [],
+    limits: { ...LIMITS, memoryBytes: 1_073_741_824, pids: 256 },
+  };
+  const labeledContainers = async () =>
+    lines(
+      await runtimeOutput([
+        "ps",
+        "--all",
+        "--filter",
+        "label=assertledger.execution",
+        "--format",
+        "{{.Names}}",
+      ]),
+    );
+  async function verifyDesignated(testBody: string, testTimeoutMs: number | null) {
+    const root = await designatedRepository(
+      await temporaryDirectory("assertledger-designated-container-"),
+      testBody,
+    );
+    const before = new Set(await labeledContainers());
+    const manifest = parseEvidenceManifestV4(
+      await verifyCampaign(designatedCampaign(root, "bun", FAULT, { isolation, testTimeoutMs }), {
+        containerRuntime: { command: runtime },
+      }),
+    );
+    assert.deepEqual(
+      (await labeledContainers()).filter((name) => !before.has(name)),
+      [],
+    );
+    return manifest;
+  }
+
+  it("verifies the designated test with the container level recorded", async () => {
+    const manifest = await verifyDesignated(KEEPS_DOCS, null);
+    assert.equal(manifest.decision.status, "VERIFIED");
+    assert.equal(manifest.isolation.level, "CONTAINER");
+    assert.equal(replayEvidenceManifest(JSON.parse(JSON.stringify(manifest))).valid, true);
+  });
+
+  it("never credits a test that overran its per-test timeout", async () => {
+    const manifest = await verifyDesignated(OVERRUNS_UNDER_FAULT, 200);
+    assert.notEqual(manifest.decision.status, "VERIFIED");
+    assert.equal(
+      manifest.observations.some((observation) => observation.outcome === "ASSERTION_FAILURE"),
+      false,
+    );
   });
 });

@@ -4,16 +4,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
-import { renderDiagnostics, renderRepositoryLinkRefusal } from "./diagnostics.js";
+import { QualificationExpectedDomainSchema } from "./contracts/qualification.js";
+import {
+  quoteRepositoryEntry,
+  renderDiagnostics,
+  renderRepositoryLinkRefusal,
+} from "./diagnostics.js";
+import { BunPreflightError, renderBunPreflightRefusal } from "./engine/bun-preflight.js";
 import { type ConnectionClient, connectClient, disconnectClient } from "./engine/connection.js";
-import { parseContainerRuntimeCommand } from "./engine/container.js";
+import { parseContainerRuntimeCommand, parseContainerTransport } from "./engine/container.js";
 import { runFixtureDemo } from "./engine/demo.js";
 import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
   renderGitRegressionSummary,
 } from "./engine/git-regression.js";
+import { RepositoryAuditInventoryError, type RepositoryLinkAssessment } from "./engine/index.js";
 import { type RepositorySetupResult, type SetupClient, setupRepository } from "./engine/setup.js";
+import { DEFAULT_WITNESS_ENVIRONMENT_ALLOWLIST } from "./engine/witness-import.js";
 import {
   AgenticCorpusError,
   evaluateAgenticCorpusHoldout,
@@ -44,7 +52,7 @@ Commands:
   explain CODE [CODE ...] [--json]             Explain reason codes and safe next actions
   check [repository] --before REF [--after REF] --neutral REF --neutral-reason TEXT
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
-        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV]
+        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV] [--container-transport MODE]
          | --allow-unsafe-execution)            Qualify one committed node:test regression
   doctor [repository] [--framework ID] [--exclude NAME ...] [--json]
                                                Inspect static repository readiness without writing
@@ -64,7 +72,7 @@ Commands:
                                                Detect and write portable initialization files
   audit [repository] [--verification-request PATH] [--emit-verification-request] [--no-git]
                                                Produce a static audit and campaign cost projection
-  schema <verification-request|verification-request-v2|verification-request-v3|repository-analysis|repository-audit|
+  schema <verification-request|verification-request-v2|verification-request-v3|repository-analysis|repository-audit|repository-audit-v2|
           repository-init-config|repository-init-lock|repository-init-result|
           evidence-manifest|evidence-manifest-v2|evidence-manifest-v3|replay-result|
           agentic-profile-request|agentic-profile-report|agentic-profile-replay-result|
@@ -81,9 +89,21 @@ Commands:
           evidence-provider-manifest|evidence-export-request|evidence-export|
           evidence-export-replay-result>
                                                Print a JSON Schema
-  verify [request.json|-] [--container-runtime JSON_ARGV | --allow-unsafe-execution]
-                                               Execute a v2 container or trusted-local campaign
+  verify [request.json|-] [--container-transport MODE] [--container-runtime JSON_ARGV | --allow-unsafe-execution
+        | --allow-windows-native-execution]   Execute a v2-v4 container, trusted-local or
+                                               declared Windows-native campaign
+  import-witness [request.json|-] --out DIRECTORY
+        (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV] [--container-transport MODE]
+         | --allow-unsafe-execution | --allow-windows-native-execution)
+        [--env NAME ...] [--json]              Replay a recorded red/green witness
   replay [manifest.json|-]                     Verify an evidence digest
+  qualification-plan [plan.json|-]             Seal an operator-owned obligation inventory
+  qualify [request.json|-] --allow-unsafe-execution
+                                               Execute a scoped UNSANDBOXED qualification
+  qualification-replay [receipt.json|-] [--domain domain.json]
+                                               Replay integrity and explicit validity domain
+  qualification-ci [receipt.json|-] --observation observation.json
+                                               Admit an independently signed CI observation
   export [request.json|-]                      Export replay-valid evidence for external consumers
   export-replay [export.json|-]                Replay an evidence export
   provider                                     Describe the evidence provider and its limits
@@ -132,6 +152,11 @@ function authorizeTrustedLocalExecution(request: unknown): unknown {
       acknowledgedUnsafeExecution: true,
     },
   };
+}
+
+/** Windows-native execution has its own operator flag; the request value alone never grants it. */
+function authorizeWindowsNativeExecution(request: unknown): unknown {
+  return authorizeTrustedLocalExecution(request);
 }
 
 function authorizeBenchmarkAcquisition(request: unknown): unknown {
@@ -205,6 +230,7 @@ interface CheckArguments {
   out: string;
   containerImage?: string;
   containerRuntime?: string;
+  containerTransport?: string;
 }
 
 interface ClientArguments {
@@ -395,6 +421,7 @@ function parseCheckArguments(argv: readonly string[], cwd: string): CheckArgumen
     "--out",
     "--container-image",
     "--container-runtime",
+    "--container-transport",
   ]);
   const booleanFlags = new Set(["--allow-unsafe-execution", "--json"]);
   for (let index = 1; index < argv.length; index += 1) {
@@ -435,9 +462,11 @@ function parseCheckArguments(argv: readonly string[], cwd: string): CheckArgumen
   };
   const containerImage = atMostOne("--container-image");
   const containerRuntime = atMostOne("--container-runtime");
+  const containerTransport = atMostOne("--container-transport");
   return {
     ...(containerImage === undefined ? {} : { containerImage }),
     ...(containerRuntime === undefined ? {} : { containerRuntime }),
+    ...(containerTransport === undefined ? {} : { containerTransport }),
     repository: path.resolve(cwd, repository),
     before: exactlyOne("--before"),
     ...(afterValues[0] === undefined ? {} : { after: afterValues[0] }),
@@ -639,6 +668,20 @@ const VALIDATION_ERROR_CODES = new Set([
   "UNSUPPORTED_ADAPTER",
   "UNSUPPORTED_ISOLATION",
   "UNSUPPORTED_REPOSITORY_SYMLINK",
+  "REPOSITORY_LINK_IN_TEST_CLOSURE",
+  "REPOSITORY_LINK_ESCAPES_ROOT",
+  "TEST_CLOSURE_UNBOUNDED",
+  "WINDOWS_NATIVE_HOST_REQUIRED",
+  "WINDOWS_NATIVE_EXECUTION_NOT_ACKNOWLEDGED",
+  "DESIGNATED_TEST_OVERLAID",
+  "DESIGNATED_TEST_FILE_MISSING",
+  "REPOSITORY_DEPENDENCIES_EXCLUDED",
+  "WITNESS_REPOSITORY_INVALID",
+  "WITNESS_TARGET_PATH_INVALID",
+  "WITNESS_TARGET_BASE_MISMATCH",
+  "WITNESS_TARGET_UNCHANGED",
+  "WITNESS_OUTPUT_INSIDE_REPOSITORY",
+  "WITNESS_OUTPUT_EXISTS",
   "VERIFICATION_REQUEST_REPOSITORY_MISMATCH",
   "WORLD_BUDGET_EXCEEDED",
   "WORLD_OVERLAY_BYTES_EXCEEDED",
@@ -675,6 +718,23 @@ function classifyError(error: unknown): number {
     return 4;
   }
   return 5;
+}
+
+/** Names the link that refused a static diagnostic, or the computed imports that leave the closure
+ * unbounded. Repository paths are untrusted content and are quoted. */
+function renderLinkAssessment(
+  assessment: RepositoryLinkAssessment | undefined,
+): string | undefined {
+  if (assessment === undefined) return undefined;
+  if (assessment.refused !== undefined) {
+    return `Link detail: ${quoteRepositoryEntry(assessment.refused.path)} (${assessment.refused.reasonCode})`;
+  }
+  const unbounded = assessment.unbounded
+    .slice(0, 20)
+    .map((edge) => `Unbounded closure: ${quoteRepositoryEntry(edge.file)} (${edge.reason})`);
+  return [`Links outside every test closure: ${assessment.omitted.length}`, ...unbounded].join(
+    "\n",
+  );
 }
 
 export async function runCli(
@@ -787,10 +847,16 @@ export async function runCli(
           }
           return runtimeResult.status === "READY" ? 0 : 3;
         }
+        let linkAssessment: RepositoryLinkAssessment | undefined;
         const result = await ledger.doctor(root, {
           ...(exclude.length === 0 ? {} : { exclude }),
           ...(framework === undefined ? {} : { framework }),
+          onLinkAssessment: (assessment) => {
+            linkAssessment = assessment;
+          },
         });
+        const linkDetail = renderLinkAssessment(linkAssessment);
+        if (linkDetail !== undefined) io.writeStderr(`${linkDetail}\n`);
         if (argv.includes("--json")) {
           writeJson(io, result);
         } else {
@@ -1129,11 +1195,12 @@ export async function runCli(
           );
           return 4;
         }
-        const { containerImage, containerRuntime, ...checkOptions } = parseCheckArguments(
-          argv,
-          io.cwd,
-        );
-        if (containerImage === undefined && containerRuntime !== undefined) {
+        const { containerImage, containerRuntime, containerTransport, ...checkOptions } =
+          parseCheckArguments(argv, io.cwd);
+        if (
+          containerImage === undefined &&
+          (containerRuntime !== undefined || containerTransport !== undefined)
+        ) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
         }
         if (containerImage === undefined) {
@@ -1151,11 +1218,100 @@ export async function runCli(
             ...(containerRuntime === undefined
               ? {}
               : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+            ...(containerTransport === undefined
+              ? {}
+              : { transport: parseContainerTransport(containerTransport) }),
           },
         };
         const result = await ledger.checkGitRegressionV2(options);
         if (argv.includes("--json")) writeJson(io, result);
         else io.writeStdout(renderGitRegressionSummary(result, options));
+        return decisionExitCode(result);
+      }
+      case "import-witness": {
+        const valueFlags = new Set([
+          "--out",
+          "--container-image",
+          "--container-runtime",
+          "--container-transport",
+          "--env",
+        ]);
+        const booleanFlags = new Set([
+          "--allow-unsafe-execution",
+          "--allow-windows-native-execution",
+          "--json",
+        ]);
+        let input: string | undefined;
+        for (let index = 1; index < argv.length; index += 1) {
+          const argument = argv[index] ?? "";
+          if (valueFlags.has(argument)) {
+            const value = argv[index + 1];
+            if (value === undefined || value.startsWith("--")) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            index += 1;
+          } else if (!booleanFlags.has(argument)) {
+            if (argument.startsWith("--") || input !== undefined) {
+              io.writeStderr(USAGE);
+              return 64;
+            }
+            input = argument;
+          }
+        }
+        const out = optionalFlag(argv, "--out");
+        if (out === undefined) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
+        const allowWindowsNative = argv.includes("--allow-windows-native-execution");
+        const containerImage = optionalFlag(argv, "--container-image");
+        const containerRuntime = optionalFlag(argv, "--container-runtime");
+        const containerTransport = optionalFlag(argv, "--container-transport");
+        const environment = repeatedFlagValues(argv, "--env");
+        const selected = [allowUnsafeExecution, allowWindowsNative, containerImage !== undefined];
+        if (
+          selected.filter(Boolean).length > 1 ||
+          (containerImage === undefined &&
+            (containerRuntime !== undefined || containerTransport !== undefined)) ||
+          (containerImage !== undefined && environment.length > 0)
+        ) {
+          throw new TypeError("ISOLATION_MODE_CONFLICT");
+        }
+        if (!selected.some(Boolean)) {
+          io.writeStderr(
+            "Refusing to replay a witness without an authorized backend: pass --container-image, " +
+              "--allow-unsafe-execution or --allow-windows-native-execution.\n",
+          );
+          return 4;
+        }
+        const environmentAllowlist =
+          environment.length === 0 ? [...DEFAULT_WITNESS_ENVIRONMENT_ALLOWLIST] : environment;
+        const result = await ledger.importWitness(await readJsonInput(input, io), {
+          out: path.resolve(io.cwd, out),
+          isolation:
+            containerImage !== undefined
+              ? {
+                  kind: "container",
+                  image: containerImage,
+                  ...(containerRuntime === undefined
+                    ? {}
+                    : { runtimeCommand: parseContainerRuntimeCommand(containerRuntime) }),
+                  ...(containerTransport === undefined
+                    ? {}
+                    : { transport: parseContainerTransport(containerTransport) }),
+                }
+              : allowWindowsNative
+                ? { kind: "windows-native", environmentAllowlist }
+                : { kind: "trusted-local", environmentAllowlist },
+        });
+        if (argv.includes("--json")) writeJson(io, result);
+        else {
+          io.writeStdout(
+            `${await readFile(path.join(path.resolve(io.cwd, out), "summary.md"), "utf8")}`,
+          );
+        }
         return decisionExitCode(result);
       }
       case "schema": {
@@ -1166,6 +1322,7 @@ export async function runCli(
           name !== "verification-request-v3" &&
           name !== "repository-analysis" &&
           name !== "repository-audit" &&
+          name !== "repository-audit-v2" &&
           name !== "repository-init-config" &&
           name !== "repository-init-config-v2" &&
           name !== "repository-init-lock" &&
@@ -1178,6 +1335,10 @@ export async function runCli(
           name !== "replay-result" &&
           name !== "agentic-benchmark-request" &&
           name !== "agentic-benchmark-artifact" &&
+          name !== "qualification-plan" &&
+          name !== "qualification-execution-request" &&
+          name !== "qualification-receipt" &&
+          name !== "qualification-replay-result" &&
           name !== "agentic-benchmark-replay-result" &&
           name !== "agentic-benchmark-acquisition-request" &&
           name !== "agentic-benchmark-acquisition-result" &&
@@ -1213,28 +1374,68 @@ export async function runCli(
       }
       case "verify": {
         const request = await readJsonInput(
-          positionalArguments(argv, new Set(["--container-runtime"]))[1],
+          positionalArguments(argv, new Set(["--container-runtime", "--container-transport"]))[1],
           io,
         );
         const allowUnsafeExecution = argv.includes("--allow-unsafe-execution");
+        const allowWindowsNative = argv.includes("--allow-windows-native-execution");
         const runtimeArgument = optionalFlag(argv, "--container-runtime");
-        const containerRequest =
-          isRecord(request) &&
-          isRecord(request.isolation) &&
-          request.isolation.kind === "container";
-        if (containerRequest ? allowUnsafeExecution : runtimeArgument !== undefined) {
+        const transportArgument = optionalFlag(argv, "--container-transport");
+        const isolationKind =
+          isRecord(request) && isRecord(request.isolation) ? request.isolation.kind : undefined;
+        const containerRequest = isolationKind === "container";
+        const windowsNativeRequest = isolationKind === "windows-native";
+        // Each backend has exactly one authorization; another backend's flag never stands in.
+        if (
+          (containerRequest && (allowUnsafeExecution || allowWindowsNative)) ||
+          (windowsNativeRequest &&
+            (allowUnsafeExecution ||
+              runtimeArgument !== undefined ||
+              transportArgument !== undefined)) ||
+          (!containerRequest &&
+            !windowsNativeRequest &&
+            (allowWindowsNative ||
+              runtimeArgument !== undefined ||
+              transportArgument !== undefined))
+        ) {
           throw new TypeError("ISOLATION_MODE_CONFLICT");
         }
-        if (!containerRequest && !allowUnsafeExecution) {
+        if (windowsNativeRequest && !allowWindowsNative) {
+          io.writeStderr(
+            "Refusing WINDOWS_NATIVE_UNSANDBOXED execution without --allow-windows-native-execution.\n",
+          );
+          return 4;
+        }
+        if (!containerRequest && !windowsNativeRequest && !allowUnsafeExecution) {
           io.writeStderr("Refusing trusted-local execution without --allow-unsafe-execution.\n");
           return 4;
         }
         const version2 = isRecord(request) && request.schemaVersion === "2.0.0";
         const version3 = isRecord(request) && request.schemaVersion === "3.0.0";
+        const version4 = isRecord(request) && request.schemaVersion === "4.0.0";
         const runtimeOptions =
-          runtimeArgument === undefined
+          runtimeArgument === undefined && transportArgument === undefined
             ? {}
-            : { containerRuntime: { command: parseContainerRuntimeCommand(runtimeArgument) } };
+            : {
+                containerRuntime: {
+                  ...(runtimeArgument === undefined
+                    ? {}
+                    : { command: parseContainerRuntimeCommand(runtimeArgument) }),
+                  ...(transportArgument === undefined
+                    ? {}
+                    : { transport: parseContainerTransport(transportArgument) }),
+                },
+              };
+        if (version4) {
+          const authorized = containerRequest
+            ? request
+            : windowsNativeRequest
+              ? authorizeWindowsNativeExecution(request)
+              : authorizeTrustedLocalExecution(request);
+          const manifest = await ledger.verifyV4(authorized, runtimeOptions);
+          writeJson(io, manifest);
+          return decisionExitCode(manifest);
+        }
         const result = version3
           ? await ledger.verifyV3(
               containerRequest ? request : authorizeTrustedLocalExecution(request),
@@ -1248,6 +1449,80 @@ export async function runCli(
             : await ledger.verify(authorizeTrustedLocalExecution(request));
         writeJson(io, result);
         return decisionExitCode(result);
+      }
+      case "qualification-plan": {
+        if (
+          argv.slice(1).filter((item) => item !== "--json").length > 1 ||
+          argv.slice(1).some((item) => item.startsWith("--") && item !== "--json")
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        writeJson(io, ledger.sealQualificationPlan(await readJsonInput(positional[1], io)));
+        return 0;
+      }
+      case "qualify": {
+        if (
+          argv
+            .slice(1)
+            .some(
+              (item) =>
+                item.startsWith("--") && item !== "--allow-unsafe-execution" && item !== "--json",
+            ) ||
+          positional.length > 2
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        if (!argv.includes("--allow-unsafe-execution")) {
+          io.writeStderr("Refusing UNSANDBOXED qualification without --allow-unsafe-execution.\n");
+          return 4;
+        }
+        const result = await ledger.qualifyOrchestration(await readJsonInput(positional[1], io), {
+          allowUnsafeExecution: true,
+        });
+        writeJson(io, result);
+        return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 2;
+      }
+      case "qualification-replay": {
+        const domainPath = optionalFlag(argv, "--domain");
+        const args = positionalArguments(argv, new Set(["--domain"]));
+        if (
+          args.length > 2 ||
+          argv
+            .slice(1)
+            .some((item) => item.startsWith("--") && item !== "--domain" && item !== "--json")
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const domain =
+          domainPath === undefined
+            ? undefined
+            : QualificationExpectedDomainSchema.parse(await readJsonInput(domainPath, io));
+        const result = ledger.replayQualification(await readJsonInput(args[1], io), domain);
+        writeJson(io, result);
+        return result.valid ? 0 : 4;
+      }
+      case "qualification-ci": {
+        const observationPath = optionalFlag(argv, "--observation");
+        const args = positionalArguments(argv, new Set(["--observation"]));
+        if (
+          observationPath === undefined ||
+          args.length > 2 ||
+          argv
+            .slice(1)
+            .some((item) => item.startsWith("--") && item !== "--observation" && item !== "--json")
+        ) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
+        const result = ledger.admitQualificationCi(
+          await readJsonInput(args[1], io),
+          await readJsonInput(observationPath, io),
+        );
+        writeJson(io, result);
+        return result.decision === "QUALIFIED" ? 0 : result.decision === "OPEN" ? 3 : 2;
       }
       case "replay": {
         const result = ledger.replay(await readJsonInput(positional[1], io));
@@ -1437,6 +1712,13 @@ export async function runCli(
     }
   } catch (error) {
     io.writeStderr(`${errorMessage(error)}\n`);
+    if (error instanceof BunPreflightError) {
+      io.writeStderr(`${renderBunPreflightRefusal(error.diagnostic)}\n`);
+      if (argv.includes("--json")) writeJson(io, error.diagnostic);
+    }
+    if (error instanceof RepositoryAuditInventoryError) {
+      io.writeStderr(`Audit exclusions: ${JSON.stringify(error.appliedExcludes)}\n`);
+    }
     if (error instanceof Error && /^(?:CONTAINER|ISOLATION)_[A-Z_]+$/u.test(error.message)) {
       if (typeof error.cause === "string" && error.cause.length > 0) {
         io.writeStderr(`Runtime detail: ${error.cause}\n`);

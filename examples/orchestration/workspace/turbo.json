@@ -1,0 +1,38 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["PATH"],
+  "globalPassThroughEnv": [
+    "ASSERTLEDGER_QUALIFICATION_TRACE",
+    "ASSERTLEDGER_QUALIFICATION_NONCE",
+    "ASSERTLEDGER_QUALIFICATION_CACHE",
+    "ASSERTLEDGER_QUALIFICATION_RESULT_FILE"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/task.mjs",
+        "$TURBO_ROOT$/completion.mjs",
+        "!dist/**",
+        "!.turbo/**",
+        "!node_modules/**",
+        "verdict.txt"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "check": {
+      "cache": false,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/task.mjs",
+        "$TURBO_ROOT$/completion.mjs",
+        "!dist/**",
+        "!.turbo/**",
+        "!node_modules/**"
+      ],
+      "outputs": []
+    },
+    "fail": { "dependsOn": ["^fail"], "cache": false, "outputs": [] }
+  }
+}

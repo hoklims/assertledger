@@ -14,7 +14,7 @@ Vous obtenez un verdict, les observations qui le justifient et un fichier de pre
 Installez l’outil dans votre dépôt avec Node.js 22.15 ou une version ultérieure :
 
 ```sh
-npm install --save-dev assertledger@1.4.0
+npm install --save-dev assertledger@2.0.3
 npx assertledger doctor .
 ```
 
@@ -60,7 +60,7 @@ flowchart LR
 Prérequis : **Git**, **Node.js 22.15+** et **pnpm 11.1.2**. L’exemple utilise l’adaptateur intégré `node:test`.
 
 ```sh
-git clone --branch v1.4.0 https://github.com/hoklims/assertledger.git
+git clone --branch v2.0.3 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build
@@ -181,6 +181,9 @@ L’adaptateur cible précisément Bun 1.4.2 et attribue les échecs de cet outi
 natifs restent des erreurs d’exécution et ne comptent pas comme détection du défaut. Le
 [guide de migration Bun](docs/migration-verification-v3.md) décrit la requête, l’exécution et le
 rejeu. Ce mode exécute du code local de confiance sans bac à sable.
+Pour vérifier un test `bun:test` existant désigné par son nom, ou rejouer un témoin rouge/vert
+enregistré, utilisez une requête v4 ou `import-witness`, qui s’exécutent aussi en conteneur ou dans un
+mode Windows natif déclaré ; voir le [guide de migration v4](docs/migration-verification-v4.md).
 
 ### Qualifier un test de régression commité
 

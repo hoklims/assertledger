@@ -1,0 +1,101 @@
+{
+  "profileId": "modelo-suite-911-consumer-v1",
+  "consumerReady": false,
+  "qualificationStatus": "OPEN",
+  "inventoryAuthority": "operator inventory from consumer source inspection; independent from candidate selection",
+  "sourcePins": {
+    "bun": "1.4.2",
+    "pnpm": "12.9.1",
+    "turbo": "2.11.7",
+    "vitestCompatibility": "5.0.3"
+  },
+  "suiteGroups": [
+    {
+      "id": "workspace-tests",
+      "declaringManifests": 30,
+      "extraction": "UNAVAILABLE",
+      "status": "OPEN"
+    },
+    {
+      "id": "workspace-e2e",
+      "declaringManifests": 9,
+      "extraction": "UNAVAILABLE",
+      "status": "OPEN"
+    },
+    { "id": "bun-node-delivery", "suiteFiles": 10, "extraction": "UNAVAILABLE", "status": "OPEN" },
+    {
+      "id": "repository-shell",
+      "suiteFiles": null,
+      "extraction": "UNAVAILABLE",
+      "status": "OPEN",
+      "reason": "exact executed shell suite inventory requires consumer campaign"
+    }
+  ],
+  "requiredObligations": [
+    {
+      "id": "complete-consumer-test-suites",
+      "kind": "tests",
+      "status": "OPEN",
+      "required": true,
+      "reason": "private complete suites have not been executed in this public campaign"
+    },
+    {
+      "id": "consumer-preloads-and-test-forms",
+      "kind": "tests",
+      "status": "OPEN",
+      "required": true,
+      "reason": "Vitest compatibility, mocks, DOM, isolation, development conditions and filter forms need exact-consumer witnesses"
+    },
+    {
+      "id": "consumer-task-selection",
+      "kind": "selection",
+      "status": "OPEN",
+      "required": true,
+      "reason": "public dependency-selection witnesses qualify the public fixture, not the consumer graph"
+    },
+    {
+      "id": "consumer-turbo-cache",
+      "kind": "cache",
+      "status": "OPEN",
+      "required": true,
+      "reason": "actual consumer configuration, persisted cache and dependencies need cold/warm/invalidation evidence"
+    },
+    {
+      "id": "consumer-error-propagation",
+      "kind": "propagation",
+      "status": "OPEN",
+      "required": true,
+      "reason": "actual consumer command route requires its own leaf-to-terminal witness"
+    },
+    {
+      "id": "consumer-wrappers",
+      "kind": "wrapper",
+      "status": "OPEN",
+      "required": true,
+      "reason": "shell/container/preflight wrapper closure requires actual route evidence"
+    },
+    {
+      "id": "consumer-ci-configuration",
+      "kind": "ci-config",
+      "status": "OPEN",
+      "required": true,
+      "reason": "public YAML qualification is separate from the consumer configuration"
+    },
+    {
+      "id": "consumer-ci-local-commands",
+      "kind": "ci-local",
+      "status": "OPEN",
+      "required": true,
+      "reason": "actual local CI commands and coverage gate must execute with controlled inputs"
+    },
+    {
+      "id": "consumer-bitbucket-pipeline",
+      "kind": "ci-live",
+      "status": "OPEN",
+      "required": true,
+      "reason": "no independent exact-commit/base executed-step and terminal pipeline observation supplied"
+    }
+  ],
+  "reusableQualification": "public-turbo-orchestration-2.11.7-bun-1.4.2 only under its exact receipt validity conditions",
+  "mergeAuthority": false
+}

@@ -65,13 +65,15 @@ because a file name is repository content. Only the first link is named, so decl
 run again to meet the next one. `analyze` itself takes no `--exclude`: the declaration goes through
 `init`, which needs a detected package manager.
 
-The configured list governs only these static diagnostics and the evidence digests of
-`assertledger.lock.json`; it produces no campaign evidence. `audit`, a campaign's repository copy and
-its manifest `repositoryDigest` keep their own exclusions: the defaults, plus the verification
-request's `repository.exclude` for a campaign. `audit` therefore still refuses a linked local-only
-entry, and a request must declare the same names to leave it out of its copy; a committed
-configuration can never remove files from campaign evidence. Declaring a name is an operator decision
-recorded in a reviewable file, not a sandbox.
+The configured list governs these static diagnostics, the evidence digests of
+`assertledger.lock.json`, and `audit` when no verification request is supplied; it produces no campaign
+evidence. With a request, `audit` uses only the defaults plus the request's `repository.exclude`,
+exactly as the campaign's repository copy and manifest `repositoryDigest` do. A request must declare
+the same names to leave them out of its copy; a committed configuration can never remove files from
+campaign evidence. Audit v2 discloses the sorted effective list in `appliedExcludes.entries` and
+its source (`request`, `config`, or `defaults`) in `appliedExcludes.source`. See
+[the audit v2 migration note](repository-audit-v2-migration.md). Declaring a name is an operator
+decision recorded in a reviewable file, not a sandbox.
 
 Files at or below the managed `candidateRoots` are deliberately excluded from framework inference,
 evidence, built-in control tests, and repository-change comparison. Candidate generation therefore

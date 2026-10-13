@@ -31,10 +31,12 @@ import {
   evidenceManifestJsonSchema,
   evidenceManifestV2JsonSchema,
   evidenceManifestV3JsonSchema,
+  evidenceManifestV4JsonSchema,
   evidenceProviderManifestJsonSchema,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
+  repositoryAuditV2JsonSchema,
   repositoryInitConfigJsonSchema,
   repositoryInitConfigV2JsonSchema,
   repositoryInitLockJsonSchema,
@@ -44,10 +46,22 @@ import {
   verificationRequestJsonSchema,
   verificationRequestV2JsonSchema,
   verificationRequestV3JsonSchema,
+  verificationRequestV4JsonSchema,
+  witnessImportRequestJsonSchema,
 } from "../src/contracts/index.js";
+import {
+  qualificationPlanJsonSchema,
+  qualificationExecutionRequestJsonSchema,
+  qualificationReceiptJsonSchema,
+  qualificationReplayResultJsonSchema,
+} from "../src/contracts/qualification.js";
 
 /** Schemas published after the frozen conformance v1 set; they are locked additively. */
 export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
+  "qualification-plan.v1.json",
+  "qualification-execution-request.v1.json",
+  "qualification-receipt.v1.json",
+  "qualification-replay-result.v1.json",
   "evidence-provider-manifest.v1.json",
   "evidence-export-request.v1.json",
   "evidence-export.v1.json",
@@ -56,9 +70,13 @@ export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
   "evidence-manifest.v2.json",
   "verification-request.v3.json",
   "evidence-manifest.v3.json",
+  "verification-request.v4.json",
+  "evidence-manifest.v4.json",
+  "witness-import-request.v1.json",
   "repository-init-config.v2.json",
   "repository-init-lock.v2.json",
   "repository-init-result.v2.json",
+  "repository-audit.v2.json",
 ]);
 
 export function conformanceV1Schemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
@@ -67,6 +85,10 @@ export function conformanceV1Schemas(): ReadonlyArray<readonly [string, Record<s
 
 export function publishedSchemas(): ReadonlyArray<readonly [string, Record<string, unknown>]> {
   return [
+    ["qualification-plan.v1.json", qualificationPlanJsonSchema()],
+    ["qualification-execution-request.v1.json", qualificationExecutionRequestJsonSchema()],
+    ["qualification-receipt.v1.json", qualificationReceiptJsonSchema()],
+    ["qualification-replay-result.v1.json", qualificationReplayResultJsonSchema()],
     ["agentic-corpus-trust-policy.v1.json", agenticCorpusTrustPolicyJsonSchema()],
     ["agentic-corpus-provenance.v1.json", agenticCorpusProvenanceJsonSchema()],
     ["agentic-benchmark-request.v1.json", agenticBenchmarkRequestJsonSchema()],
@@ -90,8 +112,11 @@ export function publishedSchemas(): ReadonlyArray<readonly [string, Record<strin
     ["verification-request.v1.json", verificationRequestJsonSchema()],
     ["verification-request.v2.json", verificationRequestV2JsonSchema()],
     ["verification-request.v3.json", verificationRequestV3JsonSchema()],
+    ["verification-request.v4.json", verificationRequestV4JsonSchema()],
+    ["witness-import-request.v1.json", witnessImportRequestJsonSchema()],
     ["repository-analysis.v1.json", repositoryAnalysisJsonSchema()],
     ["repository-audit.v1.json", repositoryAuditJsonSchema()],
+    ["repository-audit.v2.json", repositoryAuditV2JsonSchema()],
     ["repository-init-config.v1.json", repositoryInitConfigJsonSchema()],
     ["repository-init-config.v2.json", repositoryInitConfigV2JsonSchema()],
     ["repository-init-lock.v1.json", repositoryInitLockJsonSchema()],
@@ -101,6 +126,7 @@ export function publishedSchemas(): ReadonlyArray<readonly [string, Record<strin
     ["evidence-manifest.v1.json", evidenceManifestJsonSchema()],
     ["evidence-manifest.v2.json", evidenceManifestV2JsonSchema()],
     ["evidence-manifest.v3.json", evidenceManifestV3JsonSchema()],
+    ["evidence-manifest.v4.json", evidenceManifestV4JsonSchema()],
     ["replay-result.v1.json", replayResultJsonSchema()],
     ["agentic-corpus-allocation-request.v1.json", agenticCorpusAllocationRequestJsonSchema()],
     ["agentic-corpus-allocation.v1.json", agenticCorpusAllocationJsonSchema()],

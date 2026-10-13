@@ -1,9 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { createGzip } from "node:zlib";
 import type { ContainerIsolation, ExecutionBackendRecord } from "../contracts/index.js";
 import type { ProcessInput, ProcessResult } from "./index.js";
+import { type RuntimeTraceContext, traceOperation, withRuntimeTrace } from "./runtime-trace.js";
 
 // Container backend for a Docker-compatible CLI. Nothing on the host is mounted into the container:
 // the prepared workspace is streamed into an anonymous volume, only the bounded result file is read
@@ -20,6 +23,8 @@ export const CONTAINER_ROOT = "/assertledger";
 export const CONTAINER_WORKSPACE = `${CONTAINER_ROOT}/repository`;
 export const CONTAINER_RESULT_FILE = `${CONTAINER_ROOT}/out/result.json`;
 export const CONTAINER_REPORTER_FILE = `${CONTAINER_ROOT}/reporter/node-test-reporter.mjs`;
+/** Read-only adapter files, such as the Bun driver, are placed beside the reporter. */
+export const CONTAINER_ASSET_DIRECTORY = `${CONTAINER_ROOT}/reporter`;
 export const CONTAINER_LIMITATIONS = [
   "Container isolation relies on the operator-administered container runtime and the shared host kernel; it is not a virtual machine boundary.",
   "The writable workspace volume has no size limit enforced by AssertLedger; container storage limits remain operator-administered.",
@@ -53,11 +58,24 @@ export interface ContainerBackend {
   runtimeCommand: string[];
   isolation: ContainerIsolation;
   record: ContainerBackendRecord;
+  traceContext?: RuntimeTraceContext;
+  controlRunner?: ContainerProcessRunner;
+  /** A sealed snapshot and overlay recipe, assigned only by the engine after qualification. */
+  workspaceIdentity?: string;
+  uploadArchives?: ContainerUploadArchives;
+}
+
+export interface ContainerUploadArchives {
+  entries: Map<string, { bytes: Buffer; digest: string; size: number }>;
+  bytes: number;
+  maximumBytes: number;
 }
 
 export interface ContainerExecution {
   workspace: string;
   reporterSource?: string;
+  /** Engine-owned files with plain names, written read-only to CONTAINER_ASSET_DIRECTORY. */
+  assets?: ReadonlyArray<{ name: string; content: string }>;
   executable: string;
   args: string[];
   environment: Record<string, string>;
@@ -75,9 +93,12 @@ interface RuntimeContext {
   command: readonly string[];
   runner: ContainerProcessRunner;
   workingDirectory: string;
+  traceContext?: RuntimeTraceContext & { container?: string };
+  controlRunner?: ContainerProcessRunner;
+  uploadReuse?: { reused: boolean };
 }
 
-function runtime(
+async function runtime(
   context: RuntimeContext,
   args: string[],
   timeoutMs: number,
@@ -85,21 +106,70 @@ function runtime(
   standardInput?: AsyncIterable<Uint8Array>,
 ): Promise<BoundedProcessResult> {
   const [executable, ...prefix] = context.command;
-  return context.runner(
-    {
-      executable: executable as string,
-      args: [...prefix, ...args],
-      cwd: context.workingDirectory,
-      environment: Object.fromEntries(
-        Object.entries(process.env).filter(
-          (entry): entry is [string, string] => typeof entry[1] === "string",
-        ),
+  const phase =
+    args[0] === "cp"
+      ? args.includes("--archive")
+        ? "upload"
+        : "download"
+      : args[0] === "rm"
+        ? "remove"
+        : args[0] === "image"
+          ? "image-inspect"
+          : (args[0] ?? "unknown");
+  let inputBytes = 0;
+  async function* countedInput() {
+    if (standardInput)
+      for await (const chunk of standardInput) {
+        inputBytes += chunk.byteLength;
+        yield chunk;
+      }
+  }
+  const control = args[0] === "start" ? undefined : context.controlRunner;
+  const result = await traceOperation(
+    phase,
+    { ...context.traceContext, timeoutMs, transport: control === undefined ? "cli" : "stdio-api" },
+    () =>
+      (control ?? context.runner)(
+        {
+          executable: executable as string,
+          args: [...prefix, ...args],
+          cwd: context.workingDirectory,
+          environment: Object.fromEntries(
+            Object.entries(process.env).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          ),
+          timeoutMs,
+          maximumOutputBytes,
+        },
+        standardInput === undefined ? undefined : countedInput(),
       ),
-      timeoutMs,
-      maximumOutputBytes,
-    },
-    standardInput,
+    (result) => ({
+      inputBytes,
+      runtimeInvocations: control === undefined ? 1 : 0,
+      ...(phase === "upload" ? { archiveReused: context.uploadReuse?.reused ?? false } : {}),
+      outcome: result?.outcome ?? null,
+      processDurationMs: result?.durationMs ?? null,
+    }),
   );
+  // Only cleanup can retry through the CLI after an ambiguous API failure.
+  if (
+    control !== undefined &&
+    result.outcome !== "PASS" &&
+    (args[0] === "kill" || args[0] === "rm")
+  ) {
+    const { controlRunner: _control, ...cliContext } = context;
+    return runtime(cliContext, args, timeoutMs, maximumOutputBytes);
+  }
+  return result;
+}
+
+export type ContainerTransport = "auto" | "cli" | "stdio";
+
+export function parseContainerTransport(value: unknown): ContainerTransport {
+  if (value === undefined) return "auto";
+  if (value === "auto" || value === "cli" || value === "stdio") return value;
+  throw new Error("CONTAINER_TRANSPORT_INVALID");
 }
 
 /** Validates an operator runtime command: a non-empty argv array, never a shell string. */
@@ -372,18 +442,109 @@ async function* workspaceEntries(directory: string, archivePath: string): AsyncG
   }
 }
 
-async function* uploadArchive(workspace: string, reporterSource?: string): AsyncGenerator<Buffer> {
+async function* uploadArchive(
+  workspace: string,
+  reporterSource?: string,
+  assets: ReadonlyArray<{ name: string; content: string }> = [],
+): AsyncGenerator<Buffer> {
   yield* entryHeaders("out/", "5", 0, 0o755, SANDBOX_ID);
-  if (reporterSource !== undefined) {
-    const reporter = Buffer.from(reporterSource, "utf8");
-    yield* entryHeaders("reporter/", "5", 0, 0o555, 0);
-    yield* entryHeaders("reporter/node-test-reporter.mjs", "0", reporter.length, 0o444, 0);
-    yield reporter;
-    yield padding(reporter.length);
+  const files = [
+    ...(reporterSource === undefined
+      ? []
+      : [{ name: "node-test-reporter.mjs", content: reporterSource }]),
+    ...assets,
+  ];
+  if (files.some((file) => !/^[a-z0-9][a-z0-9.-]{0,63}$/u.test(file.name))) {
+    throw new Error("CONTAINER_ASSET_NAME_INVALID");
+  }
+  if (new Set(files.map((file) => file.name)).size !== files.length) {
+    throw new Error("CONTAINER_ASSET_NAME_INVALID");
+  }
+  if (files.length > 0) yield* entryHeaders("reporter/", "5", 0, 0o555, 0);
+  for (const file of files) {
+    const bytes = Buffer.from(file.content, "utf8");
+    yield* entryHeaders(`reporter/${file.name}`, "0", bytes.length, 0o444, 0);
+    yield bytes;
+    yield padding(bytes.length);
   }
   yield* entryHeaders("repository/", "5", 0, 0o755, SANDBOX_ID);
   yield* workspaceEntries(workspace, "repository");
   yield Buffer.alloc(TAR_BLOCK_BYTES * 2, 0);
+}
+
+/** Compression coalesces small tar writes; the daemon extracts exactly the same archive. */
+async function* compressedUploadArchive(
+  workspace: string,
+  reporterSource?: string,
+  assets?: ReadonlyArray<{ name: string; content: string }>,
+): AsyncGenerator<Buffer> {
+  // Construct lazily: a failed runtime must not leave an unread stream opening workspace files.
+  const source = Readable.from(uploadArchive(workspace, reporterSource, assets), {
+    objectMode: false,
+  });
+  const compressed = source.compose(createGzip({ level: 1, chunkSize: 65_536 }));
+  try {
+    for await (const chunk of compressed) yield chunk as Buffer;
+  } finally {
+    compressed.destroy();
+    source.destroy();
+  }
+}
+
+/** Shares immutable transfer bytes within this campaign, never a writable workspace or result. */
+async function* executionUploadArchive(
+  backend: ContainerBackend,
+  execution: ContainerExecution,
+  metadata: { reused: boolean },
+): AsyncGenerator<Buffer> {
+  const source = () =>
+    compressedUploadArchive(execution.workspace, execution.reporterSource, execution.assets);
+  const store = backend.uploadArchives;
+  if (store === undefined || backend.workspaceIdentity === undefined) {
+    yield* source();
+    return;
+  }
+  const key = createHash("sha256")
+    .update(
+      JSON.stringify({
+        workspace: backend.workspaceIdentity,
+        reporter: execution.reporterSource ?? null,
+        assets: (execution.assets ?? []).map(({ name, content }) => ({ name, content })),
+      }),
+    )
+    .digest("hex");
+  const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+  const existing = store.entries.get(key);
+  if (existing !== undefined) {
+    if (existing.size === existing.bytes.length && existing.digest === digest(existing.bytes)) {
+      metadata.reused = true;
+      for (let offset = 0; offset < existing.bytes.length; offset += 65_536) {
+        // Each delivery owns its writable Buffer; readers cannot mutate the stored bytes.
+        yield Buffer.from(existing.bytes.subarray(offset, offset + 65_536));
+      }
+      return;
+    }
+    store.entries.delete(key);
+    store.bytes = Math.max(0, store.bytes - existing.size);
+  }
+  const chunks: Buffer[] = [];
+  let length = 0;
+  let retain = true;
+  for await (const chunk of source()) {
+    length += chunk.length;
+    if (retain && length > store.maximumBytes - store.bytes) {
+      retain = false;
+      chunks.length = 0;
+    }
+    if (retain) chunks.push(Buffer.from(chunk));
+    yield chunk;
+  }
+  // Reaching this line proves the complete producer stream was consumed, including gzip EOF.
+  if (retain && !store.entries.has(key) && length <= store.maximumBytes - store.bytes) {
+    const bytes = Buffer.concat(chunks, length);
+    store.entries.set(key, { bytes, digest: digest(bytes), size: bytes.length });
+    store.bytes += bytes.length;
+  }
 }
 
 function readOctal(header: Buffer, offset: number, length: number): number | undefined {
@@ -519,9 +680,27 @@ export async function runContainerExecution(
   runner: ContainerProcessRunner,
   workingDirectory: string,
 ): Promise<ContainerExecutionResult> {
-  const context: RuntimeContext = { command: backend.runtimeCommand, runner, workingDirectory };
+  return withRuntimeTrace([execution.workspace], () =>
+    runSingleContainerExecution(backend, execution, runner, workingDirectory),
+  );
+}
+
+async function runSingleContainerExecution(
+  backend: ContainerBackend,
+  execution: ContainerExecution,
+  runner: ContainerProcessRunner,
+  workingDirectory: string,
+): Promise<ContainerExecutionResult> {
+  const context: RuntimeContext = {
+    command: backend.runtimeCommand,
+    runner,
+    workingDirectory,
+    ...(backend.controlRunner === undefined ? {} : { controlRunner: backend.controlRunner }),
+  };
   const limits = backend.isolation.limits;
   const name = `assertledger-${randomUUID()}`;
+  context.traceContext = { ...backend.traceContext, container: name };
+  context.uploadReuse = { reused: false };
   const environment = new Map<string, string>(
     backend.isolation.environment.map(({ name: key, value }) => [key, value]),
   );
@@ -565,7 +744,7 @@ export async function runContainerExecution(
         ["cp", "--archive", "-", `${name}:${CONTAINER_ROOT}`],
         UPLOAD_TIMEOUT_MS,
         CONTROL_OUTPUT_BYTES,
-        uploadArchive(execution.workspace, execution.reporterSource),
+        executionUploadArchive(backend, execution, context.uploadReuse),
       );
       if (uploaded.outcome !== "PASS") {
         outcome = { process: infrastructureFailure(uploaded), result: undefined };

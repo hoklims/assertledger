@@ -1,0 +1,1398 @@
+import assert from "node:assert/strict";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { test } from "node:test";
+import type {
+  QualificationObservation,
+  QualificationPlan,
+  QualificationReceipt,
+} from "../src/contracts/qualification.js";
+import { canonicalize, sha256Canonical } from "../src/core/index.js";
+
+const corePath = "../src/core/qualification.js";
+const contractsPath = "../src/contracts/qualification.js";
+const core = await import(corePath).catch(() => ({}));
+const contracts = await import(contractsPath).catch(() => ({}));
+
+function present<T>(value: T | undefined): T {
+  assert.notEqual(value, undefined);
+  return value as T;
+}
+
+test("qualification exposes deterministic scope-bound decisions and strict plan parsing", () => {
+  assert.equal(typeof core.createQualificationReceipt, "function");
+  assert.equal(typeof core.replayQualificationReceipt, "function");
+  assert.equal(typeof contracts.parseQualificationPlan, "function");
+});
+
+function fixture(): QualificationPlan {
+  const digest = sha256Canonical("fixture");
+  return {
+    schemaVersion: "1.0.0",
+    profileId: "suite-local-v1",
+    subject: {
+      commit: "commit-a",
+      baseCommit: "base-a",
+      candidateDigest: digest,
+      inputDigest: digest,
+    },
+    tools: [{ id: "node", version: "22.15.0", digest }],
+    suites: [{ id: "tests", files: ["tests/sample.test.js"], extraction: "COMPLETE" }],
+    obligations: [
+      {
+        id: "propagation",
+        kind: "propagation",
+        required: true,
+        suiteIds: ["tests"],
+        checks: [{ id: "exit", actionId: "gate", field: "exitCode", expected: 1 }],
+        limits: [],
+      },
+    ],
+    actions: [
+      {
+        id: "gate",
+        adapter: "command",
+        executable: "/usr/bin/node",
+        arguments: ["gate.js"],
+        environment: {},
+        prepareFiles: [],
+        removePaths: [],
+        observe: { trace: true, outputs: [], report: null },
+      },
+    ],
+    worlds: [
+      { id: "reference", kind: "REFERENCE", files: [], discriminants: [] },
+      {
+        id: "fault",
+        kind: "TARGET",
+        files: [{ path: "gate.js", content: "process.exit(0);" }],
+        discriminants: [{ obligationId: "propagation", checkIds: ["exit"] }],
+      },
+      { id: "neutral", kind: "NEUTRAL", files: [], discriminants: [] },
+    ],
+    requiredAttempts: 2,
+    timeoutMs: 1000,
+    maximumOutputBytes: 65536,
+    isolation: { kind: "trusted-local", acknowledgedUnsafeExecution: true },
+    allowedCandidatePaths: ["candidate.test.js"],
+  };
+}
+
+function retainReport(
+  record: QualificationObservation,
+  report: QualificationObservation["facts"] = {
+    exitCode: record.facts.exitCode ?? null,
+    commandOutcome: record.facts.commandOutcome ?? null,
+  },
+): void {
+  const nonce = `${record.worldId}/${record.attempt}/${record.actionId}`;
+  record.facts.report = report;
+  record.facts.reportNonce = nonce;
+  record.facts.reportProvenance = "STRUCTURED_ADAPTER_REPORTED";
+  record.facts.reportDigest = `sha256:${createHash("sha256")
+    .update(`${canonicalize({ facts: report, nonce, protocolVersion: "1.0.0" })}\n`)
+    .digest("hex")}`;
+  record.facts.terminal = {
+    exitCode: record.facts.exitCode ?? null,
+    explicit: true,
+    exceptional: false,
+    natural: false,
+    nonce,
+    protocolVersion: "1.0.0",
+    ready: true,
+    runtime: "node",
+    runtimeVersion: "22.15.0",
+  };
+  record.facts.terminalDigest = `sha256:${createHash("sha256")
+    .update(`${canonicalize(record.facts.terminal)}\n`)
+    .digest("hex")}`;
+  record.facts.terminalProvenance = "ENGINE_LIFECYCLE_OBSERVED";
+}
+
+function observations(plan: QualificationPlan): QualificationObservation[] {
+  const { planDigest } = core.sealQualificationPlan(plan);
+  const records = plan.worlds.flatMap((world) =>
+    Array.from({ length: plan.requiredAttempts }, (_, index) =>
+      plan.actions.map((action) => ({
+        worldId: world.id,
+        attempt: index + 1,
+        actionId: action.id,
+        state: "COMPLETED" as const,
+        facts: {
+          exitCode: world.kind === "TARGET" ? 0 : 1,
+          commandOutcome: world.kind === "TARGET" ? "PASS" : "EXPECTED_FAILURE",
+          testsDiscovered: 1,
+          skippedTests: 0,
+          cancelledTests: 0,
+          todoTests: 0,
+          testFiles: plan.suites.flatMap((suite) => suite.files),
+          assertionFailureFiles:
+            world.kind === "TARGET" ? [] : plan.suites.flatMap((suite) => suite.files),
+          attributed: true,
+          testOutcome: world.kind === "TARGET" ? "PASS" : "ASSERTION_FAILURE",
+        },
+        bindingDigest: core.qualificationBinding(
+          planDigest,
+          plan.subject.candidateDigest,
+          world.id,
+          index + 1,
+          action.id,
+        ),
+      })),
+    ).flat(),
+  );
+  for (const record of records) retainReport(record);
+  return records;
+}
+
+function receipt(plan = fixture(), records = observations(plan)): QualificationReceipt {
+  return core.createQualificationReceipt({
+    ...core.sealQualificationPlan(plan),
+    candidateDigest: plan.subject.candidateDigest,
+    observations: records,
+    provenance: {
+      engineVersion: "1.0.0",
+      adapterVersions: {
+        command: "1.0.0",
+        turbo: "1.0.0",
+        "node-test": "1.0.0",
+        "bun-native": "1.0.0",
+      },
+      runtime: {
+        mechanismDigest: sha256Canonical("fixture-mechanism"),
+        platform: "linux",
+        architecture: "x64",
+        node: "22.15.0",
+        tools: Object.fromEntries(
+          plan.tools.map((tool) => [
+            tool.id,
+            {
+              executable: tool.versionCommand?.executable ?? "/usr/bin/node",
+              identityPath: tool.identityPath ?? "/usr/bin/node",
+              digest: tool.digest,
+              version: tool.version,
+              versionArguments: tool.versionCommand?.arguments ?? ["--version"],
+            },
+          ]),
+        ),
+        collectorDigest: sha256Canonical("fixture-collector"),
+        snapshotExcludes: [".git", ".testforge", ".turbo", "coverage", "node_modules"],
+        dependencySnapshot: "EXCLUDED_NODE_MODULES",
+      },
+      executionTrust: "TRUSTED_LOCAL_UNSANDBOXED",
+    },
+    externalCi: null,
+  });
+}
+
+function twoSuiteActions(): QualificationPlan {
+  const plan = fixture();
+  const first = present(plan.actions[0]);
+  first.adapter = "node-test";
+  first.arguments = ["tests/sample.test.js"];
+  plan.actions.push({ ...structuredClone(first), id: "other", arguments: ["tests/other.test.js"] });
+  present(plan.obligations[0]).checks = [
+    { id: "outcome", actionId: "other", field: "testOutcome", expected: "PASS" },
+  ];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["outcome"] }];
+  return plan;
+}
+
+test("runtime provenance completeness and sealed tool concordance are required for default replay", () => {
+  const baseline = receipt();
+  assert.equal(core.replayQualificationReceipt(baseline).valid, true);
+  const runtime = baseline.provenance.runtime as Record<string, unknown>;
+  const variants: unknown[] = [
+    null,
+    {},
+    ...Object.keys(runtime).map((field) => {
+      const copy = structuredClone(runtime);
+      delete copy[field];
+      return copy;
+    }),
+    ...Object.keys(runtime).map((field) => ({ ...runtime, [field]: null })),
+  ];
+  for (const field of ["digest", "version", "executable", "identityPath", "versionArguments"]) {
+    const copy = structuredClone(runtime);
+    const tools = copy.tools as Record<string, Record<string, unknown>>;
+    delete present(tools.node)[field];
+    variants.push(copy);
+  }
+  for (const change of [
+    { tools: {} },
+    {
+      tools: {
+        ...(runtime.tools as object),
+        extra: (runtime.tools as Record<string, object>).node,
+      },
+    },
+    { node: "" },
+    { mechanismDigest: "invalid" },
+    { collectorDigest: null },
+    { snapshotExcludes: [] },
+    { dependencySnapshot: "COPIED_NODE_MODULES" },
+    {
+      tools: { node: { ...(runtime.tools as Record<string, object>).node, version: "different" } },
+    },
+    {
+      tools: {
+        node: {
+          ...(runtime.tools as Record<string, object>).node,
+          digest: sha256Canonical("other"),
+        },
+      },
+    },
+    {
+      tools: {
+        node: { ...(runtime.tools as Record<string, object>).node, executable: "/other/node" },
+      },
+    },
+    {
+      tools: { node: { ...(runtime.tools as Record<string, object>).node, versionArguments: [] } },
+    },
+  ])
+    variants.push({ ...runtime, ...change });
+  for (const changed of variants) {
+    const altered = structuredClone(baseline);
+    altered.provenance.runtime = changed as QualificationReceipt["provenance"]["runtime"];
+    let refused = false;
+    try {
+      refused = core.createQualificationReceipt(altered).decision === "REJECTED";
+    } catch {
+      refused = true;
+    }
+    assert.equal(refused, true, JSON.stringify(changed));
+    assert.equal(
+      core.replayQualificationReceipt(reseal(altered)).valid,
+      false,
+      JSON.stringify(changed),
+    );
+  }
+  const plan = fixture();
+  present(plan.tools[0]).identityPath = "/aliases/node";
+  present(plan.tools[0]).versionCommand = {
+    executable: "/usr/bin/node",
+    arguments: ["-p", "process.versions.node"],
+  };
+  const alias = receipt(plan);
+  present(alias.provenance.runtime.tools.node).identityPath = "/resolved/node";
+  assert.equal(core.replayQualificationReceipt(reseal(alias)).valid, true);
+  present(alias.provenance.runtime.tools.node).versionArguments = ["--version"];
+  assert.equal(core.createQualificationReceipt(alias).decision, "REJECTED");
+  assert.equal(core.replayQualificationReceipt(reseal(alias)).valid, false);
+});
+
+test("completed Node PASS and assertion observations cannot conceal skipped cancelled or todo tests", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  present(plan.obligations[0]).kind = "tests";
+  present(plan.obligations[0]).checks = [
+    { id: "outcome", actionId: "gate", field: "testOutcome", expected: "PASS" },
+  ];
+  present(plan.actions[0]).arguments = ["tests/sample.test.js"];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["outcome"] }];
+  const baselineRecords = observations(plan);
+  for (const record of baselineRecords) {
+    const failed = record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = failed ? ["tests/sample.test.js"] : [];
+  }
+  const baseline = receipt(plan, baselineRecords);
+  assert.equal(baseline.decision, "QUALIFIED");
+  for (const world of ["reference", "fault"]) {
+    for (const field of ["skippedTests", "cancelledTests", "todoTests"]) {
+      for (const value of [undefined, null, "0", false, -1, 0.5, 1]) {
+        const altered = structuredClone(baseline);
+        const record = present(altered.observations.find((item) => item.worldId === world));
+        if (value === undefined) delete record.facts[field];
+        else record.facts[field] = value;
+        assert.equal(
+          core.createQualificationReceipt(altered).decision,
+          "REJECTED",
+          `${world}:${field}:${value}`,
+        );
+        assert.equal(
+          core.replayQualificationReceipt(reseal(altered)).valid,
+          false,
+          `${world}:${field}:${value}`,
+        );
+      }
+    }
+  }
+  present(plan.actions[0]).adapter = "bun-native";
+  const records = observations(plan);
+  for (const record of records) {
+    const failed = record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = failed ? ["tests/sample.test.js"] : [];
+    for (const field of ["skippedTests", "cancelledTests", "todoTests"]) delete record.facts[field];
+  }
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
+  present(plan.actions[0]).adapter = "node-test";
+  const operational = observations(plan);
+  for (const record of operational) {
+    const failed = record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "COLLECTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = [];
+    if (failed) {
+      record.state = "COLLECTION_ERROR";
+      for (const field of ["skippedTests", "cancelledTests", "todoTests"])
+        delete record.facts[field];
+    }
+  }
+  assert.equal(receipt(plan, operational).decision, "OPEN");
+});
+
+function suiteRecords(plan: QualificationPlan): QualificationObservation[] {
+  const records = observations(plan);
+  for (const record of records) {
+    const failed = record.actionId === "gate" || record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.testFiles =
+      record.actionId === "gate" ? ["tests/sample.test.js"] : ["tests/other.test.js"];
+    record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
+  }
+  return records;
+}
+
+test("suite files from an unchecked action cannot qualify another action's obligation", () => {
+  const plan = twoSuiteActions();
+  const evidence = receipt(plan, suiteRecords(plan));
+  assert.equal(evidence.decision, "OPEN");
+  assert.ok(
+    present(evidence.assessments[0]).reasons.some((reason: string) =>
+      reason.startsWith("SUITE_FILE_NOT_OBSERVED:"),
+    ),
+  );
+});
+
+test("test suite baseline failures cannot hide behind passing discovery count checks", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks.push({ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 });
+  const evidence = receipt(plan, suiteRecords(plan));
+  assert.equal(evidence.decision, "REJECTED");
+});
+
+test("test plans require checked native test actions routed to every declared suite file", () => {
+  const plan = twoSuiteActions();
+  present(plan.obligations[0]).kind = "tests";
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Test suite requires a checked test action/u,
+  );
+});
+
+test("correctly bound passing suite baselines and owned assertion faults qualify independently", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks = [{ id: "outcome", actionId: "gate", field: "testOutcome", expected: "PASS" }];
+  const records = suiteRecords(plan);
+  for (const record of records) {
+    const failed = record.actionId === "other" || record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
+  }
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "QUALIFIED");
+  assert.equal(core.replayQualificationReceipt(evidence).valid, true);
+  for (const state of ["COLLECTION_ERROR", "NO_TESTS"] as const) {
+    const failedRecords = structuredClone(records);
+    for (const record of failedRecords.filter(
+      (item) => item.actionId === "gate" && item.worldId === "fault",
+    ))
+      record.state = state;
+    assert.equal(receipt(plan, failedRecords).decision, "OPEN");
+  }
+});
+
+test("passing test targets cannot receive detection credit from discovery-count mismatches", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks = [{ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 }];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["count"] }];
+  const records = suiteRecords(plan);
+  for (const record of records.filter((item) => item.actionId === "gate")) {
+    record.facts.exitCode = 0;
+    record.facts.testOutcome = "PASS";
+    record.facts.assertionFailureFiles = [];
+    record.facts.testsDiscovered = record.worldId === "fault" ? 2 : 1;
+  }
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "OPEN");
+  assert.ok(present(evidence.assessments[0]).reasons.includes("FAULT_NOT_DETECTED:fault:1"));
+  obligation.kind = "selection";
+  const { planDigest } = core.sealQualificationPlan(plan);
+  for (const record of records)
+    record.bindingDigest = core.qualificationBinding(
+      planDigest,
+      plan.subject.candidateDigest,
+      record.worldId,
+      record.attempt,
+      record.actionId,
+    );
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
+});
+
+test("test target detection requires its own complete attributed assertion report", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks = [{ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 }];
+  present(plan.worlds[1]).discriminants = [{ obligationId: "propagation", checkIds: ["count"] }];
+  const records = suiteRecords(plan);
+  for (const record of records.filter((item) => item.actionId === "gate")) {
+    record.facts.exitCode = record.worldId === "fault" ? 1 : 0;
+    record.facts.testOutcome = record.worldId === "fault" ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles =
+      record.worldId === "fault" ? (record.facts.testFiles ?? []) : [];
+    record.facts.testsDiscovered = record.worldId === "fault" ? 2 : 1;
+  }
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
+  for (const mutation of [
+    "TIMEOUT",
+    "COLLECTION_ERROR",
+    "UNATTRIBUTED",
+    "MISSING_REPORT",
+    "ZERO_TESTS",
+  ] as const) {
+    const altered = structuredClone(records);
+    for (const record of altered.filter(
+      (item) => item.actionId === "gate" && item.worldId === "fault",
+    )) {
+      if (mutation === "UNATTRIBUTED") record.facts.attributed = false;
+      else if (mutation === "MISSING_REPORT") delete record.facts.testOutcome;
+      else if (mutation === "ZERO_TESTS") record.facts.testsDiscovered = 0;
+      else record.state = mutation;
+    }
+    const evidence = receipt(plan, altered);
+    assert.notEqual(evidence.decision, "QUALIFIED", mutation);
+    assert.deepEqual(evidence.coveredGuaranteeIds, []);
+  }
+});
+
+test("an assertion in another suite cannot satisfy a checked passing suite's test discriminant", () => {
+  const plan = twoSuiteActions();
+  const obligation = present(plan.obligations[0]);
+  obligation.kind = "tests";
+  obligation.checks.push({ id: "count", actionId: "gate", field: "testsDiscovered", expected: 1 });
+  const records = suiteRecords(plan);
+  for (const record of records.filter((item) => item.actionId === "gate")) {
+    record.facts.exitCode = 0;
+    record.facts.testOutcome = "PASS";
+    record.facts.assertionFailureFiles = [];
+  }
+  assert.equal(receipt(plan, records).decision, "OPEN");
+});
+
+test("rehashed missing and contradictory assertion owning-file reports invalidate replay", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  const baseline = receipt(plan);
+  assert.equal(baseline.decision, "QUALIFIED");
+  for (const files of [
+    null,
+    [],
+    ["unobserved.test.js"],
+    ["tests/sample.test.js", "tests/sample.test.js"],
+    ["../tests/sample.test.js"],
+  ]) {
+    const altered = structuredClone(baseline);
+    const record = present(altered.observations[0]);
+    if (files === null) delete record.facts.assertionFailureFiles;
+    else record.facts.assertionFailureFiles = files;
+    assert.equal(core.createQualificationReceipt(altered).decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+  }
+  const altered = structuredClone(baseline);
+  const passing = present(altered.observations.find((item) => item.worldId === "fault"));
+  passing.facts.assertionFailureFiles = ["tests/sample.test.js"];
+  assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+});
+
+test("native discovery and started-file inventories remain concordant during receipt creation and replay", () => {
+  for (const adapter of ["node-test", "bun-native"] as const) {
+    const plan = fixture();
+    present(plan.actions[0]).adapter = adapter;
+    present(plan.actions[0]).arguments = ["tests/a.test.js", "tests/b.test.js"];
+    present(plan.suites[0]).files = ["tests/a.test.js", "tests/b.test.js"];
+    const obligation = present(plan.obligations[0]);
+    obligation.kind = "tests";
+    obligation.checks = [
+      { id: "outcome", actionId: "gate", field: "testOutcome", expected: "PASS" },
+    ];
+    present(plan.worlds[1]).discriminants = [
+      { obligationId: "propagation", checkIds: ["outcome"] },
+    ];
+    const records = observations(plan);
+    for (const record of records) {
+      const failed = record.worldId === "fault";
+      record.facts.exitCode = failed ? 1 : 0;
+      record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+      record.facts.testsDiscovered = 2;
+      record.facts.assertionFailureFiles = failed ? present(plan.suites[0]).files : [];
+    }
+    const baseline = receipt(plan, records);
+    assert.equal(baseline.decision, "QUALIFIED", adapter);
+    assert.equal(core.replayQualificationReceipt(baseline).valid, true, adapter);
+    for (const count of [1, undefined, null, "2", 1.5, -1, 0]) {
+      const altered = structuredClone(baseline);
+      const record = present(altered.observations.find((item) => item.worldId === "fault"));
+      if (count === undefined) delete record.facts.testsDiscovered;
+      else record.facts.testsDiscovered = count;
+      assert.equal(
+        core.createQualificationReceipt(altered).decision,
+        "REJECTED",
+        `${adapter}:${count}`,
+      );
+      assert.equal(
+        core.replayQualificationReceipt(reseal(altered)).valid,
+        false,
+        `${adapter}:${count}`,
+      );
+    }
+    for (const files of [
+      [],
+      ["tests/a.test.js", "tests/a.test.js", "tests/b.test.js"],
+      ["tests/b.test.js", "tests/a.test.js"],
+      ["../tests/a.test.js", "tests/b.test.js"],
+    ]) {
+      const altered = structuredClone(baseline);
+      present(altered.observations[0]).facts.testFiles = files;
+      assert.equal(core.createQualificationReceipt(altered).decision, "REJECTED", adapter);
+      assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false, adapter);
+    }
+  }
+});
+
+test("replay refuses reuse under a changed proof mechanism", () => {
+  const evidence = receipt();
+  const domain = {
+    planDigest: evidence.planDigest,
+    candidateDigest: evidence.candidateDigest,
+    inputDigest: evidence.plan.subject.inputDigest,
+    commit: evidence.plan.subject.commit,
+    baseCommit: evidence.plan.subject.baseCommit,
+    mechanismDigest: sha256Canonical("new-mechanism"),
+  };
+  assert.equal(
+    core.replayQualificationReceipt(evidence, domain).valid,
+    false,
+    "changed proof mechanism was accepted",
+  );
+});
+
+test("a declared complete suite with an unobserved file remains open", () => {
+  const records = observations(fixture());
+  for (const observation of records) observation.facts.testFiles = [];
+  assert.equal(
+    receipt(fixture(), records).decision,
+    "OPEN",
+    "unobserved declared suite was credited",
+  );
+});
+
+test("completed command facts cannot conceal a crash or invalid exit code", () => {
+  for (const exitCode of [null, 0.5, true]) {
+    const records = observations(fixture());
+    for (const observation of records.filter((item) => item.worldId === "fault"))
+      observation.facts.exitCode = exitCode;
+    const evidence = receipt(fixture(), records);
+    assert.equal(evidence.decision, "REJECTED", "contradictory completed command was credited");
+    assert.equal(core.replayQualificationReceipt(evidence).valid, false);
+  }
+});
+
+test("CI observation import requires an intact source receipt", () => {
+  assert.equal(typeof core.admitQualificationCi, "function", "signed observation importer missing");
+  assert.throws(
+    () =>
+      core.admitQualificationCi({ ...receipt(), artifactDigest: sha256Canonical("tamper") }, {}),
+    /SOURCE_RECEIPT_INVALID/u,
+  );
+});
+
+function reseal(value: QualificationReceipt): QualificationReceipt {
+  const {
+    planDigest,
+    candidateDigest,
+    assessments,
+    coveredGuaranteeIds,
+    openGuaranteeIds,
+    decision,
+  } = value;
+  value.decisionDigest = sha256Canonical({
+    planDigest,
+    candidateDigest,
+    assessments,
+    coveredGuaranteeIds,
+    openGuaranteeIds,
+    decision,
+  });
+  const { artifactDigest: _discarded, ...artifact } = value;
+  value.artifactDigest = sha256Canonical(artifact);
+  return value;
+}
+
+test("unknown adapter versions reject creation and fully resealed replay", () => {
+  for (const [adapter, version] of [
+    ...["command", "turbo", "node-test", "bun-native", "ci-config"].flatMap((adapter) =>
+      ["999.0.0", "garbage"].map((version) => [adapter, version] as const),
+    ),
+    ["unknown-collector", "1.0.0"],
+  ] as const) {
+    const value = receipt();
+    value.provenance.adapterVersions[adapter] = version;
+    const recreated = core.createQualificationReceipt({
+      ...core.sealQualificationPlan(value.plan),
+      candidateDigest: value.candidateDigest,
+      observations: value.observations,
+      provenance: value.provenance,
+      externalCi: null,
+    });
+    assert.equal(recreated.decision, "REJECTED");
+    const forged = reseal(value);
+    assert.equal(core.replayQualificationReceipt(forged).valid, false);
+    assert.equal(
+      core.replayQualificationReceipt(forged, {
+        planDigest: forged.planDigest,
+        candidateDigest: forged.candidateDigest,
+        inputDigest: forged.plan.subject.inputDigest,
+        commit: forged.plan.subject.commit,
+        baseCommit: forged.plan.subject.baseCommit,
+        mechanismDigest: forged.provenance.runtime.mechanismDigest,
+      }).valid,
+      false,
+    );
+  }
+});
+
+test("missing contradictory altered and reused terminal observations reject resealed replay", () => {
+  for (const mutate of [
+    (facts: QualificationObservation["facts"]) => {
+      delete facts.terminal;
+    },
+    (facts: QualificationObservation["facts"]) => {
+      facts.terminalDigest = sha256Canonical("tamper");
+    },
+    (facts: QualificationObservation["facts"]) => {
+      facts.terminalProvenance = "STRUCTURED_ADAPTER_REPORTED";
+    },
+    (facts: QualificationObservation["facts"]) => {
+      const terminal = facts.terminal as Record<string, never>;
+      Object.assign(terminal, { exceptional: true });
+      facts.terminalDigest = `sha256:${createHash("sha256")
+        .update(`${canonicalize(terminal)}\n`)
+        .digest("hex")}`;
+    },
+    (facts: QualificationObservation["facts"]) => {
+      const terminal = facts.terminal as Record<string, never>;
+      Object.assign(terminal, { exitCode: 9 });
+      facts.terminalDigest = `sha256:${createHash("sha256")
+        .update(`${canonicalize(terminal)}\n`)
+        .digest("hex")}`;
+    },
+    (facts: QualificationObservation["facts"]) => {
+      const terminal = facts.terminal as Record<string, never>;
+      Object.assign(terminal, { runtimeVersion: "999.0.0" });
+      facts.terminalDigest = `sha256:${createHash("sha256")
+        .update(`${canonicalize(terminal)}\n`)
+        .digest("hex")}`;
+    },
+  ]) {
+    const value = receipt();
+    mutate(present(value.observations[0]).facts);
+    assert.equal(core.createQualificationReceipt(value).decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(reseal(value)).valid, false);
+  }
+  const reused = receipt();
+  const first = present(reused.observations[0]).facts;
+  const second = present(reused.observations[1]).facts;
+  second.terminal = present(first.terminal);
+  second.terminalDigest = present(first.terminalDigest);
+  assert.equal(core.replayQualificationReceipt(reseal(reused)).valid, false);
+});
+
+test("opaque zero completion is bounded to exit-zero checks and cannot become semantic evidence", () => {
+  const plan = fixture();
+  present(plan.actions[0]).observe.trace = false;
+  present(present(plan.obligations[0]).checks[0]).expected = 0;
+  const records = observations(plan);
+  for (const record of records)
+    record.facts = {
+      exitCode: 0,
+      commandOutcome: "PASS",
+      stdoutDigest: sha256Canonical("stdout"),
+      stderrDigest: sha256Canonical("stderr"),
+      terminalProvenance: "PROCESS_EXIT_ZERO",
+    };
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "OPEN");
+  assert.equal(core.replayQualificationReceipt(evidence).valid, true);
+  for (const extra of [
+    { exitCode: 1 },
+    { report: {} },
+    { outputs: {} },
+    { terminal: {} },
+    { commandOutcome: "EXPECTED_FAILURE" },
+  ]) {
+    const altered = structuredClone(records);
+    Object.assign(present(altered[0]).facts, extra);
+    assert.equal(receipt(plan, altered).decision, "REJECTED");
+  }
+  present(present(plan.obligations[0]).checks[0]).expected = 7;
+  assert.equal(receipt(plan, records).decision, "REJECTED");
+});
+
+test("resealed contradictory nested command reports invalidate replay", () => {
+  const evidence = receipt();
+  const record = present(evidence.observations[0]);
+  const report = { commandOutcome: "PASS", exitCode: 0 };
+  record.facts.report = report;
+  record.facts.reportDigest = `sha256:${createHash("sha256")
+    .update(
+      `${canonicalize({ facts: report, nonce: record.facts.reportNonce, protocolVersion: "1.0.0" })}\n`,
+    )
+    .digest("hex")}`;
+  assert.equal(core.replayQualificationReceipt(reseal(evidence)).valid, false);
+  assert.equal(core.createQualificationReceipt(evidence).decision, "REJECTED");
+});
+
+test("missing altered and duplicate retained reports invalidate resealed replay", () => {
+  for (const mutate of [
+    (evidence: QualificationReceipt) => {
+      delete present(evidence.observations[0]).facts.report;
+    },
+    (evidence: QualificationReceipt) => {
+      delete present(evidence.observations[0]).facts.reportNonce;
+    },
+    (evidence: QualificationReceipt) => {
+      present(evidence.observations[0]).facts.reportDigest = sha256Canonical("altered");
+    },
+    (evidence: QualificationReceipt) => {
+      Object.assign(present(evidence.observations[1]).facts, {
+        reportNonce: present(evidence.observations[0]).facts.reportNonce,
+        reportDigest: present(evidence.observations[0]).facts.reportDigest,
+      });
+    },
+  ]) {
+    const evidence = receipt();
+    mutate(evidence);
+    assert.equal(core.replayQualificationReceipt(reseal(evidence)).valid, false);
+    assert.equal(core.createQualificationReceipt(evidence).decision, "REJECTED");
+  }
+});
+
+test("nonzero command completion requires a retained semantic report", () => {
+  const records = observations(fixture());
+  for (const record of records) {
+    delete record.facts.report;
+    delete record.facts.reportNonce;
+    delete record.facts.reportDigest;
+    delete record.facts.reportProvenance;
+  }
+  assert.equal(receipt(fixture(), records).decision, "REJECTED");
+});
+
+test("successful command reports permit generic facts and require consistent completion pairs", () => {
+  for (const report of [
+    { selected: ["leaf"] },
+    { commandOutcome: "PASS", exitCode: 0 },
+    { commandOutcome: "PASS" },
+    { exitCode: 0 },
+    { commandOutcome: "EXPECTED_FAILURE", exitCode: 7 },
+  ]) {
+    const records = observations(fixture());
+    for (const record of records.filter((item) => item.worldId === "fault"))
+      retainReport(record, report);
+    const evidence = receipt(fixture(), records);
+    const valid =
+      "selected" in report || (report.commandOutcome === "PASS" && report.exitCode === 0);
+    assert.equal(evidence.decision, valid ? "QUALIFIED" : "REJECTED");
+    assert.equal(core.replayQualificationReceipt(evidence).valid, valid);
+  }
+});
+
+test("expected nonzero reference and neutral results qualify a propagated-failure contract", () => {
+  const result = receipt();
+  assert.equal(result.decision, "QUALIFIED");
+  assert.deepEqual(result.coveredGuaranteeIds, ["propagation"]);
+  assert.deepEqual(core.replayQualificationReceipt(result), {
+    valid: true,
+    integrityValid: true,
+    semanticsValid: true,
+    domainValid: true,
+    reexecuted: false,
+    producerAuthenticated: false,
+  });
+});
+
+for (const state of ["TIMEOUT", "CRASH", "INFRA_ERROR", "COLLECTION_ERROR", "NO_TESTS"] as const) {
+  test(`a target ${state} never receives correct detection credit`, () => {
+    const plan = fixture();
+    const records = observations(plan);
+    for (const record of records) if (record.worldId === "fault") record.state = state;
+    const result = receipt(plan, records);
+    assert.equal(result.decision, "OPEN");
+    assert.deepEqual(result.coveredGuaranteeIds, []);
+  });
+}
+
+test("incomplete extraction and omitted suites remain named open obligations", () => {
+  for (const extraction of ["UNAVAILABLE", "OMITTED"] as const) {
+    const plan = fixture();
+    present(plan.suites[0]).extraction = extraction;
+    present(plan.obligations[0]).suiteIds = ["tests"];
+    const result = receipt(plan);
+    assert.equal(result.decision, "OPEN");
+    assert.ok(present(result.assessments[0]).reasons.includes("SUITE_NOT_EXTRACTED:tests"));
+  }
+});
+
+test("target worlds require an assigned discriminant", () => {
+  const plan = fixture();
+  present(plan.worlds[1]).discriminants = [];
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Target world requires a discriminant/u,
+  );
+});
+
+test("an additional unassigned target cannot disappear from admission", () => {
+  const plan = fixture();
+  plan.worlds.push({ id: "ignored-fault", kind: "TARGET", files: [], discriminants: [] });
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Target world requires a discriminant/u,
+  );
+});
+
+test("ordinary nonzero command results cannot qualify baseline or target evidence", () => {
+  for (const adapter of ["command", "turbo"] as const) {
+    for (const worldId of ["reference", "fault", "neutral"]) {
+      const plan = fixture();
+      present(plan.actions[0]).adapter = adapter;
+      if (worldId === "fault") present(present(plan.obligations[0]).checks[0]).expected = 0;
+      const records = observations(plan);
+      for (const record of records) {
+        if (worldId === "fault") record.facts.exitCode = record.worldId === "fault" ? 1 : 0;
+        record.facts.commandOutcome = record.facts.exitCode === 0 ? "PASS" : "EXPECTED_FAILURE";
+        retainReport(record);
+        if (record.worldId === worldId) {
+          delete record.facts.commandOutcome;
+          delete record.facts.report;
+          delete record.facts.reportNonce;
+          delete record.facts.reportDigest;
+          delete record.facts.reportProvenance;
+        }
+      }
+      const evidence = receipt(plan, records);
+      assert.notEqual(
+        evidence.decision,
+        "QUALIFIED",
+        `${adapter}/${worldId} ordinary error received credit`,
+      );
+      assert.ok(
+        present(evidence.assessments[0]).reasons.some((reason: string) =>
+          reason.startsWith("OPERATIONAL_FAILURE:"),
+        ),
+      );
+    }
+  }
+});
+
+test("a target assigned only to live CI cannot disappear from local admission", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).kind = "ci-live";
+  assert.throws(
+    () => contracts.parseQualificationPlan(plan),
+    /Target discriminant requires a locally evaluated obligation/u,
+  );
+});
+
+test("contradictory command completion facts reject resealed evidence", () => {
+  for (const facts of [
+    { exitCode: 1, commandOutcome: "PASS" },
+    { exitCode: 0, commandOutcome: "EXPECTED_FAILURE" },
+    { exitCode: 1, commandOutcome: "ASSERTION_FAILURE" },
+  ]) {
+    const records = observations(fixture());
+    Object.assign(present(records[0]).facts, facts);
+    const evidence = receipt(fixture(), records);
+    assert.equal(evidence.decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(evidence).valid, false);
+  }
+});
+
+test("optional target operational failures remain open without contaminating unrelated required scope", () => {
+  const plan = fixture();
+  plan.actions.push({ ...structuredClone(present(plan.actions[0])), id: "optional-gate" });
+  plan.obligations.push({
+    ...structuredClone(present(plan.obligations[0])),
+    id: "optional",
+    required: false,
+    suiteIds: [],
+    checks: [{ id: "exit", actionId: "optional-gate", field: "exitCode", expected: 1 }],
+  });
+  plan.worlds.push({
+    id: "optional-fault",
+    kind: "TARGET",
+    files: [],
+    discriminants: [{ obligationId: "optional", checkIds: ["exit"] }],
+  });
+  const records = observations(plan);
+  for (const record of records) {
+    const assignedTarget =
+      record.worldId === (record.actionId === "gate" ? "fault" : "optional-fault");
+    record.facts.exitCode = assignedTarget ? 0 : 1;
+    record.facts.commandOutcome = assignedTarget ? "PASS" : "EXPECTED_FAILURE";
+    retainReport(record);
+    if (record.actionId === "optional-gate" && record.worldId === "optional-fault")
+      record.state = "COLLECTION_ERROR";
+  }
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "QUALIFIED");
+  assert.deepEqual(evidence.coveredGuaranteeIds, ["propagation"]);
+  assert.deepEqual(evidence.openGuaranteeIds, ["optional"]);
+  assert.equal(
+    present(
+      evidence.assessments.find(
+        (item: { obligationId: string }) => item.obligationId === "optional",
+      ),
+    ).status,
+    "OPEN",
+  );
+  present(plan.obligations[1]).required = true;
+  const requiredRecords = observations(plan);
+  for (const record of requiredRecords)
+    if (record.actionId === "optional-gate" && record.worldId === "optional-fault")
+      record.state = "COLLECTION_ERROR";
+  assert.equal(receipt(plan, requiredRecords).decision, "OPEN");
+});
+
+test("collector semantic completion supports an expected failure code seven", () => {
+  const plan = fixture();
+  present(present(plan.obligations[0]).checks[0]).expected = 7;
+  const records = observations(plan);
+  for (const record of records) {
+    if (record.worldId !== "fault") record.facts.exitCode = 7;
+    retainReport(record);
+  }
+  assert.equal(receipt(plan, records).decision, "QUALIFIED");
+});
+
+test("missing completed-process exit facts reject the evidence and invalidate replay", () => {
+  const plan = fixture();
+  const records = observations(plan);
+  for (const record of records) if (record.worldId === "fault") delete record.facts.exitCode;
+  const evidence = receipt(plan, records);
+  assert.equal(evidence.decision, "REJECTED");
+  assert.equal(core.replayQualificationReceipt(evidence).valid, false);
+});
+
+test("unobserved non-process facts leave the obligation open", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).checks.push({
+    id: "selected",
+    actionId: "gate",
+    field: "selected",
+    expected: ["leaf"],
+  });
+  const evidence = receipt(plan);
+  assert.equal(evidence.decision, "OPEN");
+  assert.deepEqual(evidence.coveredGuaranteeIds, []);
+});
+
+test("unrelated mismatch cannot count as the declared target witness", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).checks.push({
+    id: "selected",
+    actionId: "gate",
+    field: "selected",
+    expected: ["leaf"],
+  });
+  const records = observations(plan);
+  for (const record of records) {
+    record.facts.exitCode = 1;
+    record.facts.commandOutcome = "EXPECTED_FAILURE";
+    retainReport(record);
+    record.facts.selected = record.worldId === "fault" ? [] : ["leaf"];
+  }
+  assert.equal(receipt(plan, records).decision, "OPEN");
+});
+
+test("every declared fault must discriminate in every repeat", () => {
+  const plan = fixture();
+  const records = observations(plan);
+  const repeated = present(
+    records.find((record) => record.worldId === "fault" && record.attempt === 2),
+  );
+  repeated.facts.exitCode = 1;
+  repeated.facts.commandOutcome = "EXPECTED_FAILURE";
+  retainReport(repeated);
+  const result = receipt(plan, records);
+  assert.equal(result.decision, "OPEN");
+  assert.ok(present(result.assessments[0]).reasons.includes("UNSTABLE_OBSERVATIONS:fault"));
+});
+
+test("reference or neutral mismatches reject the candidate", () => {
+  for (const id of ["reference", "neutral"]) {
+    const plan = fixture();
+    const records = observations(plan);
+    present(records.find((record) => record.worldId === id)).facts.exitCode = 0;
+    assert.equal(receipt(plan, records).decision, "REJECTED");
+  }
+});
+
+test("zero discovered tests cannot be misrepresented as completed target evidence", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  present(plan.actions[0]).arguments = ["tests/sample.test.js"];
+  present(plan.obligations[0]).kind = "tests";
+  present(present(plan.obligations[0]).checks[0]).expected = 0;
+  present(plan.obligations[0]).suiteIds = ["tests"];
+  const records = observations(plan);
+  for (const record of records) {
+    const failed = record.worldId === "fault";
+    record.facts.exitCode = failed ? 1 : 0;
+    record.facts.testOutcome = failed ? "ASSERTION_FAILURE" : "PASS";
+    record.facts.assertionFailureFiles = failed ? (record.facts.testFiles ?? []) : [];
+    if (failed) record.facts.testsDiscovered = 0;
+  }
+  assert.equal(receipt(plan, records).decision, "REJECTED");
+});
+
+test("unassigned suites keep the complete inventory open", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).suiteIds = [];
+  const result = receipt(plan);
+  assert.equal(result.decision, "OPEN");
+  assert.ok(present(result.assessments[0]).reasons.includes("UNASSIGNED_SUITE:tests"));
+});
+
+test("contradictory completed test facts reject evidence even with all digests resealed", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  const baseline = receipt(plan);
+  assert.equal(baseline.decision, "QUALIFIED");
+  for (const facts of [
+    { exitCode: 1, testOutcome: "PASS" },
+    { exitCode: 0, testOutcome: "ASSERTION_FAILURE" },
+    { exitCode: 1, testOutcome: "COMPILE_FAILURE" },
+  ]) {
+    const altered = structuredClone(baseline);
+    Object.assign(present(altered.observations[0]).facts, facts);
+    const generated = core.createQualificationReceipt(altered);
+    assert.equal(generated.decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(generated).valid, false);
+    assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+  }
+});
+
+test("completed test assertions require candidate attribution and integral discovery counts", () => {
+  const plan = fixture();
+  present(plan.actions[0]).adapter = "node-test";
+  const baseline = receipt(plan);
+  assert.equal(baseline.decision, "QUALIFIED");
+  for (const facts of [{ attributed: false }, { testsDiscovered: 1.5 }]) {
+    const altered = structuredClone(baseline);
+    Object.assign(present(altered.observations[0]).facts, facts);
+    const generated = core.createQualificationReceipt(altered);
+    assert.equal(generated.decision, "REJECTED");
+    assert.equal(core.replayQualificationReceipt(generated).valid, false);
+    assert.equal(core.replayQualificationReceipt(reseal(altered)).valid, false);
+  }
+});
+
+test("live CI requires trusted future admission and self-declared independence grants nothing", () => {
+  const plan = fixture();
+  present(plan.obligations[0]).kind = "ci-live";
+  plan.worlds = plan.worlds.filter((world) => world.kind !== "TARGET");
+  const result = receipt(plan);
+  result.externalCi = {
+    independent: true,
+    authenticated: true,
+    commit: "commit-a",
+    result: "passed",
+  };
+  const replay = core.replayQualificationReceipt(reseal(result));
+  assert.equal(result.decision, "OPEN");
+  assert.equal(replay.valid, true);
+});
+
+test("missing duplicate unexpected and rebound reports invalidate replay", () => {
+  const base = receipt();
+  for (const mutate of [
+    (value: QualificationReceipt) => {
+      value.observations.pop();
+    },
+    (value: QualificationReceipt) => {
+      value.observations.push(structuredClone(present(value.observations[0])));
+    },
+    (value: QualificationReceipt) => {
+      present(value.observations[0]).worldId = "other";
+    },
+    (value: QualificationReceipt) => {
+      present(value.observations[0]).bindingDigest = sha256Canonical("other");
+    },
+  ]) {
+    const value = structuredClone(base);
+    mutate(value);
+    assert.equal(core.replayQualificationReceipt(reseal(value)).valid, false);
+  }
+});
+
+test("altered and rehashed semantic forgeries fail replay independently of artifact integrity", () => {
+  const original = receipt();
+  const altered = structuredClone(original);
+  present(altered.observations[0]).facts.exitCode = 0;
+  assert.equal(core.replayQualificationReceipt(altered).integrityValid, false);
+  const forged = reseal(altered);
+  const replay = core.replayQualificationReceipt(forged);
+  assert.equal(replay.integrityValid, true);
+  assert.equal(replay.semanticsValid, false);
+  assert.equal(replay.valid, false);
+});
+
+test("domain mismatch blocks reuse without implying producer authentication", () => {
+  const result = receipt();
+  const domain = {
+    planDigest: result.planDigest,
+    candidateDigest: result.candidateDigest,
+    inputDigest: result.plan.subject.inputDigest,
+    commit: result.plan.subject.commit,
+    baseCommit: result.plan.subject.baseCommit,
+  };
+  assert.equal(core.replayQualificationReceipt(result, domain).valid, true);
+  for (const key of Object.keys(domain) as (keyof typeof domain)[]) {
+    assert.equal(
+      core.replayQualificationReceipt(result, { ...domain, [key]: "changed" }).domainValid,
+      false,
+    );
+  }
+});
+
+test("strict plans reject candidate-supplied facts, broken references, duplicate IDs and unsafe paths", () => {
+  const cases = [
+    (plan: QualificationPlan) => {
+      Object.assign(present(plan.actions[0]), { facts: { exitCode: 0 } });
+    },
+    (plan: QualificationPlan) => {
+      present(present(plan.obligations[0]).checks[0]).actionId = "missing";
+    },
+    (plan: QualificationPlan) => {
+      present(present(plan.worlds[1]).discriminants[0]).checkIds = ["missing"];
+    },
+    (plan: QualificationPlan) => {
+      plan.actions.push(structuredClone(present(plan.actions[0])));
+    },
+    (plan: QualificationPlan) => {
+      present(present(plan.worlds[1]).files[0]).path = "../outside";
+    },
+    (plan: QualificationPlan) => {
+      present(plan.actions[0]).environment.NODE_OPTIONS = "--require evil.js";
+    },
+    (plan: QualificationPlan) => {
+      plan.allowedCandidatePaths = ["CON.txt"];
+    },
+  ];
+  for (const mutate of cases) {
+    const plan = fixture();
+    mutate(plan);
+    assert.throws(() => contracts.parseQualificationPlan(plan));
+  }
+});
+
+test("candidate and sealed plan identity mismatches cannot produce a receipt", () => {
+  const result = receipt();
+  assert.throws(() =>
+    core.createQualificationReceipt({ ...result, candidateDigest: sha256Canonical("other") }),
+  );
+  assert.throws(() =>
+    core.createQualificationReceipt({ ...result, planDigest: sha256Canonical("other") }),
+  );
+});
+
+test("receipt and replay reject unknown fields and unsupported versions", () => {
+  const result = receipt();
+  assert.equal(core.replayQualificationReceipt({ ...result, merged: true }).valid, false);
+  assert.equal(core.replayQualificationReceipt({ ...result, schemaVersion: "2.0.0" }).valid, false);
+  assert.ok(contracts.qualificationPlanJsonSchema());
+  assert.ok(contracts.qualificationReceiptJsonSchema());
+  assert.ok(contracts.qualificationReplayResultJsonSchema());
+});
+
+test("operator plans pin transitive tools with an explicit identity and structured version probe", () => {
+  const plan = fixture();
+  Object.assign(present(plan.tools[0]), {
+    identityPath: "C:/tools/pnpm/pnpm.mjs",
+    versionCommand: {
+      executable: "C:/tools/node/node.exe",
+      arguments: ["C:/tools/pnpm/pnpm.mjs", "--version"],
+    },
+  });
+  present(plan.actions[0]).environment.PATH = "C:/tools/pnpm;C:/tools/node";
+  assert.doesNotThrow(() => contracts.parseQualificationPlan(plan));
+  const parsed = contracts.parseQualificationPlan(plan);
+  assert.equal(present(parsed.tools[0]).identityPath, "C:/tools/pnpm/pnpm.mjs");
+  assert.deepEqual(present(parsed.tools[0]).versionCommand.arguments, [
+    "C:/tools/pnpm/pnpm.mjs",
+    "--version",
+  ]);
+  assert.equal(present(parsed.actions[0]).environment.PATH, "C:/tools/pnpm;C:/tools/node");
+});
+
+test("transitive tool identity requires absolute paths and structured probes remain closed", () => {
+  for (const fields of [
+    { identityPath: "relative/pnpm.mjs" },
+    { versionCommand: { executable: "node", arguments: [], shell: true } },
+  ]) {
+    const plan = fixture();
+    Object.assign(present(plan.tools[0]), fields);
+    assert.throws(() => contracts.parseQualificationPlan(plan));
+  }
+});
+
+test("execution requests and expected replay domains use strict schemas with named JSON schemas", () => {
+  assert.equal(typeof contracts.QualificationExecutionRequestSchema?.parse, "function");
+  assert.equal(typeof contracts.QualificationExpectedDomainSchema?.parse, "function");
+  const plan = fixture();
+  const { planDigest } = core.sealQualificationPlan(plan);
+  const request = {
+    root: "C:/fixture",
+    plan,
+    planDigest,
+    candidate: { files: [{ path: "candidate.test.js", content: "" }] },
+  };
+  assert.deepEqual(contracts.QualificationExecutionRequestSchema.parse(request), request);
+  assert.throws(() =>
+    contracts.QualificationExecutionRequestSchema.parse({ ...request, shell: true }),
+  );
+  const domain = {
+    planDigest,
+    candidateDigest: plan.subject.candidateDigest,
+    inputDigest: plan.subject.inputDigest,
+    commit: plan.subject.commit,
+    baseCommit: plan.subject.baseCommit,
+  };
+  assert.deepEqual(contracts.QualificationExpectedDomainSchema.parse(domain), domain);
+  assert.throws(() =>
+    contracts.QualificationExpectedDomainSchema.parse({ ...domain, unknown: true }),
+  );
+  for (const getter of [
+    contracts.qualificationPlanJsonSchema,
+    contracts.qualificationReceiptJsonSchema,
+    contracts.qualificationReplayResultJsonSchema,
+    contracts.qualificationExecutionRequestJsonSchema,
+  ]) {
+    const schema = getter();
+    assert.equal(typeof schema.$id, "string");
+    assert.equal(typeof schema.title, "string");
+  }
+});
+
+// These signing fixtures qualify admission behavior; they are not observations of Bitbucket.
+function signedCiFixture() {
+  const keys = generateKeyPairSync("ed25519");
+  const plan = fixture();
+  present(plan.obligations[0]).kind = "ci-live";
+  present(plan.worlds[1]).discriminants = [];
+  plan.worlds = plan.worlds.filter((world) => world.kind !== "TARGET");
+  Object.assign(plan, {
+    ciTrust: {
+      repositoryId: "public-fixture/repository",
+      observerId: "independent-observer",
+      publicKeyPem: keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      requiredSteps: [
+        {
+          id: "gate",
+          commandDigest: sha256Canonical({ executable: "pnpm", arguments: ["check"] }),
+        },
+      ],
+    },
+  });
+  const payload = {
+    protocolVersion: "1.0.0",
+    provider: "bitbucket",
+    repositoryId: "public-fixture/repository",
+    observerId: "independent-observer",
+    ...plan.subject,
+    planDigest: sha256Canonical(plan),
+    pipelineId: "42",
+    pipelineUrl: "https://bitbucket.org/public-fixture/repository/pipelines/results/42",
+    steps: [
+      {
+        id: "gate",
+        commandDigest: sha256Canonical({ executable: "pnpm", arguments: ["check"] }),
+        commit: plan.subject.commit,
+        result: "SUCCESS",
+      },
+    ],
+    terminalResult: "SUCCESS",
+  };
+  const signer = (statement: typeof payload) => ({
+    ...statement,
+    signature: sign(
+      null,
+      Buffer.from(canonicalize({ domain: "ASSERTLEDGER_CI_OBSERVATION_V1", statement })),
+      keys.privateKey,
+    ).toString("base64"),
+  });
+  return { plan, payload, signer };
+}
+
+test("a trusted signed exact-domain CI observation covers live CI without a local target witness", () => {
+  const { plan, payload, signer } = signedCiFixture();
+  assert.doesNotThrow(() => contracts.parseQualificationPlan(plan));
+  const result = core.createQualificationReceipt({ ...receipt(plan), externalCi: signer(payload) });
+  assert.equal(result.decision, "QUALIFIED");
+  assert.deepEqual(result.coveredGuaranteeIds, ["propagation"]);
+  const replay = core.replayQualificationReceipt(result);
+  assert.equal(replay.valid, true);
+  assert.equal(replay.producerAuthenticated, false);
+  assert.equal(replay.reexecuted, false);
+});
+
+test("trusted CI admission rejects invalid signatures and signed wrong domains or incomplete execution", () => {
+  const { plan, payload, signer } = signedCiFixture();
+  const changes = [
+    { commit: "other" },
+    { baseCommit: "other" },
+    { candidateDigest: sha256Canonical("other") },
+    { inputDigest: sha256Canonical("other") },
+    { planDigest: sha256Canonical("other") },
+    { repositoryId: "other/repository" },
+    { observerId: "other" },
+    { terminalResult: "FAILURE" },
+    { pipelineUrl: "https://example.com/pipelines/results/42" },
+    { pipelineUrl: "https://bitbucket.org/public-fixture/repository/pipelines/results/43" },
+    { pipelineUrl: "https://bitbucket.org/other/repository/pipelines/results/42" },
+    { pipelineUrl: "https://api.bitbucket.org/fake/prefix/public-fixture/repository/pipelines/42" },
+    { steps: [] },
+    { steps: [...payload.steps, ...payload.steps] },
+    { steps: [{ ...present(payload.steps[0]), result: "SKIPPED" }] },
+    { steps: [{ ...present(payload.steps[0]), commandDigest: sha256Canonical("other") }] },
+    { steps: [{ ...present(payload.steps[0]), commit: "other" }] },
+  ];
+  for (const change of changes) {
+    const result = core.createQualificationReceipt({
+      ...receipt(plan),
+      externalCi: signer({ ...payload, ...change }),
+    });
+    assert.equal(result.decision, "OPEN");
+    assert.equal(core.replayQualificationReceipt(result).valid, true);
+  }
+  const signed = signer(payload);
+  signed.signature = Buffer.alloc(64).toString("base64");
+  assert.equal(
+    core.createQualificationReceipt({ ...receipt(plan), externalCi: signed }).decision,
+    "OPEN",
+  );
+});

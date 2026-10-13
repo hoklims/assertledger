@@ -41,6 +41,7 @@ import {
   type EvidenceManifestContract,
   type EvidenceManifestV2Contract,
   type EvidenceManifestV3Contract,
+  type EvidenceManifestV4Contract,
   type EvidenceProviderManifest,
   evidenceExportJsonSchema,
   evidenceExportReplayResultJsonSchema,
@@ -75,7 +76,7 @@ import {
   parseEvidenceProviderManifest,
   parseReplayResult,
   parseRepositoryAnalysis,
-  parseRepositoryAudit,
+  parseRepositoryAuditV2,
   parseVersionedRepositoryInitResult,
   parseEvidenceManifest,
   parseEvidenceManifestV2,
@@ -83,15 +84,18 @@ import {
   parseVerificationRequest,
   parseVerificationRequestV2,
   parseVerificationRequestV3,
+  parseVerificationRequestV4,
+  parseEvidenceManifestV4,
   parseVersionedEvidenceManifest,
   type ReplayResult,
   type RepositoryAnalysis,
-  type RepositoryAudit,
+  type RepositoryAuditV2,
   type RepositoryInitResult,
   type RepositoryInitResultV2,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
+  repositoryAuditV2JsonSchema,
   repositoryInitConfigJsonSchema,
   repositoryInitConfigV2JsonSchema,
   repositoryInitLockJsonSchema,
@@ -151,9 +155,28 @@ import {
   replayAgenticCorpusProvenance,
   verifyAgenticCorpusAllocationCommitmentSignatures,
 } from "../evaluation/agentic-corpus.js";
+import { importWitness, type WitnessImportOptions } from "../engine/witness-import.js";
 import { ASSERTLEDGER_VERSION } from "../version.js";
+import {
+  QualificationExecutionRequestSchema,
+  qualificationExecutionRequestJsonSchema,
+  qualificationPlanJsonSchema,
+  qualificationReceiptJsonSchema,
+  qualificationReplayResultJsonSchema,
+} from "../contracts/qualification.js";
+import {
+  sealQualificationPlan,
+  replayQualificationReceipt,
+  type QualificationExpectedDomain,
+  admitQualificationCi,
+} from "../core/qualification.js";
+import { qualifyOrchestration, type QualifyOrchestrationOptions } from "../engine/qualification.js";
 
 export type SchemaName =
+  | "qualification-plan"
+  | "qualification-execution-request"
+  | "qualification-receipt"
+  | "qualification-replay-result"
   | "agentic-corpus-allocation-request"
   | "agentic-corpus-allocation"
   | "agentic-corpus-allocation-replay-result"
@@ -183,6 +206,7 @@ export type SchemaName =
   | "verification-request-v3"
   | "repository-analysis"
   | "repository-audit"
+  | "repository-audit-v2"
   | "repository-init-config"
   | "repository-init-config-v2"
   | "repository-init-lock"
@@ -205,6 +229,22 @@ export type AgenticCorpusExperimentReplayOptions = Omit<
 
 /** Provider-neutral programmatic facade over AssertLedger's deterministic components. */
 export class AssertLedger {
+  sealQualificationPlan(plan: unknown) {
+    return sealQualificationPlan(plan);
+  }
+
+  async qualifyOrchestration(request: unknown, options: QualifyOrchestrationOptions = {}) {
+    return qualifyOrchestration(QualificationExecutionRequestSchema.parse(request), options);
+  }
+
+  replayQualification(receipt: unknown, expectedDomain?: QualificationExpectedDomain) {
+    return replayQualificationReceipt(receipt, expectedDomain);
+  }
+
+  admitQualificationCi(receipt: unknown, observation: unknown) {
+    return admitQualificationCi(receipt, observation);
+  }
+
   explain(codes: readonly string[]) {
     return explainReasonCodes(codes);
   }
@@ -213,8 +253,8 @@ export class AssertLedger {
     return parseRepositoryAnalysis(await analyzeRepository(root, { configuredExcludes: true }));
   }
 
-  async audit(root: string, options: RepositoryAuditOptions = {}): Promise<RepositoryAudit> {
-    return parseRepositoryAudit(await auditRepository(root, options));
+  async audit(root: string, options: RepositoryAuditOptions = {}): Promise<RepositoryAuditV2> {
+    return parseRepositoryAuditV2(await auditRepository(root, options));
   }
 
   async init(
@@ -226,7 +266,7 @@ export class AssertLedger {
 
   async doctor(
     root: string,
-    options: Pick<RepositoryInitOptions, "exclude" | "framework"> = {},
+    options: Pick<RepositoryInitOptions, "exclude" | "framework" | "onLinkAssessment"> = {},
   ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
     return this.init(root, { ...options, dryRun: true });
   }
@@ -264,6 +304,30 @@ export class AssertLedger {
     );
   }
 
+  /**
+   * Executes a v4 campaign: designated Bun tests, snapshotted dependencies, container or declared
+   * Windows-native isolation. Its manifest records the snapshot scope and the isolation level.
+   */
+  async verifyV4(
+    request: unknown,
+    options: VerifyCampaignOptions = {},
+  ): Promise<EvidenceManifestV4Contract> {
+    return parseEvidenceManifestV4(
+      await verifyCampaign(parseVerificationRequestV4(request), options),
+    );
+  }
+
+  /**
+   * Replays a recorded red/green witness: mutated targets, one designated test and its expected
+   * failure line. The operator chooses the isolation in `options`; the witness cannot.
+   */
+  async importWitness(
+    witness: unknown,
+    options: WitnessImportOptions,
+  ): Promise<EvidenceManifestV4Contract> {
+    return importWitness(witness, options);
+  }
+
   async checkGitRegression(options: GitRegressionOptions): Promise<EvidenceManifestContract> {
     return qualifyGitRegression(options);
   }
@@ -277,7 +341,8 @@ export class AssertLedger {
     let parsedManifest:
       | EvidenceManifestContract
       | EvidenceManifestV2Contract
-      | EvidenceManifestV3Contract;
+      | EvidenceManifestV3Contract
+      | EvidenceManifestV4Contract;
     try {
       parsedManifest = parseVersionedEvidenceManifest(manifest);
     } catch {
@@ -470,6 +535,14 @@ export class AssertLedger {
 
   schema(name: SchemaName): Record<string, unknown> {
     switch (name) {
+      case "qualification-plan":
+        return qualificationPlanJsonSchema();
+      case "qualification-execution-request":
+        return qualificationExecutionRequestJsonSchema();
+      case "qualification-receipt":
+        return qualificationReceiptJsonSchema();
+      case "qualification-replay-result":
+        return qualificationReplayResultJsonSchema();
       case "agentic-corpus-allocation-request":
         return agenticCorpusAllocationRequestJsonSchema();
       case "agentic-corpus-allocation":
@@ -528,6 +601,8 @@ export class AssertLedger {
         return repositoryAnalysisJsonSchema();
       case "repository-audit":
         return repositoryAuditJsonSchema();
+      case "repository-audit-v2":
+        return repositoryAuditV2JsonSchema();
       case "repository-init-config":
         return repositoryInitConfigJsonSchema();
       case "repository-init-config-v2":

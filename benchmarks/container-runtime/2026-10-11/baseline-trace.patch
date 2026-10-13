@@ -1,0 +1,203 @@
+--- a/dist/engine/container.js
++++ b/dist/engine/container.js
+@@ -2,6 +2,7 @@
+ import { createReadStream } from "node:fs";
+ import { lstat, readdir } from "node:fs/promises";
+ import path from "node:path";
++import { traceOperation } from "./runtime-trace.js";
+ // Container backend for a Docker-compatible CLI. Nothing on the host is mounted into the container:
+ // the prepared workspace is streamed into an anonymous volume, only the bounded result file is read
+ // back as an archive in memory, and every container is removed after one execution.
+@@ -35,14 +36,35 @@
+ const EMPTY_OUTPUT_DIGEST = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+ function runtime(context, args, timeoutMs, maximumOutputBytes, standardInput) {
+     const [executable, ...prefix] = context.command;
+-    return context.runner({
++    const phase = args[0] === "cp"
++        ? args.includes("--archive")
++            ? "upload"
++            : "download"
++        : args[0] === "rm"
++            ? "remove"
++            : args[0] === "image"
++                ? "image-inspect"
++                : (args[0] ?? "unknown");
++    let inputBytes = 0;
++    async function* countedInput() {
++        if (standardInput)
++            for await (const chunk of standardInput) {
++                inputBytes += chunk.byteLength;
++                yield chunk;
++            }
++    }
++    return traceOperation(phase, { ...context.traceContext, timeoutMs }, () => context.runner({
+         executable: executable,
+         args: [...prefix, ...args],
+         cwd: context.workingDirectory,
+         environment: Object.fromEntries(Object.entries(process.env).filter((entry) => typeof entry[1] === "string")),
+         timeoutMs,
+         maximumOutputBytes,
+-    }, standardInput);
++    }, standardInput === undefined ? undefined : countedInput()), (result) => ({
++        inputBytes,
++        outcome: result?.outcome ?? null,
++        processDurationMs: result?.durationMs ?? null,
++    }));
+ }
+ /** Validates an operator runtime command: a non-empty argv array, never a shell string. */
+ export function parseContainerRuntimeCommand(value) {
+@@ -382,6 +404,7 @@
+     const context = { command: backend.runtimeCommand, runner, workingDirectory };
+     const limits = backend.isolation.limits;
+     const name = `assertledger-${randomUUID()}`;
++    context.traceContext = { ...backend.traceContext, container: name };
+     const environment = new Map(backend.isolation.environment.map(({ name: key, value }) => [key, value]));
+     for (const [key, value] of Object.entries(execution.environment))
+         environment.set(key, value);
+--- a/dist/engine/index.js
++++ b/dist/engine/index.js
+@@ -4,6 +4,7 @@
+ import { cp, link, lstat, mkdir, mkdtemp, open, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile, } from "node:fs/promises";
+ import os from "node:os";
+ import path from "node:path";
++import { traceOperation } from "./runtime-trace.js";
+ import { Readable } from "node:stream";
+ import { pipeline } from "node:stream/promises";
+ import { fileURLToPath, pathToFileURL } from "node:url";
+@@ -2792,7 +2793,7 @@
+     }
+ }
+ async function runContainerNodeProbe(container, executable, workspace, timeoutMs, maximumOutputBytes) {
+-    const { process: result } = await runContainerExecution(container, {
++    const { process: result } = await runContainerExecution({ ...container, traceContext: { kind: "identity", probe: "node" } }, {
+         workspace,
+         executable,
+         args: ["-p", CONTAINER_NODE_PROBE_SOURCE],
+@@ -2849,7 +2850,7 @@
+             flag: "wx",
+         });
+         const candidate = `${CONTAINER_WORKSPACE}/${probe.name}.test.mjs`;
+-        const executed = await runContainerExecution(container, {
++        const executed = await runContainerExecution({ ...container, traceContext: { kind: "preflight", probe: probe.name } }, {
+             workspace,
+             reporterSource: probe.reporterSource,
+             executable,
+@@ -2877,7 +2878,7 @@
+ }
+ const CONTAINER_BUN_PROBE_SOURCE = 'const fs = require("node:fs"); const crypto = require("node:crypto"); const execPath = fs.realpathSync(process.execPath); console.log(JSON.stringify({ digest: "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(execPath)).digest("hex"), execPath, bunVersion: Bun.version, bunRevision: Bun.revision }));';
+ async function runContainerBunProbe(container, executable, workspace, timeoutMs, maximumOutputBytes) {
+-    const { process: result } = await runContainerExecution(container, {
++    const { process: result } = await runContainerExecution({ ...container, traceContext: { kind: "identity", probe: "bun" } }, {
+         workspace,
+         executable,
+         args: ["-e", CONTAINER_BUN_PROBE_SOURCE],
+@@ -3239,14 +3240,27 @@
+     const temporaryRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-run-")));
+     const workspace = path.join(temporaryRoot, "repository");
+     try {
+-        await copyRepository(repositoryRoot, workspace, workspaceExcludes(request));
++        await traceOperation("host-workspace-copy", {
++            kind: candidate === null ? "campaign-load" : "campaign-test",
++            worldId: world.id,
++            candidateId: candidate?.id ?? null,
++            attempt,
++        }, () => copyRepository(repositoryRoot, workspace, workspaceExcludes(request)));
+         await applyFiles(workspace, world.files);
+         if (candidate)
+             await applyFiles(workspace, candidate.files);
+         const candidateFiles = candidate ? candidate.files.map((file) => file.path) : [];
+         const { result, structuredReport, nodeTestReport } = container === undefined
+             ? await executeTrustedLocalAdapter(request, workspace, temporaryRoot, candidate, candidateFiles, nodeTestReporterPath)
+-            : await executeContainerAdapter(request, container, workspace, candidate, candidateFiles);
++            : await executeContainerAdapter(request, {
++                ...container,
++                traceContext: {
++                    kind: candidate === null ? "campaign-load" : "campaign-test",
++                    worldId: world.id,
++                    candidateId: candidate?.id ?? null,
++                    attempt,
++                },
++            }, workspace, candidate, candidateFiles);
+         const nodeClassification = request.adapter.kind === "node-test"
+             ? classifyNodeTest(result, nodeTestReport, candidate !== null)
+             : undefined;
+@@ -3289,7 +3303,10 @@
+     };
+ }
+ function containerBunDriverExecutor(container, executable, timeoutMs, maximumOutputBytes) {
+-    return async (workspace, files, environment) => runContainerBunDriver(container, workspace, executable, files, environment, Math.min(timeoutMs, 30_000), Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES));
++    return async (workspace, files, environment, probe) => runContainerBunDriver({
++        ...container,
++        traceContext: { kind: "preflight", ...(probe === undefined ? {} : { probe }) },
++    }, workspace, executable, files, environment, Math.min(timeoutMs, 30_000), Math.min(maximumOutputBytes, CONTROLLED_REPORT_MAXIMUM_BYTES));
+ }
+ /** Both Bun modes use the same four qualification predicates and refusal representation. */
+ async function qualifyBunProbe(profile, probe, expected, execute) {
+@@ -3429,7 +3446,7 @@
+                             testTimeoutMs: probe.testTimeoutMs ?? null,
+                         }
+                         : { mode: "load", tests: [test] }),
+-                });
++                }, probe.name);
+             }));
+             recorded.push({
+                 name: probe.name,
+@@ -3532,7 +3549,7 @@
+                 await writeFile(candidatePath, probe.source);
+                 return executor(workspace, ["base.test.ts"], {
+                     TESTFORGE_CANDIDATE_FILES: JSON.stringify(["candidate.test.ts"]),
+-                });
++                }, probe.name);
+             }));
+             probes.push({
+                 name: probe.name,
+@@ -3619,7 +3636,7 @@
+     const campaignRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "testforge-campaign-")));
+     const repositorySnapshot = path.join(campaignRoot, "repository");
+     try {
+-        await copyRepository(repositoryRoot, repositorySnapshot, excludes, new Set(omittedLinks.map(portablePathKey)));
++        await traceOperation("host-snapshot", { kind: "snapshot" }, () => copyRepository(repositoryRoot, repositorySnapshot, excludes, new Set(omittedLinks.map(portablePathKey))));
+         const snapshotInventory = await walkFiles(repositorySnapshot, excludes);
+         if (snapshotInventory.files.length > request.budgets.maximumRepositoryFiles) {
+             throw new Error("REPOSITORY_FILE_BUDGET_EXCEEDED");
+--- /dev/null
++++ b/dist/engine/runtime-trace.js
+@@ -0,0 +1,37 @@
++import { appendFile } from "node:fs/promises";
++const failedPaths = new Set();
++export async function traceOperation(phase, context, operation, facts) {
++    const destination = process.env.ASSERTLEDGER_RUNTIME_TRACE;
++    if (!destination)
++        return operation();
++    const startedAt = new Date().toISOString();
++    const start = performance.now();
++    let result;
++    let threw = true;
++    try {
++        result = await operation();
++        threw = false;
++        return result;
++    }
++    finally {
++        const event = {
++            phase,
++            container: null,
++            ...context,
++            startedAt,
++            durationMs: performance.now() - start,
++            threw,
++            ...facts?.(result),
++        };
++        try {
++            await appendFile(destination, `${JSON.stringify(event)}\n`, "utf8");
++        }
++        catch {
++            if (!failedPaths.has(destination)) {
++                failedPaths.add(destination);
++                process.stderr.write("ASSERTLEDGER_RUNTIME_TRACE_WRITE_FAILED\n");
++            }
++        }
++    }
++}
++//# sourceMappingURL=runtime-trace.js.map
+\ No newline at end of file

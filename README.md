@@ -14,7 +14,7 @@ You get a verdict, the observations behind it and an evidence file you can repla
 Install in your repository with Node.js 22.15 or later:
 
 ```sh
-npm install --save-dev assertledger@1.4.0
+npm install --save-dev assertledger@2.0.3
 npx assertledger doctor .
 ```
 
@@ -59,7 +59,7 @@ flowchart LR
 You need **Git**, **Node.js 22.15+** and **pnpm 11.1.2**. The example uses the built-in `node:test` adapter.
 
 ```sh
-git clone --branch v1.4.0 https://github.com/hoklims/assertledger.git
+git clone --branch v2.0.3 https://github.com/hoklims/assertledger.git
 cd assertledger
 pnpm install --frozen-lockfile
 pnpm build
@@ -173,6 +173,9 @@ The Bun adapter pins version 1.4.2 and attributes failures from this helper. Nat
 failures remain operational failures and cannot count as target detection. See the
 [Bun migration guide](docs/migration-verification-v3.md) for the request, execution and replay
 contract. The execution mode is explicitly unsandboxed and intended for trusted local code.
+To verify an existing `bun:test` test by name, or to replay a recorded red/green witness, use a v4
+request or `import-witness`, which also run in a container or a declared Windows-native backend; see
+the [v4 migration guide](docs/migration-verification-v4.md).
 
 ### Qualify a committed regression test
 

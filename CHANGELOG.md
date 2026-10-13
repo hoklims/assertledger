@@ -1,5 +1,105 @@
 # Changelog
 
+## Unreleased
+
+## 2.0.3 — 2026-10-11
+
+- Reduce container runtime launches through a qualified generic `system dial-stdio` connection,
+  compress uploads and retain up to 32 MiB of validated immutable archive bytes within a campaign.
+  Every execution still receives a fresh writable workspace and volume. All preflight probes,
+  controls, attempts, isolation settings, image checks and time ceilings remain unchanged.
+- Add optional phase and container timings through `ASSERTLEDGER_RUNTIME_TRACE`, outside proof
+  inputs and outputs. `--container-transport cli|stdio` selects a transport explicitly; automatic
+  fallback is permitted only before mutation. No preflight-result cache or execution concurrency.
+- On the measured Windows/WSL Bun witness, median time falls from 419.722 s to 130.577 s across
+  three runs per producer, with equal semantic observations, `VERIFIED` and valid replay in all
+  six runs. See the [method, limits and raw measurements](docs/container-runtime-performance.md).
+
+## 2.0.2 — 2026-10-11
+
+- Preserve the failed Bun preflight probe, expected and observed outcomes, attribution and
+  discovery counts on stderr and in JSON for `verify` and `import-witness` across backends.
+  Unavailable reports retain null observations and separate process facts. The refusal code,
+  exit status and qualification predicates remain unchanged.
+- Create witness output only after verification succeeds, so a refused preflight never writes
+  to `--out`. Exclusive output ownership and manifest-last writes remain intact.
+- Give actionable `explain BUN_TEST_PROFILE_PREFLIGHT_FAILED` guidance. See the
+  [refusal diagnostic migration note](docs/migration-bun-preflight-diagnostics.md).
+
+## 2.0.1 — 2026-10-11
+
+- Fix audit nontermination on template substitutions followed by `#`. Initialization, audit and
+  test-module closure share a consuming tokenizer that handles nested template continuations.
+- Report unrecoverable scanner faults as `JAVASCRIPT_TOKENIZATION_FAILED`, with the source file
+  and offset, and provide operator guidance through `explain`. Audit output remains schema v2.
+
+## 2.0.0 — 2026-10-10
+
+- Breaking producer change: `audit()` and the audit CLI emit schema v2 with the applied exclusion
+  names and their source (`request`, `config`, `defaults`). Strict consumers expecting v1 output
+  must select the v2 schema/parser. Historical v1 schemas, parsers and artifacts remain supported.
+  See the [audit migration guide](docs/repository-audit-v2-migration.md).
+- With a verification request, audit inventories exactly the request exclusions plus defaults,
+  matching campaign copying and cost projection. Without a request, a valid initialization
+  configuration supplies exclusions. Configuration never hides files from a campaign audit.
+- Return structured `CONFLICT` results for doctor/init inventory limits instead of validation
+  exceptions: base-test count, evidence path length and generated plan content. The 1,000-test
+  limit remains unchanged, and conflicts install no managed files.
+- Explain all static doctor/init reason codes with actionable guidance, including explicit
+  framework selection for ambiguous repositories. Campaign outcome and digest policies are unchanged.
+
+## 1.5.0 — 2026-10-10
+
+- Add obligation-based qualification through CLI, SDK and MCP, with plans sealed before execution,
+  strict receipts and deterministic replay. Receipts name covered and open guarantees; omitted or
+  unsupported suites remain open. See the [qualification guide](docs/orchestration-qualification.md)
+  and [additive contract migration](docs/migration-orchestration-qualification-v1.md).
+- Qualify the anonymous `public-turbo-orchestration-2.11.7-bun-1.4.2` profile for seven local
+  obligations, using isolated cold, warm and invalidation caches, physical task execution and output
+  restoration, uncached-task repetitions, end-to-end failure propagation and local CI routing.
+  Its fifteen declared faults are checked against reference and neutral worlds. The nine private
+  consumer obligations, including independent observation of real Bitbucket CI, remain open.
+- Attribute native Node and Bun assertions to their owning test files. Fresh structured-command
+  completion and terminal observations distinguish expected nonzero exits from crashes, timeouts,
+  collection failures and exceptions after a report. Opaque zero-exit commands cover only that
+  exit-code check and cannot supply a fault discriminant.
+- Refuse incomplete or contradictory test inventories, stale reports, unknown adapter versions,
+  altered receipts and evidence reused outside its bound domain. Replay verifies integrity and
+  decision semantics; it neither reruns tests nor authenticates the observation producer.
+
+Verification request and evidence manifest v4 verify existing Bun tests by name, judge repository
+links against the tests that run, and declare every isolation level. V1 to v3 schemas, parsers and
+manifests are unchanged. See the [v4 migration guide](docs/migration-verification-v4.md).
+
+- New `bun-test-designated` adapter (v4): runs one existing `bun:test` test, named by file and
+  describe path, with an optional expected first failure line and a declared per-test timeout. Only a
+  built-in matcher or `assertSame` failure attributed to that test is red; a timeout, crash, hook,
+  collection or compile error, or a missing test never is, and diverging runs are `UNSTABLE`. It
+  runs trusted-local, Windows-native or in a container, including the native WSL2 engine through
+  `--container-runtime`; `bun-test` with candidate files is still refused in a container.
+- New `import-witness` command and `importWitness` SDK method: replay a recorded red/green witness
+  (mutated targets with base digests, a designated test and its failure line) as a v4 campaign under
+  an operator-chosen backend, and save the manifest, executed request and summary in a new directory.
+- Behavior change: `doctor` no longer refuses a repository for a link outside every test closure.
+  It plans the repository and reports `REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE`, plus
+  `TEST_CLOSURE_UNBOUNDED` when a test's imports are computed. A link on a test's module closure,
+  one through which a runner could discover a test, or one leaving the root still refuses, now with
+  `REPOSITORY_LINK_IN_TEST_CLOSURE` or `REPOSITORY_LINK_ESCAPES_ROOT` beside
+  `UNSUPPORTED_REPOSITORY_SYMLINK`, and the CLI names the path. Because the closure depends on the
+  framework, a framework conflict is now reported before a link refusal. `analyze`, `audit` and
+  v1 to v3 campaigns still refuse any link.
+- v4 campaigns leave links outside the executed tests' closure out of the snapshot and record them in
+  the manifest; `repository.includeDependencies` keeps `node_modules`, and `repository.git:
+  "synthesized"` gives tests a fresh, deterministic Git repository of the snapshot, recorded by tree.
+- New `windows-native` isolation (v4) for tests that only run natively on Windows: declared in the
+  request, acknowledged with `--allow-windows-native-execution`, refused on other hosts, and
+  recorded as `WINDOWS_NATIVE_UNSANDBOXED`.
+- Tightened: the v3 `bun-test` driver now classifies any test Bun reports as timed out as an
+  infrastructure error, so a synchronous test that overran its timeout before failing an assertion
+  is no longer counted as an assertion failure.
+- New schemas `verification-request.v4.json`, `evidence-manifest.v4.json` and
+  `witness-import-request.v1.json` join the post-conformance lock; the frozen v1 bundle is unchanged.
+
 ## 1.4.0 — 2026-10-02
 
 - Behavior change: `analyze` now refuses an unknown option with the usage on stderr and exit code 64,

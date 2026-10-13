@@ -9,13 +9,125 @@ export { DiagnosticCodesSchema, DiagnosticReportSchema };
 
 type Entry = readonly [explanation: string, nextAction: string, severity?: "info" | "limitation"];
 const CATALOGUE: Readonly<Record<string, Entry>> = {
+  JAVASCRIPT_TOKENIZATION_FAILED: [
+    "JavaScript/TypeScript lexical scanning could not make bounded progress; the refusal names the file and offset.",
+    "Inspect the named source file and report the lexical failure with a minimal reproduction. Audit does not return partial facts for that file.",
+  ],
+  REPOSITORY_ROOT_INVALID: [
+    "The initialization root does not resolve to an accessible directory.",
+    "Pass an existing repository directory to init or doctor and check its access permissions.",
+  ],
+  PACKAGE_MANIFEST_INVALID: [
+    "The repository package.json is not a valid JSON object.",
+    "Repair package.json and rerun static doctor before applying initialization.",
+  ],
+  PACKAGE_MANAGER_INVALID: [
+    "The packageManager field names an unsupported package manager.",
+    "Use pnpm, npm, yarn, bun, uv, poetry or pip in the package manifest, matching the repository toolchain.",
+  ],
+  PACKAGE_MANAGER_OVERRIDE_INVALID: [
+    "The explicit package-manager choice is unsupported.",
+    "Select pnpm, npm, yarn, bun, uv, poetry or pip with --package-manager.",
+  ],
+  PACKAGE_MANAGER_AMBIGUOUS: [
+    "The detected package managers conflict or disagree with the explicit choice.",
+    "Inspect the packageManager field and lockfiles, then choose the intended manager with --package-manager.",
+  ],
+  PACKAGE_MANAGER_UNDETECTED: [
+    "No supported package manager was detected.",
+    "Declare the intended package manager with --package-manager or add its package metadata or lockfile.",
+  ],
+  FRAMEWORK_AMBIGUOUS: [
+    "Multiple test frameworks were detected, or the explicit choice disagrees with the detected frameworks.",
+    "Inspect test imports, dependencies and test scripts, then choose a detected framework with --framework (node:test, bun:test, vitest, jest or pytest). The current init result schema cannot list all detected frameworks.",
+  ],
+  FRAMEWORK_UNDETECTED: [
+    "No supported test framework was detected.",
+    "Declare the intended runner with --framework or add its test imports, dependency or test script.",
+  ],
+  FRAMEWORK_OVERRIDE_INVALID: [
+    "The explicit framework choice is unsupported.",
+    "Select node:test, bun:test, vitest, jest or pytest with --framework.",
+  ],
+  TEST_COMMAND_INVALID: [
+    "The explicit test command is not a safe bounded executable and argument array.",
+    "Pass --test-command-json with a relative executable name and at most 100 arguments; avoid shell syntax, absolute paths and control characters.",
+  ],
+  TEST_COMMAND_UNSAFE_OR_AMBIGUOUS: [
+    "The package test script cannot be interpreted as one safe executable and argument array.",
+    "Review the runner command and declare it through --test-command-json; initialization does not execute shell scripts.",
+  ],
+  BASE_TEST_FILES_UNAVAILABLE: [
+    "No base test files were found for the selected built-in adapter and test command.",
+    "Check the test paths and runner selection, then rerun doctor with the intended framework and test command.",
+  ],
+  BASE_TEST_FILES_LIMIT_EXCEEDED: [
+    "The selected built-in adapter inventory contains more than the 1,000 base test files allowed by the contract.",
+    "Scope the test command to an operator-reviewed suite of at most 1,000 base tests, or declare exclusions only for files the campaign does not need. Initialization never truncates the inventory.",
+  ],
+  INIT_EVIDENCE_PATH_LIMIT_EXCEEDED: [
+    "An inventoried evidence path exceeds the initialization lock limit of 1,024 characters.",
+    "Shorten the repository-relative path, or exclude only evidence the intended campaign does not need, then rerun static doctor.",
+  ],
+  INIT_FILE_CONTENT_LIMIT_EXCEEDED: [
+    "A generated configuration or evidence lock exceeds the planned-file limit of 16,777,216 characters.",
+    "Review the inventory and narrow initialization to the intended repository scope; exclude only irrelevant files. No managed file has been written for this plan.",
+  ],
+  OFFICIAL_ADAPTER_UNAVAILABLE: [
+    "The detected framework has no built-in initialization adapter.",
+    "Supply a supported structured-command adapter with --adapter-config and validate its attribution protocol before running a campaign.",
+  ],
+  REPOSITORY_INIT_CONFIG_INVALID: [
+    "The generated initialization configuration does not satisfy its versioned schema.",
+    "Inspect the adapter, test command and inventory limits; rerun static doctor after correcting the inputs and report a reproducible generated-config failure.",
+  ],
+  REPOSITORY_INIT_CONFIG_INCONSISTENT: [
+    "Initialization configuration fields do not satisfy their semantic consistency rules.",
+    "Check portable paths, framework and adapter agreement, then validate the configuration before applying it.",
+  ],
+  REPOSITORY_INIT_LOCK_INVALID: [
+    "The initialization evidence lock does not satisfy its versioned schema.",
+    "Inspect evidence paths and the lock schema; preserve configuration and regenerate the lock through init after correcting the inputs.",
+  ],
+  REPOSITORY_INIT_LOCK_INCONSISTENT: [
+    "The initialization lock evidence, detections or digests are inconsistent.",
+    "Restore stable repository evidence and regenerate the lock through init; do not repair its digest by hand.",
+  ],
+  REPOSITORY_INIT_RESULT_INVALID: [
+    "The initialization result does not satisfy its versioned output schema.",
+    "Inspect the reported plan and generated-file size limits; retain a reproduction and report the output-contract failure.",
+  ],
+  REPOSITORY_INIT_RESULT_INCONSISTENT: [
+    "The initialization result, planned files and actions disagree.",
+    "Preserve managed files, rerun static doctor on a stable repository and report a reproducible inconsistent plan.",
+  ],
+  REPOSITORY_INIT_CANONICAL_INVALID: [
+    "Initialization could not canonicalize a contract value safely.",
+    "Use schema-valid JSON inputs and retain a reproduction if generated initialization values still fail canonicalization.",
+  ],
+  PORTABLE_PATH_COLLISION: [
+    "Repository paths collide under the portable case and Unicode normalization rules.",
+    "Rename the conflicting entries so their portable paths are distinct before rerunning doctor or init.",
+  ],
+  INIT_EVIDENCE_SNAPSHOT_INCONSISTENT: [
+    "An initialization evidence file has no matching captured bytes.",
+    "Keep repository files stable and rerun static doctor; report a reproducible snapshot mismatch.",
+  ],
+  INIT_PLAN_INCONSISTENT: [
+    "An initialization write action has no matching planned file.",
+    "Preserve existing configuration and report the inconsistent plan before retrying initialization.",
+  ],
+  INIT_WRITE_FAILED: [
+    "Initialization could not install a managed file atomically.",
+    "Inspect permissions and the reported installed paths and temporary cleanup state; preserve partial files and rerun static doctor before retrying.",
+  ],
   INVALID_REPOSITORY_EXCLUDE: [
     "A repository exclusion is malformed.",
     "For init and doctor, declare bare file or directory names without separators, at most 1,000 including the defaults; a verification request needs an array of strings. Every entry with an excluded name is skipped at any depth. Retain every source and base test required by the declared campaign.",
   ],
   UNSUPPORTED_REPOSITORY_SYMLINK: [
     "The analyzed repository set contains a symbolic link; AssertLedger neither follows nor copies links.",
-    "Replace the link with a regular file or directory, or declare the name of the entry that contains it when no campaign needs it: pass --exclude to doctor or init, and init records it in assertledger.config.json for analyze to honor. Never exclude sources or tests the campaign requires.",
+    "Replace the link with a regular file or directory, or declare the name of the entry that contains it when no campaign needs it: pass --exclude to doctor or init, and init records it in assertledger.config.json for analyze and audit without a request to honor. Audit with a verification request uses only that request's exclusions plus defaults, matching the campaign copy; configuration cannot hide campaign files. Never exclude sources or tests the campaign requires.",
   ],
   EXECUTION_BUDGET_EXCEEDED: [
     "The complete declared campaign exceeds the execution budget.",
@@ -179,6 +291,14 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "The container runtime command is not a non-empty JSON argv array.",
     'Pass the executable and its arguments as a JSON array, for example ["docker"]; shell strings are never executed.',
   ],
+  CONTAINER_TRANSPORT_INVALID: [
+    "The operator selected an unknown container control transport.",
+    "Use --container-transport auto, cli or stdio. Requests cannot select the runtime or its transport.",
+  ],
+  CONTAINER_STDIO_UNAVAILABLE: [
+    "The runtime could not establish a compatible, identity-checked Docker control connection over standard input/output; no campaign container was started.",
+    "Check that the configured runtime supports docker system dial-stdio, or select --container-transport cli. No Docker host endpoint or WSL shell is required.",
+  ],
   CONTAINER_RUNTIME_NOT_FOUND: [
     "The configured container runtime command could not be started; nothing was executed.",
     'Install a Docker-compatible CLI or pass its argv explicitly, for example ["wsl.exe","-d","Ubuntu","--exec","docker"].',
@@ -256,12 +376,12 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Check the Bun executable and its permissions, then rerun the runtime diagnostic.",
   ],
   BUN_TEST_PROFILE_PREFLIGHT_FAILED: [
-    "Controlled Bun callback probes did not separate assertions from ordinary errors.",
-    "Keep the campaign unqualified and inspect the Bun installation and AssertLedger package.",
+    "A controlled Bun probe did not match its expected outcome, attribution or discovered-test counts, or produced no valid report. The campaign remains unqualified.",
+    "Read the named probe and its expected/observed results on stderr or with --json. Null observed fields mean no valid driver report; inspect the process outcome, exit code, signal and deadline or runtime transport. For a mismatching report, check the pinned Bun version and AssertLedger installation. Repair the cause and rerun the complete preflight; never skip a failing probe.",
   ],
   BUN_TEST_CONTAINER_UNSUPPORTED: [
-    "The Bun callback profile has not been qualified in the container backend.",
-    "Use explicitly authorized trusted-local execution for the qualified Bun version.",
+    "The Bun file-candidate profile has not been qualified in the container backend.",
+    "Use explicitly authorized trusted-local execution for the qualified Bun version, or a v4 campaign with the bun-test-designated adapter, which runs in the container backend.",
   ],
   BUN_TEST_ASSET_CHANGED_DURING_CAMPAIGN: [
     "The bundled Bun driver, preload or assertion helper changed during the campaign.",
@@ -295,6 +415,78 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "The adapter and detected test framework do not match.",
     "Select the adapter matching the test runner; detection alone does not establish official support.",
   ],
+  REPOSITORY_LINK_IN_TEST_CLOSURE: [
+    "A symbolic link is on the module closure of a test that would run, or a runner discovering tests could reach one through it; AssertLedger neither follows nor copies links.",
+    "Replace the named link with a regular file or directory; excluding it would remove code the test needs.",
+  ],
+  REPOSITORY_LINK_ESCAPES_ROOT: [
+    "A symbolic link resolves, or would resolve, outside the repository root.",
+    "Remove the named link or replace it with repository content; a link out of the repository is never admitted.",
+  ],
+  TEST_CLOSURE_UNBOUNDED: [
+    "A test module imports a computed or absolute specifier, so the files it can load are not statically bounded.",
+    "A campaign refuses repository links in that case; replace the links, or make the named imports literal and repository-relative.",
+  ],
+  REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE: [
+    "Every repository link lies outside the module closure of the tests that would run; v4 campaigns leave such links out of the snapshot and record them.",
+    "No action is required; v1 to v3 campaigns and analyze still refuse any link, so declare the entry's name with --exclude when they must run.",
+  ],
+  WINDOWS_NATIVE_EXECUTION_NOT_ACKNOWLEDGED: [
+    "Windows-native execution was requested without the operator acknowledgement.",
+    "Run it only for trusted code, with --allow-windows-native-execution or acknowledgedUnsafeExecution set; the manifest then records WINDOWS_NATIVE_UNSANDBOXED.",
+  ],
+  WINDOWS_NATIVE_HOST_REQUIRED: [
+    "Windows-native execution was requested on a host that is not Windows.",
+    "Use the container backend for Linux-runnable tests, or run the campaign on Windows.",
+  ],
+  DESIGNATED_CANDIDATE_REQUIRED: [
+    "The bun-test-designated adapter runs only designated tests, and a candidate declares files instead.",
+    "Name each candidate's existing test by file and describe path, or use the bun-test adapter for candidate files.",
+  ],
+  DESIGNATED_CANDIDATE_ADAPTER_MISMATCH: [
+    "A designated test candidate was given to an adapter that runs candidate files.",
+    "Use the bun-test-designated adapter for designated tests.",
+  ],
+  DESIGNATED_TEST_OVERLAID: [
+    "A world rewrites the designated test file, so the test under verification would differ between worlds.",
+    "Keep the designated test identical in every world and mutate only the code it covers.",
+  ],
+  DESIGNATED_TEST_FILE_MISSING: [
+    "A designated test file is absent from the repository snapshot.",
+    "Check the file path against the repository and its declared exclusions.",
+  ],
+  DESIGNATED_TEST_TIMEOUT_EXCEEDS_EXECUTION: [
+    "Bun's per-test timeout is not shorter than the execution timeout, so it could never be observed.",
+    "Declare a per-test timeout below timeoutMsPerExecution, or null for Bun's default.",
+  ],
+  REPOSITORY_DEPENDENCIES_EXCLUDED: [
+    "The request includes dependency directories but also excludes node_modules.",
+    "Remove node_modules from the exclusions, or set includeDependencies to false.",
+  ],
+  REPOSITORY_GIT_SYNTHESIS_FAILED: [
+    "The synthesized Git repository of the snapshot could not be created.",
+    "Check that git is installed and runnable, or set repository.git to excluded when the tests do not need Git.",
+  ],
+  WITNESS_IMPORT_REQUEST_INVALID: [
+    "The witness import request does not satisfy its published schema.",
+    "Validate it against witness-import-request.v1.json.",
+  ],
+  WITNESS_TARGET_BASE_MISMATCH: [
+    "A witness target is missing or no longer holds the bytes the witness recorded as its base.",
+    "Replay the witness on the exact revision it was recorded against.",
+  ],
+  WITNESS_TARGET_UNCHANGED: [
+    "A witness target's mutated content equals the repository's bytes, so it would not inject a fault.",
+    "Check the recorded mutation.",
+  ],
+  WITNESS_OUTPUT_EXISTS: [
+    "The witness import output directory already exists.",
+    "Choose a new directory; an import never overwrites earlier evidence.",
+  ],
+  WITNESS_OUTPUT_INSIDE_REPOSITORY: [
+    "The witness import output directory is inside the repository it replays.",
+    "Choose a directory outside the repository so the evidence cannot change the snapshot.",
+  ],
 };
 
 /** Derived guidance only: never changes a verdict or either manifest digest. */
@@ -318,7 +510,12 @@ export function explainReasonCodes(codes: readonly string[]): DiagnosticReport {
   });
 }
 
-const LINK_REFUSAL_CODE = "UNSUPPORTED_REPOSITORY_SYMLINK";
+const LINK_REFUSAL_CODES = new Set([
+  "UNSUPPORTED_REPOSITORY_SYMLINK",
+  "REPOSITORY_LINK_IN_TEST_CLOSURE",
+  "REPOSITORY_LINK_ESCAPES_ROOT",
+  "TEST_CLOSURE_UNBOUNDED",
+]);
 const MAXIMUM_QUOTED_ENTRY_LENGTH = 200;
 
 /** Quotes a repository entry name for a refusal message. A file name is repository content, so it
@@ -336,7 +533,7 @@ export function quoteRepositoryEntry(entry: string): string {
 export function renderRepositoryLinkRefusal(error: unknown): string | undefined {
   if (
     !(error instanceof Error) ||
-    error.message !== LINK_REFUSAL_CODE ||
+    !LINK_REFUSAL_CODES.has(error.message) ||
     typeof error.cause !== "string"
   ) {
     return undefined;

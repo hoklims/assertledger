@@ -1,0 +1,396 @@
+import { spawn, spawnSync } from "node:child_process";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const RESULT_VERSION = "1.0.0";
+const BUN_REVISION = "1.4.2+744846f84";
+const MAX_REPORT_BYTES = 8 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 64 * 1024;
+const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
+const PRELOAD_SOURCE_PATH = fileURLToPath(new URL("./preload.mjs", import.meta.url));
+
+function report(
+  outcome,
+  testsDiscovered = 0,
+  candidateTestsDiscovered = 0,
+  attributed = false,
+  testFiles = [],
+  assertionFailureFiles = [],
+) {
+  return {
+    protocolVersion: RESULT_VERSION,
+    outcome,
+    testsDiscovered,
+    candidateTestsDiscovered,
+    attributed,
+    testFiles,
+    assertionFailureFiles,
+  };
+}
+
+function infrastructureFailure(reason) {
+  console.error(`BUN_TEST_INFRA_ERROR:${reason}`);
+  return report("INFRA_ERROR");
+}
+
+function normalizeRelativeFile(value) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.startsWith("-") ||
+    path.isAbsolute(value)
+  )
+    return undefined;
+  const normalized = path.normalize(value);
+  if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) return undefined;
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function normalizeAbsoluteFile(value, root) {
+  if (typeof value !== "string" || !path.isAbsolute(value)) return undefined;
+  const relative = path.relative(root, path.resolve(value));
+  return normalizeRelativeFile(relative);
+}
+
+function strictInteger(value) {
+  if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/u.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function parseJunitSummary(xml) {
+  if (
+    typeof xml !== "string" ||
+    !xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>') ||
+    !xml.trimEnd().endsWith("</testsuites>") ||
+    xml.includes("<!DOCTYPE")
+  )
+    return undefined;
+  const root = xml.match(/<testsuites\b([^>]*)>/u);
+  if (root === null) return undefined;
+  const attributes = new Map();
+  const matches = [...root[1].matchAll(/\s+([A-Za-z][A-Za-z0-9-]*)="([^"]*)"/gu)];
+  if (root[1].replace(/\s+([A-Za-z][A-Za-z0-9-]*)="([^"]*)"/gu, "").trim() !== "") {
+    return undefined;
+  }
+  for (const match of matches) {
+    if (attributes.has(match[1])) return undefined;
+    attributes.set(match[1], match[2]);
+  }
+  if (attributes.get("name") !== "bun test") return undefined;
+  const tests = strictInteger(attributes.get("tests"));
+  const failures = strictInteger(attributes.get("failures"));
+  const skipped = strictInteger(attributes.get("skipped"));
+  if (
+    tests === undefined ||
+    failures === undefined ||
+    skipped === undefined ||
+    failures > tests ||
+    skipped > tests
+  ) {
+    return undefined;
+  }
+  // Same report observation as the v4 Bun driver: a late callback failure does not
+  // erase Bun's per-test TimeoutError. This is operational evidence, not attribution.
+  const timeouts = [...xml.matchAll(/<failure\b[^>]*\btype="TimeoutError"/gu)].length;
+  if (timeouts > failures) return undefined;
+  return { tests, failures, skipped, timeouts };
+}
+
+function parseEvents(content, root, allowedFiles, evidenceKey) {
+  if (!content.endsWith("\n")) return undefined;
+  const lines = content.trimEnd().split("\n");
+  if (lines.length === 1 && lines[0] === "") return [];
+  const events = [];
+  let ready = 0;
+  for (const line of lines) {
+    let envelope;
+    try {
+      envelope = JSON.parse(line);
+    } catch {
+      return undefined;
+    }
+    if (
+      typeof envelope !== "object" ||
+      envelope === null ||
+      Array.isArray(envelope) ||
+      Object.keys(envelope).sort().join(",") !== "event,mac" ||
+      typeof envelope.mac !== "string" ||
+      !/^[0-9a-f]{64}$/u.test(envelope.mac)
+    )
+      return undefined;
+    const expectedMac = createHmac("sha256", evidenceKey)
+      .update(JSON.stringify(envelope.event))
+      .digest();
+    if (!timingSafeEqual(expectedMac, Buffer.from(envelope.mac, "hex"))) return undefined;
+    const value = envelope.event;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    if (value.kind === "ready") {
+      if (Object.keys(value).join(",") !== "kind" || ++ready !== 1) return undefined;
+      continue;
+    }
+    if (value.kind === "hook-error") {
+      if (Object.keys(value).join(",") !== "kind") return undefined;
+      events.push({ kind: "hook-error" });
+      continue;
+    }
+    if (typeof value.id !== "string" || !/^[0-9a-f-]{36}$/u.test(value.id)) {
+      return undefined;
+    }
+    if (value.kind === "found") {
+      if (Object.keys(value).sort().join(",") !== "file,id,kind") return undefined;
+      const file = normalizeAbsoluteFile(value.file, root);
+      if (file === undefined || !allowedFiles.has(file)) return undefined;
+      events.push({ kind: "found", id: value.id, file });
+    } else if (value.kind === "end") {
+      if (value.status !== "pass" && value.status !== "fail") return undefined;
+      const expectedKeys = value.status === "pass" ? "id,kind,status" : "id,kind,owned,status";
+      if (Object.keys(value).sort().join(",") !== expectedKeys) return undefined;
+      if (value.status === "fail" && typeof value.owned !== "boolean") return undefined;
+      events.push({ kind: "end", id: value.id, status: value.status, owned: value.owned ?? false });
+    } else return undefined;
+  }
+  return ready === 1 ? events : undefined;
+}
+
+export function classifyBunInstrumentedEvidence(
+  events,
+  junit,
+  baseFiles,
+  candidateFiles,
+  exitCode,
+  operationalError = false,
+) {
+  if (
+    events === undefined ||
+    junit === undefined ||
+    exitCode === null ||
+    junit.skipped !== 0 ||
+    operationalError ||
+    events.some((event) => event.kind === "hook-error")
+  ) {
+    return infrastructureFailure("INCOMPLETE_CONTROLLED_REPORT");
+  }
+  if (junit.timeouts > 0) return infrastructureFailure("BUN_TEST_TIMEOUT");
+  const found = new Map();
+  const ended = new Map();
+  for (const event of events) {
+    if (event.kind === "found") {
+      if (found.has(event.id)) return infrastructureFailure("DUPLICATE_TEST_ID");
+      found.set(event.id, event.file);
+    } else {
+      if (!found.has(event.id)) return infrastructureFailure("UNMATCHED_TEST_END");
+      if (ended.has(event.id)) return infrastructureFailure("DUPLICATE_TEST_END");
+      ended.set(event.id, event);
+    }
+  }
+  const completed = [...ended.values()];
+  if (found.size === 0 && junit.tests === 0 && junit.failures === 0)
+    return report("NO_TEST_DISCOVERED");
+  if (found.size === 0 || found.size !== ended.size || completed.length !== junit.tests) {
+    return infrastructureFailure("TEST_COUNT_MISMATCH");
+  }
+  const files = new Set(found.values());
+  const testFiles = [...files].sort();
+  if ([...baseFiles].some((file) => !files.has(file))) {
+    return infrastructureFailure("BASE_TEST_FILE_NOT_STARTED");
+  }
+  if ([...candidateFiles].some((file) => !files.has(file)))
+    return infrastructureFailure("DECLARED_TEST_FILE_NOT_STARTED");
+  if ([...files].some((file) => !baseFiles.has(file) && !candidateFiles.has(file))) {
+    return infrastructureFailure("UNEXPECTED_TEST_FILE");
+  }
+  const failures = completed.filter((entry) => entry.status === "fail");
+  if (failures.length !== junit.failures || (exitCode === 0) !== (junit.failures === 0)) {
+    return infrastructureFailure("BUN_STATUS_MISMATCH");
+  }
+  const candidateIds = completed
+    .filter((entry) => candidateFiles.has(found.get(entry.id)))
+    .map((entry) => entry.id);
+  if (exitCode === 0) {
+    return candidateFiles.size > 0 && candidateIds.length === 0
+      ? report("NO_TEST_DISCOVERED", completed.length, 0, false)
+      : report("PASS", completed.length, candidateIds.length, candidateFiles.size > 0, testFiles);
+  }
+  const candidateFailures = failures.filter((entry) => candidateFiles.has(found.get(entry.id)));
+  const baseFailures = failures.filter((entry) => baseFiles.has(found.get(entry.id)));
+  if (baseFailures.length > 0 || candidateIds.length === 0) {
+    return report("PROCESS_CRASH", completed.length, candidateIds.length, false, testFiles);
+  }
+  const attributed =
+    candidateFailures.length > 0 &&
+    failures.length === candidateFailures.length &&
+    candidateFailures.every((entry) => entry.owned);
+  return report(
+    attributed ? "ASSERTION_FAILURE" : "PROCESS_CRASH",
+    completed.length,
+    candidateIds.length,
+    attributed,
+    testFiles,
+    attributed ? [...new Set(candidateFailures.map((entry) => found.get(entry.id)))].sort() : [],
+  );
+}
+
+async function readBoundedRegularFile(file, root) {
+  const details = await lstat(file);
+  if (!details.isFile() || details.size > MAX_REPORT_BYTES) throw new Error("INVALID_REPORT_FILE");
+  const resolved = await realpath(file);
+  const relative = path.relative(root, resolved);
+  if (
+    relative === "" ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error("REPORT_PATH_ESCAPE");
+  }
+  return readFile(file, "utf8");
+}
+
+async function runBun(executable, files, junitFile, root, evidenceKey) {
+  const exactPath = (file) => `./${file.replaceAll(path.sep, "/")}`;
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.TESTFORGE_RESULT_FILE;
+  delete childEnvironment.TESTFORGE_CANDIDATE_FILES;
+  delete childEnvironment.ASSERTLEDGER_BUN_EVENTS_FILE;
+  childEnvironment.ASSERTLEDGER_BUN_ROOT = root;
+  const child = spawn(
+    executable,
+    [
+      "test",
+      "--max-concurrency=1",
+      "--retry=0",
+      "--preload",
+      PRELOAD_SOURCE_PATH,
+      "--reporter=junit",
+      `--reporter-outfile=${junitFile}`,
+      ...files.map(exactPath),
+    ],
+    {
+      cwd: root,
+      env: childEnvironment,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe", "pipe", "pipe"],
+    },
+  );
+  let keyDeliveryError = false;
+  child.stdio[4].on("error", () => {
+    keyDeliveryError = true;
+  });
+  child.stdio[4].end(evidenceKey);
+  let outputBytes = 0;
+  let overflow = false;
+  let stderr = "";
+  let evidenceBytes = 0;
+  const evidenceChunks = [];
+  const collect = (chunk) => {
+    outputBytes += chunk.length;
+    if (outputBytes > MAX_OUTPUT_BYTES) {
+      overflow = true;
+      child.kill();
+    }
+  };
+  child.stdout.on("data", collect);
+  child.stderr.on("data", (chunk) => {
+    collect(chunk);
+    if (!overflow) stderr += chunk.toString("utf8");
+  });
+  child.stdio[3].on("data", (chunk) => {
+    evidenceBytes += chunk.length;
+    if (evidenceBytes > MAX_REPORT_BYTES) {
+      overflow = true;
+      child.kill();
+    } else {
+      evidenceChunks.push(chunk);
+    }
+  });
+  const exitCode = await new Promise((resolve) => {
+    child.once("error", () => resolve(null));
+    child.once("close", (code) => resolve(code));
+  });
+  const plainStderr = stderr.replace(ANSI_SGR, "");
+  const operationalError =
+    plainStderr.includes("Unhandled error between tests") ||
+    /(?:^|\r?\n)\s*[1-9][0-9]*\s+errors?\s*(?:\r?\n|$)/u.test(plainStderr);
+  return {
+    exitCode: overflow || keyDeliveryError ? null : exitCode,
+    operationalError,
+    eventContent: overflow ? undefined : Buffer.concat(evidenceChunks).toString("utf8"),
+  };
+}
+
+async function main() {
+  const root = await realpath(process.cwd());
+  const [executable, ...baseTests] = process.argv.slice(2);
+  if (!path.isAbsolute(executable ?? "") || baseTests.length === 0) {
+    throw new Error("INVALID_ARGUMENTS");
+  }
+  const revision = spawnSync(executable, ["--revision"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    shell: false,
+    windowsHide: true,
+    timeout: 5_000,
+    maxBuffer: MAX_OUTPUT_BYTES,
+  });
+  if (revision.status !== 0 || revision.stderr !== "" || revision.stdout.trim() !== BUN_REVISION) {
+    throw new Error("UNSUPPORTED_BUN_REVISION");
+  }
+  const candidates = [];
+  if (!Array.isArray(candidates)) throw new Error("INVALID_CANDIDATES");
+  const normalizedBase = baseTests.map(normalizeRelativeFile);
+  const normalizedCandidates = candidates.map(normalizeRelativeFile);
+  if ([...normalizedBase, ...normalizedCandidates].some((file) => file === undefined)) {
+    throw new Error("INVALID_PATH");
+  }
+  const files = [...normalizedBase, ...normalizedCandidates];
+  if (new Set(files).size !== files.length) throw new Error("DUPLICATE_TEST_FILE");
+  const junitFile = path.join(root, `__assertledger_bun_junit_${randomUUID()}.xml`);
+  const evidenceKey = randomBytes(32);
+  const execution = await runBun(
+    executable,
+    [...baseTests, ...candidates],
+    junitFile,
+    root,
+    evidenceKey,
+  );
+  let outcome;
+  const events =
+    execution.eventContent === undefined
+      ? undefined
+      : parseEvents(execution.eventContent, root, new Set(files), evidenceKey);
+  try {
+    const junitContent = await readBoundedRegularFile(junitFile, root);
+    outcome = classifyBunInstrumentedEvidence(
+      events,
+      parseJunitSummary(junitContent),
+      new Set(),
+      new Set(normalizedBase),
+      execution.exitCode,
+      execution.operationalError,
+    );
+  } catch (error) {
+    outcome =
+      error?.code === "ENOENT" &&
+      events?.length === 0 &&
+      execution.exitCode === 0 &&
+      !execution.operationalError
+        ? report("NO_TEST_DISCOVERED")
+        : infrastructureFailure("MISSING_OR_INVALID_REPORT");
+  }
+  process.stdout.write(`${JSON.stringify({ ...outcome, exitCode: execution.exitCode })}\n`);
+  // Transport completion is independent of the inner Bun semantic outcome.
+  process.exitCode = 0;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : "UNKNOWN_DRIVER_ERROR");
+    process.stdout.write(`${JSON.stringify(report("INFRA_ERROR"))}\n`);
+    process.exitCode = 1;
+  });
+}

@@ -10,6 +10,12 @@ and v2, remains explicitly `UNSANDBOXED`, and still requires external authorizat
 Container isolation is a containment layer around an execution, not a proof that a campaign is
 correct. The daemon, its host kernel, the image and the AssertLedger engine remain trusted.
 
+In v4 the `bun-test-designated` adapter also runs in this backend: the Bun driver, preload and
+assertion helper are uploaded read-only beside the reporter, and the image must provide the pinned
+Bun version. On Windows, the native WSL2 engine is selected with
+`--container-runtime '["wsl.exe","-d","Ubuntu","--exec","docker"]'`. See the
+[v4 migration guide](migration-verification-v4.md).
+
 ## Select the backend
 
 The Git workflow selects the backend explicitly. Without `--container-image` or
