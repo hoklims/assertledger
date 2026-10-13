@@ -3,6 +3,58 @@ import { it } from "node:test";
 import { designatedBunConfig } from "../integrations/bun/driver.mjs";
 import { bunTestPreloads, computeTestClosure } from "../src/engine/test-closure.js";
 
+it("accepts an unrelated compiler configuration with an unavailable extends target", async () => {
+  const sources: Record<string, string> = {
+    "test.ts": "export {};",
+    "optional/tsconfig.json": '{"extends":"@optional/missing/tsconfig.json"}',
+  };
+  let closure: Awaited<ReturnType<typeof computeTestClosure>> | undefined;
+  await assert.doesNotReject(async () => {
+    closure = await computeTestClosure({
+      files: Object.keys(sources),
+      links: [],
+      roots: ["test.ts"],
+      read: async (file) => [sources[file] ?? ""],
+    });
+  });
+  assert.ok(closure);
+  assert.deepEqual(closure.files, ["test.ts"]);
+  assert.deepEqual(closure.unbounded, []);
+});
+
+it("refuses an unavailable extends target when its compiler configuration is reached", async () => {
+  const sources: Record<string, string> = {
+    "optional/test.ts": "export {};",
+    "optional/tsconfig.json": '{"extends":"@optional/missing/tsconfig.json"}',
+  };
+  await assert.rejects(
+    computeTestClosure({
+      files: Object.keys(sources),
+      links: [],
+      roots: ["optional/test.ts"],
+      read: async (file) => [sources[file] ?? ""],
+    }),
+    /TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED/u,
+  );
+});
+
+it("refuses unavailable transitive inheritance from a reached package configuration", async () => {
+  const sources: Record<string, string> = {
+    "test.ts": "export {};",
+    "tsconfig.json": '{"extends":"@org/config/base.json"}',
+    "node_modules/@org/config/base.json": '{"extends":"@optional/missing/tsconfig.json"}',
+  };
+  await assert.rejects(
+    computeTestClosure({
+      files: Object.keys(sources),
+      links: [],
+      roots: ["test.ts"],
+      read: async (file) => [sources[file] ?? ""],
+    }),
+    /TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED/u,
+  );
+});
+
 it("keeps the JSX runtime selected by top-level bunfig settings", async () => {
   const sources: Record<string, string> = {
     "test.tsx": "export const view = <div />;",

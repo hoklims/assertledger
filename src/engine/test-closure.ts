@@ -546,6 +546,7 @@ async function tsconfigMappings(
   index: RepositoryIndex,
   read: TestClosureInput["read"],
   jsxSources: Set<string>,
+  unresolvedConfigs: Set<string>,
 ): Promise<PathMapping[]> {
   const mappings: PathMapping[] = [];
   const configs = [...index.fileByKey.values()].filter((file) => {
@@ -556,6 +557,7 @@ async function tsconfigMappings(
     );
   });
   const seen = new Set<string>();
+  const inheritedConfigs = new Map<string, Set<string>>();
   for (const config of configs.sort()) {
     if (seen.has(config)) continue;
     seen.add(config);
@@ -586,8 +588,12 @@ async function tsconfigMappings(
           if (inherited !== undefined || specifier.startsWith(".") || directory === ".") break;
           directory = path.posix.dirname(directory);
         }
-        if (inherited !== undefined) configs.push(inherited);
-        else if (!stopped) throw new Error("TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED");
+        if (inherited !== undefined) {
+          configs.push(inherited);
+          const dependencies = inheritedConfigs.get(config) ?? new Set<string>();
+          dependencies.add(inherited);
+          inheritedConfigs.set(config, dependencies);
+        } else if (!stopped) unresolvedConfigs.add(config);
       }
       const options = isRecord(document) ? document.compilerOptions : undefined;
       if (isRecord(options) && typeof options.jsxImportSource === "string") {
@@ -605,6 +611,22 @@ async function tsconfigMappings(
             .filter((target): target is string => typeof target === "string")
             .map((target) => path.posix.join(base, target)),
         });
+      }
+    }
+  }
+  // Global discovery is conservative, but an unavailable optional project's config must not
+  // refuse unrelated tests. Propagate missing inheritance to its parents, then let the closure
+  // walk refuse only compiler configurations it actually reaches.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [config, dependencies] of inheritedConfigs) {
+      if (
+        !unresolvedConfigs.has(config) &&
+        [...dependencies].some((dependency) => unresolvedConfigs.has(dependency))
+      ) {
+        unresolvedConfigs.add(config);
+        changed = true;
       }
     }
   }
@@ -638,9 +660,10 @@ async function workspacePackages(
 export async function computeTestClosure(input: TestClosureInput): Promise<TestClosure> {
   const index = new RepositoryIndex(input.files, input.links, input.linkTargets);
   const jsxSources = new Set(["react"]);
+  const unresolvedConfigs = new Set<string>();
   const walk = new ClosureWalk(
     index,
-    await tsconfigMappings(index, input.read, jsxSources),
+    await tsconfigMappings(index, input.read, jsxSources, unresolvedConfigs),
     await workspacePackages(index, input.read),
     input.runnerModules,
   );
@@ -679,6 +702,7 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
     // The walk also keeps what Bun reads to compile a file: each configuration a
     // tsconfig or jsconfig extends, and the automatic JSX runtime a .tsx or .jsx file imports.
     if (isProjectConfiguration(file) || compilerConfigurations.has(file)) {
+      if (unresolvedConfigs.has(file)) throw new Error("TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED");
       for (const text of await input.read(file)) {
         for (const specifier of tsconfigExtends(text)) {
           const previous = new Set(walk.files);
