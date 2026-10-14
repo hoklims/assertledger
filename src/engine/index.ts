@@ -1651,6 +1651,35 @@ function initFlowScan(state: InitFlowScan, text: string): number {
 }
 
 /**
+ * The key of a top-level `key: value` line, decoded, and the text after its colon; undefined when
+ * the line is not a mapping entry. A quoted key (`'packages':`) is the same key as the plain one,
+ * and a plain key ends at the first colon that is followed by whitespace or the end of the line.
+ */
+function initYamlTopLevelEntry(line: string): { key: string; value: string } | undefined {
+  const first = line[0];
+  if (first === "'" || first === '"') {
+    let close = 1;
+    for (; close < line.length; close += 1) {
+      const character = line[close];
+      if (first === '"' && character === "\\") close += 1;
+      else if (first === "'" && character === "'" && line[close + 1] === "'") close += 1;
+      else if (character === first) break;
+    }
+    if (close >= line.length) return undefined;
+    const key = initYamlUnquote(line.slice(0, close + 1));
+    const rest = line.slice(close + 1).trimStart();
+    if (key === undefined || !rest.startsWith(":")) return undefined;
+    return { key, value: rest.slice(1) };
+  }
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === ":" && (index + 1 === line.length || /\s/u.test(line[index + 1] ?? ""))) {
+      return { key: line.slice(0, index).trimEnd(), value: line.slice(index + 1) };
+    }
+  }
+  return undefined;
+}
+
+/**
  * The `packages` patterns of a pnpm-workspace.yaml. Only the block and flow list forms are read;
  * a file in any other shape declares nothing, so a member is never inferred from it. The text is
  * repository-controlled and up to 1 MiB: it is read in one linear pass, without regular
@@ -1674,6 +1703,7 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
     return entries;
   };
   const patterns: string[] = [];
+  const keys = new Set<string>();
   let inPackages = false;
   // The indentation of the items of the block list under `packages`.
   let itemIndent: number | undefined;
@@ -1700,9 +1730,13 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
     } else if (!/^[\s-]/u.test(line)) {
       inPackages = false;
       itemIndent = undefined;
-      const rest = line.startsWith("packages") ? line.slice("packages".length).trimStart() : "";
-      if (!rest.startsWith(":")) continue;
-      const value = rest.slice(1).trim();
+      const entry = initYamlTopLevelEntry(line);
+      if (entry === undefined) continue;
+      // pnpm refuses a mapping that repeats a key, so such a file is no workspace to infer from.
+      if (keys.has(entry.key)) return [];
+      keys.add(entry.key);
+      if (entry.key !== "packages") continue;
+      const value = entry.value.trim();
       if (value.length === 0) {
         inPackages = true;
       } else if (value.startsWith("[")) {

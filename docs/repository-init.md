@@ -58,7 +58,9 @@ select stays `PACKAGE_MANAGER_UNDETECTED`. Only `pnpm-workspace.yaml` declares m
 `workspaces` field of npm, Yarn and Bun is not read, and pass `--package-manager` for those
 workspaces.
 
-`packages` is read as a block list or a flow list (also across lines) with the subset of globs the
+The `packages` key may be quoted (`'packages':`, `"packages":`). A file that repeats a top-level key
+declares nothing, as pnpm refuses it. `packages` is read as a block list or a flow list (also
+across lines) with the subset of globs the
 managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
 their position. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
 with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,

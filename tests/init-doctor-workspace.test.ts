@@ -628,6 +628,44 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
   });
 
+  it("reads a quoted packages key and refuses a repeated key", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const content of [
+      "'packages': ['domains/*/api']\n",
+      "\"packages\": ['domains/*/api']\n",
+      "'packages':\n  - 'domains/*/api'\n",
+      '"packages" :\n  - "domains/*/api"\n',
+      "catalog:\n  a: 1\npackages: ['domains/*/api']\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+    for (const content of [
+      "packages: ['domains/*/api']\npackages: ['tools/*']\n",
+      "packages:\n  - 'domains/*/api'\npackages:\n  - 'tools/*'\n",
+      "packages: ['domains/*/api']\n'packages': ['tools/*']\n",
+      '"packages":\n  - "domains/*/api"\npackages: []\n',
+      "packages: ['domains/*/api']\ncatalog:\n  a: 1\ncatalog:\n  b: 2\n",
+      // The key is spelled with an escape: not read, so nothing is declared.
+      "\"pack\\u0061ges\": ['domains/*/api']\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
   it("does not let a wildcard select a dot-prefixed directory", async () => {
     const run = async (directory: string, content: string) => {
       const base = await tree({
