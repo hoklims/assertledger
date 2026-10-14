@@ -173,14 +173,16 @@ Après l’initialisation, le [diagnostic dynamique](docs/runtime-doctor.md) vé
 la découverte des tests et l’attribution des assertions avec `doctor --runtime --allow-unsafe-execution`.
 Pour comprendre un refus, lancez `explain CODE` : la commande indique la prochaine action sûre.
 
-### Bun 1.4.2
+### Bun 1.4.3
 
 Pour un dépôt `bun:test`, lancez `assertledger doctor . --framework bun:test`. Après `init` et le
 diagnostic dynamique, écrivez des tests candidats v3 avec `assertSame` depuis `assertledger/bun`.
-L’adaptateur cible précisément Bun 1.4.2 et attribue les échecs de cet outil. Les échecs `expect`
+L’adaptateur cible précisément Bun 1.4.3 et attribue les échecs de cet outil. Les échecs `expect`
 natifs restent des erreurs d’exécution et ne comptent pas comme détection du défaut. Le
 [guide de migration Bun](docs/migration-verification-v3.md) décrit la requête, l’exécution et le
 rejeu. Ce mode exécute du code local de confiance sans bac à sable.
+Le runtime qualifié est passé de 1.4.2 à 1.4.3 : voir la
+[note de migration Bun 1.4.3](docs/migration-bun-1.4.3.md).
 Pour vérifier un test `bun:test` existant désigné par son nom, ou rejouer un témoin rouge/vert
 enregistré, utilisez une requête v4 ou `import-witness`, qui s’exécutent aussi en conteneur ou dans un
 mode Windows natif déclaré ; voir le [guide de migration v4](docs/migration-verification-v4.md).
