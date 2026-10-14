@@ -1,7 +1,7 @@
 # Native Bun collection profile 1.0.0
 
 This profile is separate from the frozen helper-only Bun adapter. It requires
-Bun 1.4.2, revision 744846f844374847c902b5e7fd59b4342a51ef99.
+Bun 1.4.3, revision c6da4a4d3010e5553438c60f6bd76d981976867c.
 The outer Node process runs the driver with argument arrays and a bounded process
 tree; the driver loads the signed-pipe preload and checks complete JUnit evidence.
 

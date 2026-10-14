@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RESULT_VERSION = "1.0.0";
-const BUN_REVISION = "1.4.2+744846f84";
+const BUN_REVISION = "1.4.3+c6da4a4d3";
 const MAX_REPORT_BYTES = 8 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");

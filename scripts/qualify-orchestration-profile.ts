@@ -44,8 +44,8 @@ const version = (executable: string, arguments_: string[] = ["--version"]) => {
   if (result.status !== 0 || result.error) throw new Error(`Tool probe failed: ${executable}`);
   return result.stdout.trim().replace(/^v/u, "");
 };
-if (version(turbo) !== "2.11.7" || version(bun) !== "1.4.2" || version(pnpm) !== "12.9.1")
-  throw new Error("This profile requires Turbo 2.11.7 / Bun 1.4.2 / pnpm 12.9.1");
+if (version(turbo) !== "2.11.7" || version(bun) !== "1.4.3" || version(pnpm) !== "12.9.1")
+  throw new Error("This profile requires Turbo 2.11.7 / Bun 1.4.3 / pnpm 12.9.1");
 // Turbo launches package scripts via its pinned package manager. Bind that script below.
 process.env.PATH = `${path.dirname(bun)}${path.delimiter}${path.dirname(pnpm)}${path.delimiter}${process.env.PATH ?? ""}`;
 const digest = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
@@ -422,7 +422,7 @@ tools.push({
 });
 const sealed = sealQualificationPlan({
   schemaVersion: "1.0.0",
-  profileId: "public-turbo-orchestration-2.11.7-bun-1.4.2",
+  profileId: "public-turbo-orchestration-2.11.7-bun-1.4.3",
   subject: {
     commit: args.commit ?? "public-fixture-v1",
     baseCommit: args.base ?? "public-fixture-v1",

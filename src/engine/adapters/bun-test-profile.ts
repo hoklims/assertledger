@@ -3,8 +3,8 @@ export const BUN_TEST_ADAPTER_PROFILE = {
   profileId: "bun-test",
   profileVersion: "1.2.0",
   official: true,
-  bunVersion: "1.4.2",
-  bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
+  bunVersion: "1.4.3",
+  bunRevision: "c6da4a4d3010e5553438c60f6bd76d981976867c",
   capabilities: {
     assertionSource: "assertledger-assertSame-issued-error",
     attributesPerAssertionFailure: true,

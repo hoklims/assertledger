@@ -378,7 +378,7 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
   ],
   BUN_TEST_VERSION_UNSUPPORTED: [
     "The selected Bun runtime is outside the qualified version and revision.",
-    "Install Bun 1.4.2 and rerun the controlled runtime preflight.",
+    "Install Bun 1.4.3 and rerun the controlled runtime preflight.",
   ],
   BUN_TEST_EXECUTABLE_PROBE_FAILED: [
     "The selected executable could not establish a stable Bun identity.",

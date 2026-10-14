@@ -23,6 +23,15 @@ const EXPECTED = {
   testsDiscovered: 1,
   candidateTestsDiscovered: 1,
 };
+/** The one Bun the designated profile qualifies; the previous release must be refused. */
+const QUALIFIED_RUNTIME = {
+  bunVersion: "1.4.3",
+  bunRevision: "c6da4a4d3010e5553438c60f6bd76d981976867c",
+};
+const PREVIOUS_RUNTIME = {
+  bunVersion: "1.4.2",
+  bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
+};
 const OBSERVED = {
   outcome: "PASS",
   attributed: false,
@@ -71,6 +80,7 @@ function fakeProbeExecutor(
   out: string,
   mode: "mismatch" | "unavailable" | "spawn-error" | "execution-error" = "mismatch",
   onProbe?: () => void,
+  runtime: { bunVersion: string; bunRevision: string } = QUALIFIED_RUNTIME,
 ) {
   const calls: { probe: boolean; outExists: boolean }[] = [];
   const mocked = context.mock.method(childProcess, "spawn", ((_command: string, args: string[]) => {
@@ -91,8 +101,7 @@ function fakeProbeExecutor(
     const document = identity
       ? {
           execPath: process.execPath,
-          bunVersion: "1.4.2",
-          bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
+          ...runtime,
         }
       : {
           protocolVersion: "1.0.0",
@@ -178,6 +187,61 @@ for (const backend of [
     });
   }
 }
+
+it("refuses the previously qualified Bun before any preflight probe runs", async (context) => {
+  const f = await fixture();
+  const calls = fakeProbeExecutor(context, f.out, "mismatch", undefined, PREVIOUS_RUNTIME);
+  const result = await cli(f.root, f.witness, [
+    "import-witness",
+    "-",
+    "--out",
+    f.out,
+    "--allow-unsafe-execution",
+  ]);
+  assert.equal(result.code, 4);
+  assert.match(result.stderr, /BUN_TEST_VERSION_UNSUPPORTED/);
+  assert.equal(
+    calls.filter((call) => call.probe).length,
+    0,
+    "an unqualified runtime is refused before the driver observes anything",
+  );
+  assert.ok(!existsSync(f.out), "refusal leaves no output");
+});
+
+it("refuses the previously qualified Bun inside the container backend", async () => {
+  const f = await fixture();
+  const state = path.join(f.parent, "runtime");
+  await mkdir(state);
+  await writeFile(
+    path.join(state, "scenario.json"),
+    JSON.stringify({
+      bunPreflight: { out: f.out, report: "mismatch" },
+      bunIdentity: PREVIOUS_RUNTIME,
+    }),
+  );
+  const runtime = fileURLToPath(new URL("./support/fake-container-runtime.mjs", import.meta.url));
+  const result = await cli(
+    f.root,
+    { ...f.witness, adapter: { ...f.witness.adapter, executable: "bun" } },
+    [
+      "import-witness",
+      "-",
+      "--out",
+      f.out,
+      "--container-image",
+      `oven/bun:1.4.2@sha256:${"e".repeat(64)}`,
+      "--container-runtime",
+      JSON.stringify([process.execPath, runtime, state]),
+    ],
+  );
+  assert.equal(result.code, 4, result.stderr);
+  assert.match(result.stderr, /BUN_TEST_VERSION_UNSUPPORTED/);
+  assert.ok(
+    !existsSync(path.join(state, "preflight.jsonl")),
+    "no designated probe ran in the unqualified image",
+  );
+  assert.ok(!existsSync(f.out), "refusal leaves no output");
+});
 
 it("never creates --out while executing a Bun preflight probe", async (context) => {
   const f = await fixture();
@@ -279,7 +343,7 @@ for (const report of ["mismatch", "unavailable"]) {
         "--out",
         f.out,
         "--container-image",
-        `oven/bun:1.4.2@sha256:${"e".repeat(64)}`,
+        `oven/bun:1.4.3@sha256:${"e".repeat(64)}`,
         "--container-runtime",
         JSON.stringify([process.execPath, runtime, state]),
         "--json",
