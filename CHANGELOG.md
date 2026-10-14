@@ -21,7 +21,8 @@
   redundant separators and `.` segments are normalized, a directory below `node_modules` or
   `bower_components` is never selected and a leading byte-order mark is skipped; a lone quote
   inside a quoted scalar, a top-level line that is not a `key: value` entry, a comment or a
-  document marker, and any other syntax, any other shape under `packages`, an entry that is not a string (`42`, `true`,
+  document marker, an unclosed quoted scalar or flow collection under any key, a manager
+  lockfile at the workspace root that is not a regular file, and any other syntax, any other shape under `packages`, an entry that is not a string (`42`, `true`,
   `null`, an empty item), anything but whitespace after a flow list, a pattern
   beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and alternations in total,
   1,024-character paths) or a file that exists but cannot be read (over 1 MiB, a link) declares
@@ -34,7 +35,8 @@
   usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
   also behind a launcher; `--test` must come before a program's entry point, so `node script` and
-  `node script --test` are not Node's runner) and spells no test path (a glob, a nested path or a
+  `node script --test` are not Node's runner, and `bun test` counts only when the command is Bun
+  or one of its launchers, so `echo bun test` is not Bun) and spells no test path (a glob, a nested path or a
   test file name) now returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. Its operands were read as path filters:
   `turbo test` selected the tests under `test/`, or none and `BASE_TEST_FILES_UNAVAILABLE`, and
   `npm run test:unit` selected every test. A command like that is no longer accepted with a

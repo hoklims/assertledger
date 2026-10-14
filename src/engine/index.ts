@@ -1384,6 +1384,13 @@ function initCommandInvokesRunner(
  * test` hands the pair to the script: no Node-like runtime may come before it.
  */
 function initBunTestPair(words: readonly string[]): number {
+  // `echo bun test` only prints its arguments: the command must be Bun or one of its launchers.
+  const launcher =
+    (words[0] ?? "")
+      .split("/")
+      .pop()
+      ?.replace(/\.(?:cmd|exe)$/iu, "") ?? "";
+  if (!INIT_BUN_LAUNCHERS.has(launcher)) return -1;
   return words.findIndex(
     (word, index) =>
       word === "bun" &&
@@ -1393,6 +1400,19 @@ function initBunTestPair(words: readonly string[]): number {
 }
 
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
+// Executables that run the program named in their arguments: Bun itself and the launchers.
+const INIT_BUN_LAUNCHERS = new Set([
+  "bun",
+  "bunx",
+  "pnpm",
+  "npm",
+  "npx",
+  "yarn",
+  "corepack",
+  "env",
+  "cross-env",
+  "dotenv",
+]);
 // Node's own test options that are switches; every other `--test-*` option takes a value.
 const INIT_NODE_TEST_SWITCHES = new Set([
   "--test-only",
@@ -1470,15 +1490,6 @@ const INIT_WORKSPACE_PATTERN_LENGTH = 256;
 const INIT_WORKSPACE_BRACE_DEPTH = 8;
 const INIT_WORKSPACE_PATH_LENGTH = 1_024;
 
-async function initRegularFileStats(file: string): Promise<Stats | undefined> {
-  try {
-    const stats = await lstat(file);
-    return stats.isFile() ? stats : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * What is at a workspace file's path: nothing, text, or something that exists but cannot be read
  * as a bounded regular file (a link, a directory, an oversized file). An unreadable file is never
@@ -1508,6 +1519,15 @@ async function initWorkspaceFileRead(
     return { kind: "TEXT", text: await readFile(file, "utf8") };
   } catch {
     return { kind: "UNREADABLE" };
+  }
+}
+
+/** A manager lockfile of a workspace root: absent, a regular file, or present but not one. */
+async function initWorkspaceLockfileState(file: string): Promise<"ABSENT" | "FILE" | "UNRESOLVED"> {
+  try {
+    return (await lstat(file)).isFile() ? "FILE" : "UNRESOLVED";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "ABSENT" : "UNRESOLVED";
   }
 }
 
@@ -1657,6 +1677,56 @@ function initFlowScan(state: InitFlowScan, text: string): number {
 }
 
 /**
+ * Scans a value that opens with a quote or a flow bracket and returns the index just past its end,
+ * or -1 while it is still open. The state carries over lines, so a value is read once however many
+ * lines it spans.
+ */
+function initYamlValueEnd(state: InitFlowScan, text: string): number {
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index] ?? "";
+    if (state.quote !== "") {
+      if (state.quote === '"' && character === "\\") index += 1;
+      else if (state.quote === "'" && character === "'" && text[index + 1] === "'") index += 1;
+      else if (character === state.quote) {
+        state.quote = "";
+        if (state.depth === 0) return index + 1;
+      }
+    } else if (initYamlQuoteOpens(text, index)) {
+      state.quote = character;
+    } else if (character === "[" || character === "{") {
+      state.depth += 1;
+    } else if (character === "]" || character === "}") {
+      state.depth -= 1;
+      if (state.depth <= 0) return index + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The value of a mapping entry or sequence item that is not read as patterns. One that opens with
+ * a quote or a flow bracket must be a closed scalar or collection with nothing after it: INVALID
+ * when it is not, the scanner state when it is still open at the end of the line, undefined when
+ * there is nothing to check.
+ */
+function initYamlOpenValue(value: string): InitFlowScan | "INVALID" | undefined {
+  const first = value[0];
+  if (first !== "'" && first !== '"' && first !== "[" && first !== "{") return undefined;
+  const state: InitFlowScan = { quote: "", depth: 0 };
+  const end = initYamlValueEnd(state, value);
+  if (end < 0) return state;
+  return value.slice(end).trim().length > 0 ? "INVALID" : undefined;
+}
+
+/** The value of a line below a key: what follows its sequence markers and its `key:`, if any. */
+function initYamlLineValue(line: string): string {
+  let rest = line.trim();
+  while (/^-(?:\s|$)/u.test(rest)) rest = rest.slice(1).trimStart();
+  const entry = initYamlTopLevelEntry(rest);
+  return (entry === undefined ? rest : entry.value).trim();
+}
+
+/**
  * The key of a top-level `key: value` line, decoded, and the text after its colon; undefined when
  * the line is not a mapping entry. A quoted key (`'packages':`) is the same key as the plain one,
  * and a plain key ends at the first colon that is followed by whitespace or the end of the line.
@@ -1716,12 +1786,22 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   // The pieces of a flow list still open at the end of a line, and its scanner state.
   let flow: string[] | undefined;
   const scan: InitFlowScan = { quote: "", depth: 0 };
+  // A quoted scalar or a flow collection of another key that is still open at the end of a line.
+  let opaque: InitFlowScan | undefined;
   // A byte-order mark opens a YAML stream and is not part of its first line.
-  const source = text.startsWith("﻿") ? text.slice(1) : text;
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   for (const raw of source.split(/\r?\n/u)) {
     const line = initYamlStripComment(raw);
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    if (opaque !== undefined) {
+      const end = initYamlValueEnd(opaque, line);
+      if (end >= 0) {
+        if (line.slice(end).trim().length > 0) return [];
+        opaque = undefined;
+      }
+      continue;
+    }
     if (flow !== undefined) {
       const end = initFlowScan(scan, line);
       if (end >= 0) {
@@ -1748,7 +1828,13 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       // pnpm refuses a mapping that repeats a key, so such a file is no workspace to infer from.
       if (keys.has(entry.key)) return [];
       keys.add(entry.key);
-      if (entry.key !== "packages") continue;
+      if (entry.key !== "packages") {
+        // The value of another key is not read, but it must be valid YAML for the file to be one.
+        const pending = initYamlOpenValue(entry.value.trim());
+        if (pending === "INVALID") return [];
+        if (pending !== undefined) opaque = pending;
+        continue;
+      }
       const value = entry.value.trim();
       if (value.length === 0) {
         inPackages = true;
@@ -1778,10 +1864,15 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       const entry = initYamlUnquote(trimmed.slice(1));
       if (entry === undefined || entry.length === 0) return [];
       patterns.push(entry);
+    } else {
+      // A line below another key: only its value is checked for being closed.
+      const pending = initYamlOpenValue(initYamlLineValue(line));
+      if (pending === "INVALID") return [];
+      if (pending !== undefined) opaque = pending;
     }
   }
-  // A flow list that never closes is not a declaration.
-  return flow === undefined ? patterns : [];
+  // A flow list or a quoted scalar that never closes is not a declaration.
+  return flow === undefined && opaque === undefined ? patterns : [];
 }
 
 /** The deepest nesting of braces in a pattern: sibling groups do not nest. */
@@ -2099,7 +2190,11 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     for (const [manager, files] of INIT_MANAGER_LOCKFILES) {
       if (!INIT_WORKSPACE_MANAGERS.includes(manager)) continue;
       for (const file of files) {
-        if ((await initRegularFileStats(path.join(directory, file))) !== undefined) {
+        const lockfile = await initWorkspaceLockfileState(path.join(directory, file));
+        // A lockfile that exists but is not a regular file (a link, a directory) is still read by
+        // its manager: it is an unresolved fact, not an absent one, and nothing is inferred.
+        if (lockfile === "UNRESOLVED") return undefined;
+        if (lockfile === "FILE") {
           managers.add(manager);
           break;
         }

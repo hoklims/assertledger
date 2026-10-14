@@ -704,6 +704,71 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
   });
 
+  it("refuses a malformed value of a key it does not read", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    const packages = "packages: ['domains/*/api']\n";
+    for (const content of [
+      `${packages}catalog: [a, b]\n`,
+      `${packages}catalog: {a: b}\n`,
+      `${packages}name: 'it''s'\n`,
+      `${packages}catalog: [\n  a,\n  b\n]\n`,
+      `${packages}catalog:\n  foo: '1.0'\n  bar: [x, y]\n`,
+      `${packages}catalog:\n  - [a, b]\n  - "c"\n`,
+      `${packages}note: it's [fine\n`,
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+    for (const content of [
+      `${packages}catalog: [\n`,
+      `${packages}catalog: {a: b\n`,
+      `${packages}catalog: 'abc\n`,
+      `${packages}catalog: "abc\n`,
+      `${packages}catalog: 'a' b\n`,
+      `${packages}catalog: [a] b\n`,
+      `${packages}catalog:\n  foo: [\n`,
+      `${packages}catalog:\n  - 'abc\n`,
+      `catalog: [\n${packages}`,
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
+  it("does not infer a manager from a lockfile it cannot read as a file", async () => {
+    const run = async (extra: Record<string, string>) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": "packages: ['domains/*/api']\n",
+        ...extra,
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    assert.equal((await run({ "pnpm-lock.yaml": "" })).status, "WOULD_CREATE");
+    // A directory where a manager's lockfile belongs is still that manager's path.
+    for (const entry of ["package-lock.json/", "yarn.lock/", "bun.lock/"]) {
+      const result = await run({ "pnpm-lock.yaml": "", [entry]: "" });
+      assert.equal(result.status, "CONFLICT", entry);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], entry);
+    }
+  });
+
   it("skips a byte-order mark and redundant separators", async () => {
     const run = async (content: string) => {
       const base = await tree({
@@ -1035,6 +1100,8 @@ describe("a command that does not run the framework directly is named as such", 
     ["node runner bun test", "bun:test", "node"],
     // A test-runner switch takes no value: the word after it is the entry point.
     ["node --test-only runner --test", "node:test", "node"],
+    // `echo` only prints `bun test`: it is neither Bun nor a launcher of Bun.
+    ["echo bun test", "bun:test", "echo"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);

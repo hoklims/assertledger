@@ -67,7 +67,8 @@ with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.
 `packages/.*`) does, as in pnpm. Redundant separators and `.` segments in a pattern
 (`packages//a`, `./packages/a`) are normalized, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
-is skipped. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and
+is skipped. The value of any other key is not read, but one that opens with a quote or a flow
+bracket must be closed, with nothing after it, or the file declares nothing. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and
 a double-quoted escape other than `\\`, `\"` and `\/` is refused, as is a lone quote inside a
 quoted scalar. Anything else declares nothing and infers nothing: another syntax, another shape
 under `packages` (a mapping, a nested sequence), an entry that is not a string (a number, a
@@ -75,7 +76,9 @@ boolean, `null`, `~`, an empty item, a mapping or a list), a top-level line that
 `key: value` entry, a comment nor a document marker, text
 after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
 than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a
-`pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, not a regular file).
+`pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, not a regular file), or
+a manager lockfile at the workspace root that exists but is not a regular file (a link, a
+directory), as the manager would still read it.
 Matching is done segment by segment, without regular expressions built from the repository, so
 its cost is a product of lengths, and the YAML file is read in a single linear pass. A workspace
 root `package.json` that is not valid JSON returns `CONFLICT` with `PACKAGE_MANIFEST_INVALID`;
@@ -89,7 +92,8 @@ only files under the package, so a later change at the workspace root is not det
 
 A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
 also behind a launcher such as `pnpm exec` or `tsx`; `--test` must come before a program's entry
-point, so `node script` and `node script --test` are not Node's runner) and spells no test path (a
+point, so `node script` and `node script --test` are not Node's runner, and `bun test` counts
+only when the command is Bun or one of its launchers, so `echo bun test` is not Bun) and spells no test path (a
 glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
 test`, `pnpm -r test`
 and `npm run test:unit` are such commands: their operands are task names, not path filters, even
