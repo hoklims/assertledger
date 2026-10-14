@@ -1328,14 +1328,14 @@ function initCommandPathMatchers(
   testSources: string[],
   isTestFile: (file: string) => boolean,
 ): Array<(file: string) => boolean> {
-  // After a recognized `bun test` pair, wherever it sits (`pnpm exec bun test x`), only what
-  // follows the pair are filters: `test` itself is the subcommand, not a conventional directory.
+  // After a recognized `bun test`, wherever it sits (`pnpm exec bun test x`), only what follows
+  // the subcommand are filters: `test` itself is not a conventional directory.
   const words = [command.executable, ...command.arguments];
-  const pair = initBunTestPair(words);
-  const flag = pair < 0 ? initNodeRunnerFlag(words) : -1;
+  const subcommand = initBunTestPair(words);
+  const flag = subcommand < 0 ? initNodeRunnerFlag(words) : -1;
   // Behind a launcher (`pnpm exec node --test`), the launcher's own words are not filters either.
   let operands = command.arguments;
-  if (pair >= 0) operands = words.slice(pair + 2);
+  if (subcommand >= 0) operands = words.slice(subcommand + 1);
   else if (flag >= 0) operands = initNodeRunnerOperands(words, flag);
   return operands
     .filter(
@@ -1392,7 +1392,8 @@ function initNodeRunnerFlag(words: readonly string[]): number {
   const name = words[program] ?? "";
   // The executable slot (`./node --test`) is the command itself, not a script it was given.
   const spelledAsScript = program >= 1 && (name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name));
-  const runtimeBefore = previous >= 0 && INIT_NODE_RUNTIMES.has(words[previous] ?? "");
+  const runtimeBefore =
+    previous >= 0 && INIT_NODE_RUNTIMES.has(initCommandWordName(words[previous] ?? ""));
   return !spelledAsScript && !runtimeBefore ? flag : -1;
 }
 
@@ -1435,11 +1436,30 @@ const INIT_BUN_SUBCOMMAND_LAUNCHERS: ReadonlyMap<string, readonly string[]> = ne
   ["yarn", ["exec", "dlx"]],
 ]);
 
+// `env` options that take a value (`--unset=NAME` is one word).
+const INIT_ENV_VALUE_OPTIONS = new Set(["-u", "--unset", "-C", "--chdir"]);
+
+// Bun's global options that take a value (`--opt=value` is one word); the others are switches.
+const INIT_BUN_VALUE_OPTIONS = new Set([
+  "--cwd",
+  "-c",
+  "--config",
+  "--env-file",
+  "--tsconfig-override",
+  "-r",
+  "--preload",
+  "--require",
+  "--import",
+  "--install",
+  "--port",
+]);
+
 /**
- * The index of `bun` in a `bun test` pair that is Bun's own invocation, or -1: the command is
- * Bun, or a launcher that runs the program right after its options (`pnpm exec bun test`, `npx
- * bun test`, `env A=1 bun test`). `echo bun test` and `npm run bun test` only carry the words,
- * and `node runner bun test` hands the pair to the script.
+ * The index of the `test` subcommand of an invocation of `bun` that is Bun's own, or -1: the
+ * command is Bun, or a launcher that runs the program right after its options (`pnpm exec bun
+ * test`, `npx bun test`, `env A=1 bun test`), and global flags (`bun --smol test`) may come
+ * between. `echo bun test` and `npm run bun test` only carry the words, and `node runner bun
+ * test` hands them to the script.
  */
 function initBunTestPair(words: readonly string[]): number {
   let start = 0;
@@ -1467,12 +1487,12 @@ function initBunTestPair(words: readonly string[]): number {
   } else if (launcher === "env" || launcher === "cross-env") {
     cursor = start + 1;
     skipsOptions = false;
-    // Assignments and options come before the program: `env -i A=1 bun test`.
-    while (
-      /^[A-Za-z_][A-Za-z0-9_]*=/u.test(words[cursor] ?? "") ||
-      (words[cursor] ?? "").startsWith("-")
-    ) {
-      cursor += 1;
+    // Assignments and options come before the program: `env -i -u FOO A=1 bun test`.
+    for (;;) {
+      const word = words[cursor] ?? "";
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(word)) cursor += 1;
+      else if (word.startsWith("-")) cursor += INIT_ENV_VALUE_OPTIONS.has(word) ? 2 : 1;
+      else break;
     }
   } else if (launcher === "dotenv") {
     const separator = words.indexOf("--", start + 1);
@@ -1486,9 +1506,13 @@ function initBunTestPair(words: readonly string[]): number {
       cursor += INIT_LAUNCHER_VALUE_OPTIONS.has(words[cursor] ?? "") ? 2 : 1;
     }
   }
-  return initCommandWordName(words[cursor] ?? "") === "bun" && words[cursor + 1] === "test"
-    ? cursor
-    : -1;
+  if (initCommandWordName(words[cursor] ?? "") !== "bun") return -1;
+  // Bun's global flags come before its subcommand (`bun --smol test`).
+  let position = cursor + 1;
+  while ((words[position] ?? "").startsWith("-")) {
+    position += INIT_BUN_VALUE_OPTIONS.has(words[position] ?? "") ? 2 : 1;
+  }
+  return words[position] === "test" ? position : -1;
 }
 
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
@@ -1887,10 +1911,19 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   let blockValue: "NONE" | "OPEN" | "NESTED" | "SEQUENCE" = "NONE";
   // A byte-order mark opens a YAML stream and is not part of its first line.
   const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  // The indentation of the root mapping: a document may indent all of its content equally.
+  let rootIndent: number | undefined;
   for (const raw of source.split(/\r?\n/u)) {
-    const line = initYamlStripComment(raw);
+    let line = initYamlStripComment(raw);
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    if (!/^(?:---|\.\.\.)(?:\s|$)/u.test(line)) {
+      const indent = line.length - line.trimStart().length;
+      rootIndent ??= indent;
+      // Content cannot sit left of the root: the structure below is read from the root's column.
+      if (indent < rootIndent) return [];
+      line = line.slice(rootIndent);
+    }
     if (opaque !== undefined) {
       const end = initYamlValueEnd(opaque, line);
       if (end === INIT_YAML_VALUE_MISMATCHED) return [];

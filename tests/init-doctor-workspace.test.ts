@@ -751,6 +751,9 @@ describe("a workspace member inherits the package manager of its workspace root"
       `catalog: [}\n${packages}`,
       `${packages}catalog: {a: [b}]\n`,
       `${packages}catalog: [a, {b: c]}\n`,
+      // Nothing may sit left of the root mapping's column.
+      "  packages: ['domains/*/api']\ncatalog: x\n",
+      "    packages: ['domains/*/api']\n  other: x\n",
       // A root mapping cannot turn into a sequence.
       `${packages}- invalid\n`,
       `${packages}catalog: x\n- a\n`,
@@ -800,6 +803,11 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const content of [
       "﻿packages: ['domains/*/api']\n",
       "﻿packages:\n  - 'domains/*/api'\n",
+      // A document may indent its whole root mapping.
+      "  packages:\n    - 'domains/*/api'\n",
+      "  packages: ['domains/*/api']\n  catalog:\n    a: 1\n",
+      "---\n  packages: ['domains/*/api']\n",
+      "  packages:\n  - 'domains/*/api'\n",
       "packages: ['domains//x/api']\n",
       "packages: ['domains/*//api']\n",
       "packages: ['domains/x/api//']\n",
@@ -1148,6 +1156,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["env CI=1 echo bun test", "bun:test", "env"],
     // `--` ends Node's options: `--test` after it is a script name.
     ["node -- --test", "node:test", "node"],
+    // A runtime spelled as a path is still the runtime that was given a script.
+    ["./node runner --test", "node:test", "./node"],
+    ["tools/node runner --test", "node:test", "tools/node"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -1197,6 +1208,12 @@ describe("a command that does not run the framework directly is named as such", 
     ["npx bun test tests", "bun:test"],
     ["npx --package bun bun test tests", "bun:test"],
     ["npx -p bun bun test tests", "bun:test"],
+    ["env -u FOO bun test tests", "bun:test"],
+    ["env --unset=FOO CI=1 bun test tests", "bun:test"],
+    ["env -C . bun test tests", "bun:test"],
+    ["bun --smol test tests", "bun:test"],
+    ["bun --cwd packages/api test tests", "bun:test"],
+    ["pnpm exec bun --bun test tests", "bun:test"],
     ["node --test -- tests", "node:test"],
     ["bunx bun test tests", "bun:test"],
     ["env CI=1 bun test tests", "bun:test"],

@@ -20,7 +20,8 @@
   negation), where a
   wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does),
   redundant separators and `.` segments are normalized, a directory below `node_modules` or
-  `bower_components` is never selected and a leading byte-order mark is skipped; a lone quote
+  `bower_components` is never selected, a leading byte-order mark is skipped and an equally
+  indented root mapping is read from its column; a lone quote
   inside a quoted scalar, a top-level line that is not a `key: value` entry, a comment or a
   document marker, a `-` item at column 0 that does not continue a block sequence, an unclosed
   or mismatched (`[}`) quoted scalar or flow collection under any key, a manager
@@ -38,9 +39,9 @@
   usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
   also behind a launcher; `--test` must come before a program's entry point and before a `--`, so
-  `node script`, `node script --test` and `node -- --test` are not Node's runner, and `bun test`
-  counts only when the command is Bun
-  or a launcher that runs it, so `echo bun test`, `npm run bun test` and `pnpm bun test` are not
+  `node script`, `node script --test`, `./node script --test` and `node -- --test` are not Node's
+  runner, and `bun test` (global flags such as `--smol` allowed before `test`) counts only when
+  the command is Bun or a launcher that runs it, so `echo bun test`, `npm run bun test` and `pnpm bun test` are not
   Bun) and spells no test path (a glob, a nested path or a test file name) now returns `BLOCKED`
   with `TEST_COMMAND_INDIRECT`. For a command that does invoke Node's runner, only the words after
   `--test` are path filters (`pnpm exec node --test` no longer filters on a `node` directory), and

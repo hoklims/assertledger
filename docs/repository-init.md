@@ -69,7 +69,8 @@ with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.
 `packages/.*`) does, as in pnpm. Redundant separators and `.` segments in a pattern
 (`packages//a`, `./packages/a`) are normalized, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
-is skipped. The value of any other key is not read, but one that opens with a quote or a flow
+is skipped, and a document that indents its whole root mapping equally is read from that column;
+content to its left makes the file declare nothing. The value of any other key is not read, but one that opens with a quote or a flow
 bracket must be closed by the bracket its opener asks for (`[}` is not), with nothing after it,
 and a `-` at column 0 must continue the block sequence that is the value of the key above it (a
 root mapping cannot turn into a sequence), or the file declares nothing. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and
@@ -96,12 +97,12 @@ only files under the package, so a later change at the workspace root is not det
 
 A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
 also behind a launcher such as `pnpm exec` or `tsx`; `--test` must come before a program's entry
-point and before a `--`, so `node script`, `node script --test` and `node -- --test` are not
-Node's runner, and `bun test` counts
+point and before a `--`, so `node script`, `node script --test`, `./node script --test` and
+`node -- --test` are not Node's runner, and `bun test` counts
 only when the command is Bun or a launcher that runs it: `pnpm exec`, `npm exec`, `yarn exec` or
 `dlx`, `npx` and `bunx` (with their valued options such as `--package`), `env` and `cross-env`
-assignments, `dotenv --`, behind `corepack`; so
-`echo bun test`, `npm run bun test` and `pnpm bun test` are not Bun) and spells no test path (a
+assignments and valued options (`env -u NAME`), `dotenv --`, behind `corepack`, with Bun's global
+flags allowed before `test` (`bun --smol test`); so `echo bun test`, `npm run bun test` and `pnpm bun test` are not Bun) and spells no test path (a
 glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
 test`, `pnpm -r test`
 and `npm run test:unit` are such commands: their operands are task names, not path filters, even
