@@ -1417,6 +1417,7 @@ const INIT_NODE_VALUE_OPTIONS = new Set([
   "--conditions",
   "-C",
   "--input-type",
+  "--experimental-test-isolation",
   "--test-concurrency",
   "--test-coverage-branches",
   "--test-coverage-exclude",
@@ -1599,13 +1600,18 @@ function initYamlUnquote(value: string): string | undefined {
     return text;
   }
   const inside = text.slice(1, -1);
-  // Single quotes: a doubled quote stands for one quote and nothing else is an escape.
-  if (first === "'") return inside.replaceAll("''", "'");
+  // Single quotes: a doubled quote stands for one quote and nothing else is an escape; a lone
+  // quote inside ends the scalar, so what follows it is not valid YAML.
+  if (first === "'") {
+    return inside.replaceAll("''", "").includes("'") ? undefined : inside.replaceAll("''", "'");
+  }
   // Double quotes: only the escapes of the characters a pattern may hold are decoded; any other
-  // escape is refused, never read as the literal characters.
+  // escape is refused, never read as the literal characters, and an unescaped quote inside ends
+  // the scalar.
   let decoded = "";
   for (let index = 0; index < inside.length; index += 1) {
     const character = inside[index] ?? "";
+    if (character === '"') return undefined;
     if (character !== "\\") {
       decoded += character;
       continue;
@@ -1710,7 +1716,9 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   // The pieces of a flow list still open at the end of a line, and its scanner state.
   let flow: string[] | undefined;
   const scan: InitFlowScan = { quote: "", depth: 0 };
-  for (const raw of text.split(/\r?\n/u)) {
+  // A byte-order mark opens a YAML stream and is not part of its first line.
+  const source = text.startsWith("﻿") ? text.slice(1) : text;
+  for (const raw of source.split(/\r?\n/u)) {
     const line = initYamlStripComment(raw);
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
@@ -1731,7 +1739,12 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       inPackages = false;
       itemIndent = undefined;
       const entry = initYamlTopLevelEntry(line);
-      if (entry === undefined) continue;
+      if (entry === undefined) {
+        // A document end marker is the only top-level line that is not a mapping entry: any
+        // other text makes the file invalid YAML, which declares nothing.
+        if (/^\.\.\.(?:\s|$)/u.test(line)) continue;
+        return [];
+      }
       // pnpm refuses a mapping that repeats a key, so such a file is no workspace to infer from.
       if (keys.has(entry.key)) return [];
       keys.add(entry.key);
@@ -1920,6 +1933,8 @@ function initGlobSegments(pattern: string): InitGlobSegment[] | undefined {
   if (pattern.includes("\\") || pattern.includes("(") || pattern.includes(")")) return undefined;
   const segments: InitGlobSegment[] = [];
   for (const segment of pattern.split("/")) {
+    // Redundant separators (`packages//a`) and `.` segments are normalized away, as pnpm does.
+    if (segment === "" || segment === ".") continue;
     if (segment === "**") {
       if (segments[segments.length - 1] !== "**") segments.push("**");
       continue;
@@ -1973,6 +1988,8 @@ function initWorkspaceDeclaresMember(
   if (patterns.length > INIT_WORKSPACE_PATTERN_COUNT) return undefined;
   if (relative.length > INIT_WORKSPACE_PATH_LENGTH) return undefined;
   const path = relative.split("/");
+  // pnpm never selects a directory below a dependency tree, even when a pattern names it.
+  if (path.some((name) => name === "node_modules" || name === "bower_components")) return false;
   const budget = { left: INIT_WORKSPACE_PATTERN_COUNT };
   let included = false;
   let excluded = false;

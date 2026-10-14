@@ -17,8 +17,11 @@
   list (also across lines), under a plain or quoted `packages` key (a file that repeats a
   top-level key declares nothing, as pnpm refuses it), with `!` exclusions, `*`, `**`, `?`,
   `{a,b}` and `[a-z]`, where a
-  wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does);
-  any other syntax, any other shape under `packages`, an entry that is not a string (`42`, `true`,
+  wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does),
+  redundant separators and `.` segments are normalized, a directory below `node_modules` or
+  `bower_components` is never selected and a leading byte-order mark is skipped; a lone quote
+  inside a quoted scalar, a top-level line that is not a `key: value` entry, a comment or a
+  document marker, and any other syntax, any other shape under `packages`, an entry that is not a string (`42`, `true`,
   `null`, an empty item), anything but whitespace after a flow list, a pattern
   beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and alternations in total,
   1,024-character paths) or a file that exists but cannot be read (over 1 MiB, a link) declares

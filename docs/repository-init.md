@@ -64,11 +64,15 @@ across lines) with the subset of globs the
 managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
 their position. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
 with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
-`packages/.*`) does, as in pnpm. A `#` inside a quoted pattern is kept, a doubled single quote
-decodes to one quote, and a double-quoted escape other than `\\`, `\"` and `\/` is refused.
-Anything else declares nothing and infers nothing: another syntax, another shape under `packages`
-(a mapping, a nested sequence), an entry that is not a string (a number, a boolean, `null`, `~`,
-an empty item, a mapping or a list), text
+`packages/.*`) does, as in pnpm. Redundant separators and `.` segments in a pattern
+(`packages//a`, `./packages/a`) are normalized, and a directory below `node_modules` or
+`bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
+is skipped. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and
+a double-quoted escape other than `\\`, `\"` and `\/` is refused, as is a lone quote inside a
+quoted scalar. Anything else declares nothing and infers nothing: another syntax, another shape
+under `packages` (a mapping, a nested sequence), an entry that is not a string (a number, a
+boolean, `null`, `~`, an empty item, a mapping or a list), a top-level line that is neither a
+`key: value` entry, a comment nor a document marker, text
 after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
 than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a
 `pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, not a regular file).

@@ -666,6 +666,102 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
   });
 
+  it("refuses YAML that its parser would refuse", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const content of [
+      "---\npackages: ['domains/*/api']\n",
+      "packages: ['domains/*/api']\n...\n",
+      "packages: ['domains/*/api', 'it''s']\n",
+      'packages: [\'domains/*/api\', "say \\"x\\""]\n',
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+    for (const content of [
+      // An unescaped quote inside a quoted scalar ends it: what follows is not valid YAML.
+      "packages: ['domains/*/api', 'a'b']\n",
+      'packages: [\'domains/*/api\', "a"b"]\n',
+      "packages:\n  - 'domains/*/api'\n  - 'a'b'\n",
+      // A top-level line that is not a mapping entry invalidates the file, before or after.
+      "packages: ['domains/*/api']\nthis is invalid\n",
+      "this is invalid\npackages: ['domains/*/api']\n",
+      "packages:\n  - 'domains/*/api'\nnot a mapping entry\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
+  it("skips a byte-order mark and redundant separators", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const content of [
+      "﻿packages: ['domains/*/api']\n",
+      "﻿packages:\n  - 'domains/*/api'\n",
+      "packages: ['domains//x/api']\n",
+      "packages: ['domains/*//api']\n",
+      "packages: ['domains/x/api//']\n",
+      "packages: ['./domains//x/./api']\n",
+      "packages: ['domains/{x,y}//api']\n",
+      "packages: ['domains/**//api']\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+  });
+
+  it("never selects a directory below a dependency tree", async () => {
+    const run = async (directory: string, content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        [`${directory}/package.json`]: JSON.stringify({ name: "dep" }),
+        [`${directory}/a.spec.ts`]: BUN_SPEC,
+      });
+      return initializeRepository(path.join(base, ...directory.split("/")), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const [directory, content] of [
+      ["node_modules/dep", "packages:\n  - '**'\n"],
+      ["node_modules/dep", "packages:\n  - 'node_modules/*'\n"],
+      ["packages/a/node_modules/dep", "packages:\n  - 'packages/**'\n"],
+      ["bower_components/dep", "packages:\n  - 'bower_components/*'\n"],
+      ["packages/bower_components/dep", "packages:\n  - 'packages/*/*'\n"],
+    ] as const) {
+      const result = await run(directory, content);
+      assert.equal(result.status, "CONFLICT", `${directory} ${content}`);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+    // A name that only contains the word is an ordinary directory.
+    const result = await run("packages/my_node_modules", "packages:\n  - 'packages/*'\n");
+    assert.equal(result.status, "WOULD_CREATE");
+  });
+
   it("does not let a wildcard select a dot-prefixed directory", async () => {
     const run = async (directory: string, content: string) => {
       const base = await tree({
@@ -980,6 +1076,7 @@ describe("a command that does not run the framework directly is named as such", 
     ["node --import tsx --test tests", "node:test"],
     ["node --test-name-pattern unit --test tests", "node:test"],
     ["node --test-rerun-failures state.json --test tests", "node:test"],
+    ["node --experimental-test-isolation process --test tests", "node:test"],
     ["node --test-reporter spec --test-concurrency 2 --test tests", "node:test"],
     ["pnpm exec bun test tests", "bun:test"],
   ] as const) {
