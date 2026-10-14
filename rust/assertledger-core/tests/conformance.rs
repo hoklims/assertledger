@@ -15,7 +15,10 @@ fn decisions_match_frozen_published_fixtures() {
             "CANONICALIZE" => "canonicalize",
             "DECIDE_EVIDENCE" => "decideEvidence",
             "REPLAY_EVIDENCE" => "replayEvidenceManifest",
-            _ => continue,
+            "CREATE_PROFILE_V1" => "createAgenticProfile",
+            "CREATE_BENCHMARK_V1" => "createAgenticBenchmark",
+            "REPLAY_BENCHMARK_V1" => "replayAgenticBenchmark",
+            other => panic!("Unsupported frozen corpus operation: {other}"),
         };
         let input: Value = serde_json::from_slice(
             &fs::read(root.join(case["inputPath"].as_str().unwrap())).unwrap(),
@@ -36,5 +39,5 @@ fn decisions_match_frozen_published_fixtures() {
         assert_eq!(actual, expected, "{}", case["id"].as_str().unwrap());
         checked += 1;
     }
-    assert!(checked >= 10, "the published decision corpus must execute");
+    assert_eq!(checked, bundle["cases"].as_array().unwrap().len());
 }
