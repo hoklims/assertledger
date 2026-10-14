@@ -978,6 +978,8 @@ describe("a workspace member inherits the package manager of its workspace root"
       ["domains/}/api", "packages:\n  - 'domains/[{}]/api'\n"],
       ["domains/{/api", "packages:\n  - 'domains/{[{}],z}/api'\n"],
       ["domains/z/api", "packages:\n  - 'domains/{[{}],z}/api'\n"],
+      // Braces in a class are characters: they do not count towards the nesting bound.
+      ["domains/{/api", "packages:\n  - 'domains/[{{{{{{{{{{{{]/api'\n"],
     ] as const) {
       const result = await run(directory, content);
       assert.equal(result.status, "WOULD_CREATE", `${directory} ${content}`);
@@ -1004,6 +1006,7 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const [directory, content] of [
       ["packages/.hidden", "packages:\n  - 'packages/*'\n"],
       ["packages/.hidden", "packages:\n  - 'packages/?hidden'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/[a-z]hidden'\n"],
       ["packages/.hidden/api", "packages:\n  - 'packages/**'\n"],
     ] as const) {
       const result = await run(directory, content);
@@ -1015,6 +1018,10 @@ describe("a workspace member inherits the package manager of its workspace root"
       ["packages/.hidden", "packages:\n  - 'packages/.hidden'\n"],
       ["packages/.hidden", "packages:\n  - 'packages/.*'\n"],
       ["packages/.hidden", "packages:\n  - 'packages/[.]hidden'\n"],
+      // Any leading class that can match a dot spells it.
+      ["packages/.hidden", "packages:\n  - 'packages/[.a]hidden'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/[a.]hidden'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/[.-0]hidden'\n"],
       ["packages/a", "packages:\n  - 'packages/*'\n"],
       ["packages/a/b", "packages:\n  - 'packages/**'\n"],
     ] as const) {
@@ -1281,6 +1288,9 @@ describe("a command that does not run the framework directly is named as such", 
     // `corepack` only dispatches to a package manager, and Bun's `-e` takes code, not a command.
     ["corepack bun test", "bun:test", "corepack"],
     ["bun -e test", "bun:test", "bun"],
+    // `exec` is the value of `--workspace` here: the manager has no subcommand and runs a script.
+    ["npm --workspace exec node --test", "node:test", "npm"],
+    ["npm -w exec bun test", "bun:test", "npm"],
     ["bun --unknown-option test", "bun:test", "bun"],
     // A runtime spelled as a path is still the runtime that was given a script.
     // From a script, the program that owns `--test` must be a Node runtime.
@@ -1353,6 +1363,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["pnpx tsx --test tests", "node:test"],
     ["pnpx bun test tests", "bun:test"],
     ["bun --expose-gc test tests", "bun:test"],
+    ["bun --conditions=development test tests", "bun:test"],
+    ["pnpm --filter api exec node --test tests", "node:test"],
+    ["npm --workspace api exec -- node --test tests", "node:test"],
     ["env -u FOO bun test tests", "bun:test"],
     ["env --unset=FOO CI=1 bun test tests", "bun:test"],
     ["env -C . bun test tests", "bun:test"],

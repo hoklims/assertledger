@@ -1432,11 +1432,51 @@ function initNodeRunnerOperands(words: readonly string[], flag: number): string[
  */
 function initRunsPackageScript(words: readonly string[]): boolean {
   const { start, launcher } = initEffectiveLauncher(words);
-  const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher);
-  if (subcommands === undefined) return false;
-  const index = words.findIndex((word, position) => position > start && subcommands.includes(word));
-  return index < 0 || words.slice(start + 1, index).includes("run");
+  if (!INIT_LAUNCHER_SUBCOMMANDS.has(launcher)) return false;
+  return initManagerSubcommand(words, start, launcher) < 0;
 }
+
+/**
+ * The index of the executing subcommand (`exec`, `dlx`, `x`) of a package manager command, or -1:
+ * the subcommand is the first word that is neither an option nor the value of one, so `npm
+ * --workspace exec node` (where `exec` is a value) and `npm run exec` have none.
+ */
+function initManagerSubcommand(words: readonly string[], start: number, launcher: string): number {
+  const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher) ?? [];
+  const valued = INIT_MANAGER_VALUE_OPTIONS.get(launcher) ?? new Set<string>();
+  let index = start + 1;
+  while ((words[index] ?? "").startsWith("-")) index += valued.has(words[index] ?? "") ? 2 : 1;
+  return subcommands.includes(words[index] ?? "") ? index : -1;
+}
+
+// The options of each manager that take their value in the next word, before its subcommand.
+const INIT_MANAGER_VALUE_OPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [
+    "npm",
+    new Set([
+      "--workspace",
+      "-w",
+      "--prefix",
+      "--registry",
+      "--cache",
+      "--userconfig",
+      "--loglevel",
+    ]),
+  ],
+  [
+    "pnpm",
+    new Set([
+      "--filter",
+      "-F",
+      "--dir",
+      "-C",
+      "--workspace-concurrency",
+      "--loglevel",
+      "--reporter",
+    ]),
+  ],
+  ["yarn", new Set(["--cwd", "--cache-folder", "--mutex", "--registry"])],
+]);
 
 /** The name of a command word: its last path segment without a Windows launcher suffix. */
 function initCommandWordName(word: string): string {
@@ -1547,11 +1587,8 @@ function initLaunchedProgram(words: readonly string[]): number {
     cursor = start;
     skipsOptions = false;
   } else if (subcommands !== undefined) {
-    const index = words.findIndex(
-      (word, position) => position > start && subcommands.includes(word),
-    );
-    const runsScript = words.slice(start + 1, index < 0 ? 0 : index).includes("run");
-    if (index >= 0 && !runsScript) cursor = index + 1;
+    const index = initManagerSubcommand(words, start, launcher);
+    if (index >= 0) cursor = index + 1;
   } else if (INIT_DIRECT_LAUNCHERS.has(launcher)) {
     cursor = start + 1;
   } else if (launcher === "env" || launcher === "cross-env") {
@@ -1638,6 +1675,22 @@ const INIT_BUN_GLOBAL_VALUE_OPTIONS = new Set([
   "--port",
   "--install",
   "--preload",
+  "--require",
+  "--import",
+  "--conditions",
+  "--define",
+  "--drop",
+  "--loader",
+  "--main-fields",
+  "--extension-order",
+  "--title",
+  "--user-agent",
+  "--max-http-header-size",
+  "--dns-result-order",
+  "--unhandled-rejections",
+  "--console-depth",
+  "--elide-lines",
+  "--fetch-preconnect",
 ]);
 
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
@@ -2158,8 +2211,13 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
 function initBraceNesting(pattern: string): number {
   let level = 0;
   let deepest = 0;
-  for (const character of pattern) {
-    if (character === "{") {
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === "[") {
+      // Braces held in a class are characters: they open no group.
+      const close = pattern.indexOf("]", index + 2);
+      if (close >= 0) index = close;
+    } else if (character === "{") {
       level += 1;
       deepest = Math.max(deepest, level);
     } else if (character === "}") {
@@ -2289,11 +2347,11 @@ function initGlobTokenMatches(token: InitGlobToken, character: string): boolean 
 /** Matches one segment against its tokens in time proportional to the product of their lengths. */
 function initGlobSegmentMatches(tokens: readonly InitGlobToken[], text: string): boolean {
   // A wildcard, `?` or class does not select a name that starts with a dot: only a pattern that
-  // spells the dot does, as a literal or as the class `[.]`.
+  // spells the dot does, as a literal or as a class that can match it (`[.]`, `[.a]`).
   const first = tokens[0];
   const spellsDot =
     (first?.kind === "literal" && first.value === ".") ||
-    (first?.kind === "class" && first.members === ".");
+    (first?.kind === "class" && initGlobTokenMatches(first, "."));
   if (text.startsWith(".") && !spellsDot) return false;
   let token = 0;
   let position = 0;

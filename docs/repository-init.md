@@ -67,9 +67,10 @@ managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which a
 their position. A class that opens with `!` or `^` is not understood, as glob dialects disagree on
 whether it negates. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
 with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
-`packages/.*`, `packages/[.]hidden`) does, as in pnpm. Redundant separators, `.` and `..` segments
+`packages/.*`, `packages/[.]hidden`, or any leading class that can match a dot such as `[.a]`) does,
+as in pnpm. Redundant separators, `.` and `..` segments
 in a pattern (`packages//a`, `./packages/a`, `packages/../other/a`) are normalized, a pattern that
-climbs out of the workspace root is ignored, a `,` or a brace inside a class (`{[a,b],x}`, `[{}]`) is not an
+climbs out of the workspace root is ignored, a `,` or a brace inside a class (`{[a,b],x}`, `[{}]`, also in the nesting bound) is not an
 alternative separator, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
 is skipped, and a document that indents its whole root mapping equally is read from that column;
