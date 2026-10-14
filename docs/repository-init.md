@@ -60,8 +60,11 @@ patterns and only pnpm owns it, as in pnpm; `workspaces` is read only without it
 belongs to npm, Yarn and Bun, and its `{ "packages": [...] }` object form to Yarn and Bun. A lone
 manager that does not own the declaration, including a Python manager, selects nothing. A
 `package.json` at the workspace root that is not valid JSON returns `CONFLICT` with
-`PACKAGE_MANIFEST_INVALID`. A `pnpm-workspace.yaml` that exists but cannot be read (larger than
-1 MiB, or not a regular file) infers nothing, and does not fall back to `workspaces`. Patterns are
+`PACKAGE_MANIFEST_INVALID`; one that cannot be read (larger than 16 MiB, or not a regular file)
+infers nothing. A `pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, or not a
+regular file) infers nothing either, and does not fall back to `workspaces`. A `#` inside a quoted
+pattern is kept, and anything but whitespace after the closing bracket of a flow list declares
+nothing. Patterns are
 read in the subset the managers share (`*`, `**`, `?`, `{a,b}` and `[a-z]`), also inside a quoted
 item of a single-line or multiline YAML flow list; any other syntax, and any pattern beyond 256
 characters or 8 nested braces (or more than 1,024 patterns and alternations in total, or a package
@@ -76,9 +79,10 @@ only files under the package, so a later change at the workspace root is not det
 `init` after changing the workspace's package manager.
 
 A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
-also behind a launcher such as `pnpm exec` or `tsx`; a bare `node script` is not Node's runner)
-and spells no test path (a glob, a nested path
-or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo test`, `pnpm -r test`
+also behind a launcher such as `pnpm exec` or `tsx`; `--test` must come before a program's entry
+point, so `node script` and `node script --test` are not Node's runner) and spells no test path (a
+glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
+test`, `pnpm -r test`
 and `npm run test:unit` are such commands: their operands are task names, not path filters, even
 when a directory of that name exists, so no inventory can be derived. `detections.testCommand`
 names the command. Run `doctor` on one workspace package, or declare the direct runner with

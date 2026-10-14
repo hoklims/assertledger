@@ -19,14 +19,18 @@
   is built from a pattern. Each manager keeps its own declaration: the array
   `workspaces` form is npm, Yarn and Bun's, the object form Yarn and Bun's, and a lone manager that
   does not own it, such as a Python manager, selects nothing. A workspace root `package.json` that
-  is not valid JSON returns `PACKAGE_MANIFEST_INVALID`. The inherited facts are read again before
+  is not valid JSON returns `PACKAGE_MANIFEST_INVALID`; one beyond 16 MiB, or not a regular file,
+  infers nothing. A `#` inside a quoted pattern is kept, and anything but whitespace after a flow
+  list's closing bracket declares nothing. Brace limits count nesting, not sibling groups. The
+  inherited facts are read again before
   writing, like the in-package evidence. Inputs that already detect a manager or take an override
   are unchanged.
 - `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
   usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
-  also behind a launcher; a bare `node script` is not Node's runner) and spells no test path (a glob, a nested path or a test file name) now
-  returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. Its operands were read as path filters:
+  also behind a launcher; `--test` must come before a program's entry point, so `node script` and
+  `node script --test` are not Node's runner) and spells no test path (a glob, a nested path or a
+  test file name) now returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. Its operands were read as path filters:
   `turbo test` selected the tests under `test/`, or none and `BASE_TEST_FILES_UNAVAILABLE`, and
   `npm run test:unit` selected every test. A command like that is no longer accepted with a
   guessed inventory: declare the direct runner with `--test-command-json`. Commands that invoke

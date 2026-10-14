@@ -1339,16 +1339,54 @@ function initCommandPathMatchers(
 /**
  * Whether the command invokes the framework's own runner, itself or behind a launcher
  * (`pnpm exec node --test`, `tsx --test`, `bunx bun test`): its operands are then that runner's
- * path filters. Node's runner is the `--test` flag: a bare `node runner` runs a script of its own.
+ * path filters. Node's runner is the `--test` option: options come before the program entry
+ * point, so `node runner --test` runs a script of its own and hands it `--test`.
  */
 function initCommandInvokesRunner(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
 ): boolean {
-  if (runner === "node") return command.arguments.includes("--test");
   const words = [command.executable, ...command.arguments];
-  return words.some((word, index) => word === "bun" && words[index + 1] === "test");
+  if (runner === "bun") {
+    return words.some((word, index) => word === "bun" && words[index + 1] === "test");
+  }
+  const flag = words.indexOf("--test", 1);
+  if (flag < 0) return false;
+  // The nearest word at or before `from` that is not an option or the value of an option that
+  // takes one: the executable at index 0 always is a word.
+  const nearestWord = (from: number): number => {
+    let position = from;
+    while (
+      position >= 1 &&
+      ((words[position] ?? "").startsWith("-") ||
+        INIT_NODE_VALUE_OPTIONS.has(words[position - 1] ?? ""))
+    ) {
+      position -= 1;
+    }
+    return position;
+  };
+  // The program the option belongs to, and the word that precedes it: when a runtime comes right
+  // before it (`node runner`), it is that runtime's entry point and `--test` is its argument.
+  const program = nearestWord(flag - 1);
+  const previous = program >= 1 ? nearestWord(program - 1) : -1;
+  const name = words[program] ?? "";
+  const spelledAsScript = name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name);
+  const runtimeBefore = previous >= 0 && INIT_NODE_RUNTIMES.has(words[previous] ?? "");
+  return !spelledAsScript && !runtimeBefore;
 }
+
+const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
+const INIT_NODE_VALUE_OPTIONS = new Set([
+  "--import",
+  "--require",
+  "-r",
+  "--loader",
+  "--experimental-loader",
+  "--env-file",
+  "--conditions",
+  "-C",
+  "--input-type",
+]);
 
 /**
  * Whether the command does not invoke the framework's runner and spells no test path. Its operands
@@ -1377,7 +1415,9 @@ const INIT_MANAGER_LOCKFILES: ReadonlyArray<readonly [InitPackageManager, readon
   ["pip", ["Pipfile.lock", "requirements.txt"]],
 ];
 const INIT_WORKSPACE_MANAGERS: readonly InitPackageManager[] = ["pnpm", "npm", "yarn", "bun"];
+// pnpm-workspace.yaml is read as text and scanned; a manifest may be larger, as in the contracts.
 const INIT_WORKSPACE_FILE_LIMIT_BYTES = 1_048_576;
+const INIT_WORKSPACE_MANIFEST_LIMIT_BYTES = 16 * 1_048_576;
 // Patterns and the alternations they expand to share one budget.
 const INIT_WORKSPACE_PATTERN_COUNT = 1_024;
 const INIT_WORKSPACE_PATTERN_LENGTH = 256;
@@ -1403,7 +1443,10 @@ type InitWorkspaceFileRead =
   | { kind: "UNREADABLE" }
   | { kind: "TEXT"; text: string };
 
-async function initWorkspaceFileRead(file: string): Promise<InitWorkspaceFileRead> {
+async function initWorkspaceFileRead(
+  file: string,
+  limit = INIT_WORKSPACE_FILE_LIMIT_BYTES,
+): Promise<InitWorkspaceFileRead> {
   let stats: Stats;
   try {
     stats = await lstat(file);
@@ -1412,7 +1455,7 @@ async function initWorkspaceFileRead(file: string): Promise<InitWorkspaceFileRea
       ? { kind: "ABSENT" }
       : { kind: "UNREADABLE" };
   }
-  if (!stats.isFile() || stats.size > INIT_WORKSPACE_FILE_LIMIT_BYTES) {
+  if (!stats.isFile() || stats.size > limit) {
     return { kind: "UNREADABLE" };
   }
   try {
@@ -1428,10 +1471,17 @@ function initFlowListItems(inside: string): string[] {
   let current = "";
   let quote = "";
   let depth = 0;
-  for (const character of inside) {
+  for (let index = 0; index < inside.length; index += 1) {
+    const character = inside[index] ?? "";
     if (quote !== "") {
+      if (quote === '"' && character === "\\") {
+        current += character;
+        index += 1;
+        current += inside[index] ?? "";
+        continue;
+      }
       if (character === quote) quote = "";
-    } else if (character === "'" || character === '"') {
+    } else if (initYamlQuoteOpens(inside, index)) {
       quote = character;
     } else if (character === "{" || character === "[") {
       depth += 1;
@@ -1448,10 +1498,29 @@ function initFlowListItems(inside: string): string[] {
   return items;
 }
 
-/** Drops a trailing YAML comment: a `#` that follows whitespace. Linear, with no backtracking. */
+/** Whether a quote character at `index` opens a quoted scalar: at the start of a token. */
+function initYamlQuoteOpens(text: string, index: number): boolean {
+  const character = text[index];
+  if (character !== "'" && character !== '"') return false;
+  return index === 0 || " \t[{,:-".includes(text[index - 1] ?? "");
+}
+
+/**
+ * Drops a trailing YAML comment: a `#` that follows whitespace outside a quoted scalar. Linear,
+ * with no backtracking. A quote that opens mid-token (`it's`) does not start a quoted scalar.
+ */
 function initYamlStripComment(line: string): string {
-  for (let index = 1; index < line.length; index += 1) {
-    if (line[index] === "#" && /\s/u.test(line[index - 1] ?? "")) return line.slice(0, index);
+  let quote = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index] ?? "";
+    if (quote !== "") {
+      if (quote === '"' && character === "\\") index += 1;
+      else if (character === quote) quote = "";
+    } else if (initYamlQuoteOpens(line, index)) {
+      quote = character;
+    } else if (character === "#" && index > 0 && /\s/u.test(line[index - 1] ?? "")) {
+      return line.slice(0, index);
+    }
   }
   return line;
 }
@@ -1479,8 +1548,9 @@ function initFlowScan(state: InitFlowScan, text: string): number {
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index] ?? "";
     if (state.quote !== "") {
-      if (character === state.quote) state.quote = "";
-    } else if (character === "'" || character === '"') {
+      if (state.quote === '"' && character === "\\") index += 1;
+      else if (character === state.quote) state.quote = "";
+    } else if (initYamlQuoteOpens(text, index)) {
       state.quote = character;
     } else if (character === "{" || character === "[") {
       state.depth += 1;
@@ -1518,6 +1588,8 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
     if (flow !== undefined) {
       const end = initFlowScan(scan, line);
       if (end >= 0) {
+        // Only whitespace may follow the closing bracket: anything else is not valid YAML.
+        if (line.slice(end + 1).trim().length > 0) return [];
         flow.push(line.slice(0, end));
         patterns.push(...flowPatterns(flow.join(" ")));
         flow = undefined;
@@ -1536,8 +1608,12 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
         scan.quote = "";
         scan.depth = 0;
         const end = initFlowScan(scan, inside);
-        if (end >= 0) patterns.push(...flowPatterns(inside.slice(0, end)));
-        else flow = [inside];
+        if (end >= 0) {
+          if (inside.slice(end + 1).trim().length > 0) return [];
+          patterns.push(...flowPatterns(inside.slice(0, end)));
+        } else {
+          flow = [inside];
+        }
       }
     } else if (
       inPackages &&
@@ -1576,25 +1652,35 @@ function initPackageWorkspacePatterns(document: Record<string, unknown> | undefi
   };
 }
 
+/** The deepest nesting of braces in a pattern: sibling groups do not nest. */
+function initBraceNesting(pattern: string): number {
+  let level = 0;
+  let deepest = 0;
+  for (const character of pattern) {
+    if (character === "{") {
+      level += 1;
+      deepest = Math.max(deepest, level);
+    } else if (character === "}") {
+      level = Math.max(0, level - 1);
+    }
+  }
+  return deepest;
+}
+
 /**
  * Expands the `{a,b}` alternations of a workspace pattern into the plain patterns they stand for.
  * Each pattern produced spends `budget`, so a repository cannot make the expansion grow without
  * bound. Undefined for anything outside the supported subset: an alternation with one branch
- * (a range such as `{1..3}` has none), unbalanced braces, nesting past the depth limit, or an
- * exhausted budget.
+ * (a range such as `{1..3}` has none), unbalanced braces, or an exhausted budget. Nesting depth
+ * is bounded by the caller.
  */
-function initExpandBraces(
-  pattern: string,
-  budget: { left: number },
-  depth = 0,
-): string[] | undefined {
+function initExpandBraces(pattern: string, budget: { left: number }): string[] | undefined {
   const open = pattern.indexOf("{");
   if (open < 0) {
     if (pattern.includes("}")) return undefined;
     budget.left -= 1;
     return budget.left < 0 ? undefined : [pattern];
   }
-  if (depth >= INIT_WORKSPACE_BRACE_DEPTH) return undefined;
   let level = 0;
   let close = -1;
   const cuts: number[] = [open];
@@ -1619,7 +1705,7 @@ function initExpandBraces(
   const results: string[] = [];
   for (let branch = 0; branch + 1 < cuts.length; branch += 1) {
     const alternative = pattern.slice((cuts[branch] ?? 0) + 1, cuts[branch + 1]);
-    const expanded = initExpandBraces(`${prefix}${alternative}${suffix}`, budget, depth + 1);
+    const expanded = initExpandBraces(`${prefix}${alternative}${suffix}`, budget);
     if (expanded === undefined) return undefined;
     results.push(...expanded);
   }
@@ -1773,6 +1859,7 @@ function initWorkspaceDeclaresMember(
       continue;
     }
     if (pattern.length > INIT_WORKSPACE_PATTERN_LENGTH) return undefined;
+    if (initBraceNesting(pattern) > INIT_WORKSPACE_BRACE_DEPTH) return undefined;
     const expansions = initExpandBraces(pattern, budget);
     if (expansions === undefined) return undefined;
     for (const expansion of expansions) {
@@ -1837,7 +1924,13 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     const workspaceRead = await initWorkspaceFileRead(path.join(directory, "pnpm-workspace.yaml"));
     if (workspaceRead.kind === "UNREADABLE") return undefined;
     const workspaceFile = workspaceRead.kind === "TEXT" ? workspaceRead.text : undefined;
-    const manifestRead = await initWorkspaceFileRead(path.join(directory, "package.json"));
+    const manifestRead = await initWorkspaceFileRead(
+      path.join(directory, "package.json"),
+      INIT_WORKSPACE_MANIFEST_LIMIT_BYTES,
+    );
+    // A manifest that exists but cannot be read within its bound is neither absent nor invalid
+    // JSON: nothing is inferred from this directory.
+    if (manifestRead.kind === "UNREADABLE") return undefined;
     const manifest = initPackageDocument(
       manifestRead.kind === "TEXT" ? manifestRead.text : undefined,
     );
@@ -1882,7 +1975,7 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     return {
       managers,
       invalidManagerField,
-      invalidManifest: manifest === undefined && manifestRead.kind !== "ABSENT",
+      invalidManifest: manifest === undefined && manifestRead.kind === "TEXT",
     };
   }
   return undefined;

@@ -538,6 +538,84 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.equal(ordinary.detections.packageManager, "pnpm");
   });
 
+  it("counts nesting of braces, not sibling groups", async () => {
+    // Nine sibling groups: 2^9 = 512 alternations, nesting depth one.
+    const base = await tree({
+      ".git/": "",
+      "pnpm-workspace.yaml":
+        "packages:\n  - '{d,e}{o,p}{m,n}{a,b}{i,j}{n,o}{s,t}/{x,y}/{api,web}'\n",
+      "pnpm-lock.yaml": "",
+      ...member(),
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "WOULD_CREATE");
+    assert.equal(result.detections.packageManager, "pnpm");
+  });
+
+  it("keeps a # inside a quoted pattern and rejects text after a flow list", async () => {
+    const packageDirectory = "domains/api #1";
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        [`${packageDirectory}/package.json`]: JSON.stringify({ name: "api" }),
+        [`${packageDirectory}/a.spec.ts`]: BUN_SPEC,
+      });
+      return initializeRepository(path.join(base, ...packageDirectory.split("/")), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const content of [
+      "packages:\n  - 'domains/api #1'\n",
+      "packages: ['domains/api #1'] # trailing comment\n",
+      "packages: [\"domains/api #1\", 'x']\n",
+      "packages: [\n  'domains/api #1' # the package\n]\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+      assert.equal(result.detections.packageManager, "pnpm", content);
+    }
+    for (const content of [
+      "packages: ['domains/*'] trailing\n",
+      "packages: [\n  'domains/*'\n] trailing\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
+  it("reads a workspace manifest beyond the YAML bound and keeps unreadable apart from invalid", async () => {
+    const run = async (megabytes: number) => {
+      const base = await tree({
+        ...rootFiles,
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: "pnpm@12.11.2",
+          padding: "x".repeat(megabytes * 1_048_576),
+        }),
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    // A valid manifest larger than the 1 MiB YAML bound is still a manifest.
+    const large = await run(2);
+    assert.equal(large.status, "WOULD_CREATE");
+    assert.equal(large.detections.packageManager, "pnpm");
+    // Beyond its own bound it infers nothing, and is not reported as malformed JSON.
+    const huge = await run(17);
+    assert.equal(huge.status, "CONFLICT");
+    assert.deepEqual(huge.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+  });
+
   it("matches wildcard runs without backtracking", { timeout: 60_000 }, async () => {
     // Eight `*a` groups against a directory of one hundred and twenty `a`: polynomial of degree 8
     // for a backtracking regular expression, which never ends; a product of lengths here.
@@ -688,6 +766,11 @@ describe("a command that does not run the framework directly is named as such", 
     ["bun run test", "bun:test", "bun"],
     // A script of its own run by node, not Node's test runner.
     ["node runner", "node:test", "node"],
+    // `--test` after the entry point belongs to that program, not to node.
+    ["node runner --test", "node:test", "node"],
+    ["node --no-warnings runner --test", "node:test", "node"],
+    ["node runner.js --test", "node:test", "node"],
+    ["tsx runner --test", "node:test", "tsx"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -725,6 +808,8 @@ describe("a command that does not run the framework directly is named as such", 
   for (const [script, framework] of [
     ["pnpm exec node --test tests", "node:test"],
     ["tsx --test tests", "node:test"],
+    ["npx tsx --test tests", "node:test"],
+    ["node --import tsx --test tests", "node:test"],
     ["pnpm exec bun test tests", "bun:test"],
   ] as const) {
     it(`keeps \`${script}\` as a runner that names a path nothing matches`, async () => {
