@@ -1505,7 +1505,15 @@ function initFlowListItems(inside: string): string[] {
         current += inside[index] ?? "";
         continue;
       }
-      if (character === quote) quote = "";
+      if (character === quote) {
+        if (quote === "'" && inside[index + 1] === "'") {
+          current += character;
+          index += 1;
+          current += inside[index] ?? "";
+          continue;
+        }
+        quote = "";
+      }
     } else if (initYamlQuoteOpens(inside, index)) {
       quote = character;
     } else if (character === "{" || character === "[") {
@@ -1540,6 +1548,7 @@ function initYamlStripComment(line: string): string {
     const character = line[index] ?? "";
     if (quote !== "") {
       if (quote === '"' && character === "\\") index += 1;
+      else if (quote === "'" && character === "'" && line[index + 1] === "'") index += 1;
       else if (character === quote) quote = "";
     } else if (initYamlQuoteOpens(line, index)) {
       quote = character;
@@ -1550,12 +1559,28 @@ function initYamlStripComment(line: string): string {
   return line;
 }
 
-function initYamlUnquote(value: string): string {
+function initYamlUnquote(value: string): string | undefined {
   const text = value.trim();
   const first = text[0];
-  return text.length >= 2 && (first === "'" || first === '"') && text.endsWith(first)
-    ? text.slice(1, -1)
-    : text;
+  if (text.length < 2 || (first !== "'" && first !== '"') || !text.endsWith(first)) return text;
+  const inside = text.slice(1, -1);
+  // Single quotes: a doubled quote stands for one quote and nothing else is an escape.
+  if (first === "'") return inside.replaceAll("''", "'");
+  // Double quotes: only the escapes of the characters a pattern may hold are decoded; any other
+  // escape is refused, never read as the literal characters.
+  let decoded = "";
+  for (let index = 0; index < inside.length; index += 1) {
+    const character = inside[index] ?? "";
+    if (character !== "\\") {
+      decoded += character;
+      continue;
+    }
+    index += 1;
+    const escaped = inside[index];
+    if (escaped !== "\\" && escaped !== '"' && escaped !== "/") return undefined;
+    decoded += escaped;
+  }
+  return decoded;
 }
 
 /** The scanner state of a YAML flow list that may span lines. */
@@ -1574,6 +1599,7 @@ function initFlowScan(state: InitFlowScan, text: string): number {
     const character = text[index] ?? "";
     if (state.quote !== "") {
       if (state.quote === '"' && character === "\\") index += 1;
+      else if (state.quote === "'" && character === "'" && text[index + 1] === "'") index += 1;
       else if (character === state.quote) state.quote = "";
     } else if (initYamlQuoteOpens(text, index)) {
       state.quote = character;
@@ -1597,10 +1623,15 @@ function initFlowScan(state: InitFlowScan, text: string): number {
  */
 function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   if (text === undefined) return [];
-  const flowPatterns = (inside: string): string[] =>
-    initFlowListItems(inside)
-      .map(initYamlUnquote)
-      .filter((entry) => entry.length > 0);
+  const flowPatterns = (inside: string): string[] | undefined => {
+    const entries: string[] = [];
+    for (const item of initFlowListItems(inside)) {
+      const entry = initYamlUnquote(item);
+      if (entry === undefined) return undefined;
+      if (entry.length > 0) entries.push(entry);
+    }
+    return entries;
+  };
   const patterns: string[] = [];
   let inPackages = false;
   // The indentation of the items of the block list under `packages`.
@@ -1618,7 +1649,9 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
         // Only whitespace may follow the closing bracket: anything else is not valid YAML.
         if (line.slice(end + 1).trim().length > 0) return [];
         flow.push(line.slice(0, end));
-        patterns.push(...flowPatterns(flow.join(" ")));
+        const entries = flowPatterns(flow.join(" "));
+        if (entries === undefined) return [];
+        patterns.push(...entries);
         flow = undefined;
       } else {
         flow.push(line);
@@ -1638,7 +1671,9 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
         const end = initFlowScan(scan, inside);
         if (end >= 0) {
           if (inside.slice(end + 1).trim().length > 0) return [];
-          patterns.push(...flowPatterns(inside.slice(0, end)));
+          const entries = flowPatterns(inside.slice(0, end));
+          if (entries === undefined) return [];
+          patterns.push(...entries);
         } else {
           flow = [inside];
         }
@@ -1652,7 +1687,11 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       if (!isItem || (itemIndent !== undefined && indent !== itemIndent)) return [];
       itemIndent = indent;
       const item = trimmed.slice(1).trim();
-      if (item.length > 0) patterns.push(initYamlUnquote(item));
+      if (item.length > 0) {
+        const entry = initYamlUnquote(item);
+        if (entry === undefined) return [];
+        patterns.push(entry);
+      }
     }
   }
   // A flow list that never closes is not a declaration.
@@ -1936,8 +1975,9 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
       initPnpmWorkspacePatterns(workspaceRead.text),
       relative,
     );
-    if (declared === undefined) return undefined;
-    if (!declared) continue;
+    // The nearest workspace manifest decides: pnpm does not look further out when it does not
+    // select the package.
+    if (declared !== true) return undefined;
     const manifestRead = await initWorkspaceFileRead(
       path.join(directory, "package.json"),
       INIT_WORKSPACE_MANIFEST_LIMIT_BYTES,

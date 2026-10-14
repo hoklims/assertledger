@@ -7,8 +7,10 @@
   `init` accepts is now reproducible by `doctor`: these flags take the same values as for `init`
   (`-` for stdin, a path such as `-adapter.json`). The MCP `assertledger_doctor` input is unchanged.
 - A package of a pnpm workspace (a directory with a `package.json`) that declares no package
-  manager now inherits it from the workspace root whose `pnpm-workspace.yaml` selects it, within
-  the same repository and never above a `.git`. This previously returned
+  manager now inherits it from the nearest `pnpm-workspace.yaml` when it selects the package
+  (the search stops there, as pnpm's does), within the same repository and never above a `.git`.
+  Quoted scalars are decoded (`''`), and an escape a pattern cannot hold is refused. This
+  previously returned
   `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
   `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. Only `pnpm-workspace.yaml` declares members: the npm,
   Yarn and Bun `workspaces` field is not read. Its `packages` list is read as a block or flow

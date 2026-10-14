@@ -47,18 +47,21 @@ assertledger doctor packages/api --framework bun:test --package-manager pnpm \
 ```
 
 In a pnpm workspace, a package that has a `package.json`, declares no package manager and receives
-no `--package-manager` looks for its workspace. The search starts in the parent directory and
-selects the nearest `pnpm-workspace.yaml` whose `packages` patterns, minus `!` exclusions, select
-the package directory, then reads that directory's `package.json` `packageManager` field and
-JavaScript lockfiles, which must converge on pnpm as in the package itself. The search never
-reads above the first directory holding a `.git`, and does not run when the package is itself a
-repository top or when no `.git` bounds it; a package the patterns do not select stays
-`PACKAGE_MANAGER_UNDETECTED`. Only `pnpm-workspace.yaml` declares members: the `workspaces` field
-of npm, Yarn and Bun is not read, and pass `--package-manager` for those workspaces.
+no `--package-manager` looks for its workspace. The search starts in the parent directory and stops
+at the nearest `pnpm-workspace.yaml`, as pnpm does: when its `packages` patterns, minus `!`
+exclusions, select the package directory, it reads that directory's `package.json`
+`packageManager` field and JavaScript lockfiles, which must converge on pnpm as in the package
+itself, and when they do not select it nothing is inherited, even if a workspace further out would.
+The search never reads above the first directory holding a `.git`, and does not run when the
+package is itself a repository top or when no `.git` bounds it; a package the patterns do not
+select stays `PACKAGE_MANAGER_UNDETECTED`. Only `pnpm-workspace.yaml` declares members: the
+`workspaces` field of npm, Yarn and Bun is not read, and pass `--package-manager` for those
+workspaces.
 
 `packages` is read as a block list or a flow list (also across lines) with the subset of globs the
 managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
-their position. A `#` inside a quoted pattern is kept. Anything else declares nothing and infers
+their position. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote,
+and a double-quoted escape other than `\\`, `\"` and `\/` is refused. Anything else declares nothing and infers
 nothing: another syntax, another shape under `packages` (a mapping, a nested sequence), text
 after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
 than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a

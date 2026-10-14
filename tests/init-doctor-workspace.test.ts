@@ -531,6 +531,62 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.equal(ordinary.detections.packageManager, "pnpm");
   });
 
+  it("stops at the nearest pnpm-workspace.yaml even when it does not select the package", async () => {
+    const base = await tree({
+      ...rootFiles,
+      // A nearer workspace that does not include the package: pnpm does not look further out.
+      "domains/pnpm-workspace.yaml": "packages:\n  - 'other/*'\n",
+      ...member(),
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+  });
+
+  it("decodes quoted YAML scalars and refuses escapes it does not understand", async () => {
+    const run = async (packageDirectory: string, content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        [`${packageDirectory}/package.json`]: JSON.stringify({ name: "api" }),
+        [`${packageDirectory}/a.spec.ts`]: BUN_SPEC,
+      });
+      return initializeRepository(path.join(base, ...packageDirectory.split("/")), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    // A doubled single quote stands for one quote, in block and flow lists, and a comma after it
+    // does not split the item.
+    for (const [directory, content] of [
+      ["domains/it's", "packages:\n  - 'domains/it''s'\n"],
+      ["domains/it's", "packages: ['domains/it''s']\n"],
+      ["domains/a'b, c", "packages: ['domains/a''b, c', 'other/*']\n"],
+      ["domains/it's", 'packages: ["domains/it\'s"]\n'],
+    ] as const) {
+      const result = await run(directory, content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+      assert.equal(result.detections.packageManager, "pnpm", content);
+    }
+    // The undecoded spelling is another directory: it is not selected by the decoded pattern.
+    const literal = await run("domains/it''s", "packages:\n  - 'domains/it''s'\n");
+    assert.equal(literal.status, "CONFLICT");
+    assert.deepEqual(literal.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+    // A double-quoted escape other than the ones a pattern can hold declares nothing.
+    for (const content of [
+      'packages: ["domains/a\\nb"]\n',
+      'packages:\n  - "domains/\\u0061pi"\n',
+    ]) {
+      const result = await run("domains/api", content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
   it("counts nesting of braces, not sibling groups", async () => {
     // Nine sibling groups: 2^9 = 512 alternations, nesting depth one.
     const base = await tree({
