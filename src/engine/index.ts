@@ -1296,18 +1296,24 @@ function initPathPatternMatcher(pattern: string): (file: string) => boolean {
 
 const INIT_CONVENTIONAL_TEST_DIRECTORIES = new Set(["test", "tests", "spec", "specs", "__tests__"]);
 
-/** Whether an operand is a path by its spelling alone: a glob, a nested path or a test file. */
-function initOperandSpelledAsPath(argument: string): boolean {
+/**
+ * Whether an operand is a path by its spelling alone: a glob, a nested path or a file name the
+ * framework's runner discovers as a test.
+ */
+function initOperandSpelledAsPath(
+  argument: string,
+  isTestFile: (file: string) => boolean,
+): boolean {
   return (
     initSafePathPattern(argument) &&
-    (/[*?]/u.test(argument) || argument.includes("/") || initNodeTestSource(argument))
+    (/[*?]/u.test(argument) || argument.includes("/") || isTestFile(argument))
   );
 }
 
 /** Whether an operand of a runner's command is a path: by spelling or as an existing entry. */
 function initOperandNamesPath(argument: string, testSources: string[]): boolean {
   return (
-    initOperandSpelledAsPath(argument) ||
+    initOperandSpelledAsPath(argument, initNodeTestSource) ||
     (initSafePathPattern(argument) &&
       testSources.some((file) => file === argument || file.startsWith(`${argument}/`)))
   );
@@ -1355,9 +1361,10 @@ function initCommandIsIndirect(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
 ): boolean {
+  const isTestFile = runner === "bun" ? initBunTestSource : initNodeTestSource;
   return (
     !initCommandInvokesRunner(command, runner) &&
-    !command.arguments.some((argument) => initOperandSpelledAsPath(argument))
+    !command.arguments.some((argument) => initOperandSpelledAsPath(argument, isTestFile))
   );
 }
 
@@ -1423,15 +1430,28 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   return patterns;
 }
 
-function initPackageWorkspacePatterns(document: Record<string, unknown> | undefined): string[] {
+/**
+ * The `workspaces` patterns of a package.json and the shape that declared them: npm takes the
+ * array form only, Yarn and Bun also take an object holding a `packages` array.
+ */
+function initPackageWorkspacePatterns(document: Record<string, unknown> | undefined): {
+  patterns: string[];
+  shape: "array" | "object" | undefined;
+} {
   const field = document?.workspaces;
-  const list =
-    field !== null && typeof field === "object" && !Array.isArray(field)
-      ? (field as Record<string, unknown>).packages
-      : field;
-  return Array.isArray(list)
-    ? list.filter((entry): entry is string => typeof entry === "string")
-    : [];
+  const shape =
+    field !== null && typeof field === "object"
+      ? Array.isArray(field)
+        ? "array"
+        : "object"
+      : undefined;
+  const list = shape === "object" ? (field as Record<string, unknown>).packages : field;
+  return {
+    patterns: Array.isArray(list)
+      ? list.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    shape,
+  };
 }
 
 /**
@@ -1514,6 +1534,8 @@ function initWorkspaceDeclaresMember(
 interface InitWorkspaceRootFacts {
   managers: Set<InitPackageManager>;
   invalidManagerField: boolean;
+  /** The workspace root has a package.json that is not a JSON object. */
+  invalidManifest: boolean;
 }
 
 /** A stable comparison key of what the workspace search concluded. */
@@ -1521,7 +1543,11 @@ function initWorkspaceFactsKey(facts: InitWorkspaceRootFacts | undefined): strin
   return JSON.stringify(
     facts === undefined
       ? null
-      : { managers: [...facts.managers].sort(), invalid: facts.invalidManagerField },
+      : {
+          managers: [...facts.managers].sort(),
+          invalid: facts.invalidManagerField,
+          invalidManifest: facts.invalidManifest,
+        },
   );
 }
 
@@ -1552,15 +1578,21 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
   for (const directory of ancestors) {
     const relative = path.relative(directory, root).split(path.sep).join("/");
     const workspaceFile = await initWorkspaceFileText(path.join(directory, "pnpm-workspace.yaml"));
-    const manifest = initPackageDocument(
-      await initWorkspaceFileText(path.join(directory, "package.json")),
-    );
+    const manifestPath = path.join(directory, "package.json");
+    const manifest = initPackageDocument(await initWorkspaceFileText(manifestPath));
     // pnpm reads its workspace only from pnpm-workspace.yaml once that file exists; the
-    // `workspaces` field of package.json belongs to the other managers.
-    const patterns =
-      workspaceFile === undefined
-        ? initPackageWorkspacePatterns(manifest)
-        : initPnpmWorkspacePatterns(workspaceFile);
+    // `workspaces` field of package.json belongs to npm, Yarn and Bun, and its object form to
+    // Yarn and Bun alone.
+    let patterns: string[];
+    let owners: readonly InitPackageManager[];
+    if (workspaceFile !== undefined) {
+      patterns = initPnpmWorkspacePatterns(workspaceFile);
+      owners = ["pnpm"];
+    } else {
+      const declaration = initPackageWorkspacePatterns(manifest);
+      patterns = declaration.patterns;
+      owners = declaration.shape === "object" ? ["yarn", "bun"] : ["npm", "yarn", "bun"];
+    }
     const declared = initWorkspaceDeclaresMember(patterns, relative);
     if (declared === undefined) return undefined;
     if (!declared) continue;
@@ -1582,7 +1614,16 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
         }
       }
     }
-    return { managers, invalidManagerField };
+    // A single manager that does not own this declaration, or is not a JavaScript manager at
+    // all, does not select the package: nothing is inherited. Several managers stay a conflict.
+    const [only] = managers;
+    if (managers.size === 1 && only !== undefined && !owners.includes(only)) return undefined;
+    return {
+      managers,
+      invalidManagerField,
+      invalidManifest:
+        manifest === undefined && (await initRegularFileStats(manifestPath)) !== undefined,
+    };
   }
   return undefined;
 }
@@ -1866,6 +1907,11 @@ export async function initializeRepository(
   let workspaceFactsKey = "";
   if (packageManager === undefined && packageDocument !== undefined) {
     const workspace = await initWorkspaceRootFacts(root);
+    if (workspace?.invalidManifest === true) {
+      return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANIFEST_INVALID"]), [
+        "PACKAGE_MANIFEST_INVALID",
+      ]);
+    }
     if (workspace?.invalidManagerField === true) {
       return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_INVALID"]), [
         "PACKAGE_MANAGER_INVALID",

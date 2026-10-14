@@ -47,18 +47,23 @@ assertledger doctor packages/api --framework bun:test --package-manager pnpm \
 
 In a monorepo, a package that has a `package.json`, declares no package manager and receives no
 `--package-manager` looks for its workspace. The search starts in the parent directory and selects
-the nearest `pnpm-workspace.yaml` `packages` list or `package.json` `workspaces` (array, or
-`packages` array) whose patterns, minus `!` exclusions, select the package directory, and reads
-that directory's
-`packageManager` field, `pnpm-workspace.yaml` and JavaScript lockfiles. Those facts must converge
-as in the package itself. The search never reads above the first directory holding a `.git`, and
-does not run when the package is itself a repository top or when no `.git` bounds it; a package the
-patterns do not select stays `PACKAGE_MANAGER_UNDETECTED`. When `pnpm-workspace.yaml` exists it
-is the only source of patterns, as in pnpm; `workspaces` is read only without it. Patterns are read
-in the subset the managers share (`*`, `**`, `?`, `{a,b}` and `[a-z]`); any other syntax is not
-understood and nothing is inferred from it. Python managers are not inherited. A manager found
-this way is reported with the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace
-facts are read again immediately before
+the nearest `pnpm-workspace.yaml` `packages` list or `package.json` `workspaces` whose patterns,
+minus `!` exclusions, select the package directory, then reads that directory's `packageManager`
+field, `pnpm-workspace.yaml` and JavaScript lockfiles. Those facts must converge as in the package
+itself. The search never reads above the first directory holding a `.git`, and does not run when
+the package is itself a repository top or when no `.git` bounds it; a package the patterns do not
+select stays `PACKAGE_MANAGER_UNDETECTED`.
+
+Each manager keeps its own declaration. When `pnpm-workspace.yaml` exists it is the only source of
+patterns and only pnpm owns it, as in pnpm; `workspaces` is read only without it. Its array form
+belongs to npm, Yarn and Bun, and its `{ "packages": [...] }` object form to Yarn and Bun. A lone
+manager that does not own the declaration, including a Python manager, selects nothing. A
+`package.json` at the workspace root that is not valid JSON returns `CONFLICT` with
+`PACKAGE_MANIFEST_INVALID`. Patterns are read in the subset the managers share (`*`, `**`, `?`,
+`{a,b}` and `[a-z]`); any other syntax is not understood and nothing is inferred from it.
+
+A manager found this way is reported with the informational
+`PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before
 writing, and a change returns `CONFLICT` with `REPOSITORY_CHANGED_DURING_INIT`. The lock records
 only files under the package, so a later change at the workspace root is not detected by it: rerun
 `init` after changing the workspace's package manager.

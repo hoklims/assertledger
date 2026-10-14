@@ -11,8 +11,12 @@
   returned `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
   `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When `pnpm-workspace.yaml` exists it alone declares the
   members, as in pnpm. Patterns are read in the subset the managers share (`*`, `**`, `?`, `{a,b}`,
-  `[a-z]`); other syntax infers nothing. The inherited facts are read again before writing, like
-  the in-package evidence. Inputs that already detect a manager or take an override are unchanged.
+  `[a-z]`); other syntax infers nothing. Each manager keeps its own declaration: the array
+  `workspaces` form is npm, Yarn and Bun's, the object form Yarn and Bun's, and a lone manager that
+  does not own it, such as a Python manager, selects nothing. A workspace root `package.json` that
+  is not valid JSON returns `PACKAGE_MANIFEST_INVALID`. The inherited facts are read again before
+  writing, like the in-package evidence. Inputs that already detect a manager or take an override
+  are unchanged.
 - `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
   usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,

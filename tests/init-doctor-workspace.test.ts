@@ -364,6 +364,66 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
   });
 
+  it("fails closed on a workspace root whose manifest cannot be read", async () => {
+    const invalid = await tree({
+      ...rootFiles,
+      "package.json": "{ not json",
+      ...member(),
+    });
+    const refused = await initializeRepository(path.join(invalid, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(refused.status, "CONFLICT");
+    assert.deepEqual(refused.reasonCodes, ["PACKAGE_MANIFEST_INVALID"]);
+
+    // A workspace root that has no manifest at all is still a pnpm workspace.
+    const { "package.json": _manifest, ...withoutManifest } = rootFiles;
+    const absent = await tree({ ...withoutManifest, ...member() });
+    const accepted = await initializeRepository(path.join(absent, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(accepted.status, "WOULD_CREATE");
+    assert.equal(accepted.detections.packageManager, "pnpm");
+  });
+
+  it("inherits only a manager that owns the workspace declaration", async () => {
+    const command = { executable: "bun", arguments: ["test"] };
+    const refused = async (files: Record<string, string>) => {
+      const base = await tree({ ".git/": "", ...files, ...member() });
+      const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: command,
+      });
+      assert.equal(result.status, "CONFLICT", JSON.stringify(files));
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], JSON.stringify(files));
+    };
+    // A Python manager named by a JavaScript workspace root.
+    for (const manager of ["uv@0.5.0", "poetry@2.0.0", "pip@25.0"]) {
+      await refused({
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: manager,
+          workspaces: ["domains/*/api"],
+        }),
+      });
+    }
+    // The object form of `workspaces` is not npm's.
+    await refused({
+      "package.json": JSON.stringify({
+        name: "root",
+        workspaces: { packages: ["domains/*/api"] },
+      }),
+      "package-lock.json": "{}\n",
+    });
+    // pnpm reads its workspace from pnpm-workspace.yaml only.
+    await refused({
+      "package.json": JSON.stringify({ name: "root", workspaces: ["domains/*/api"] }),
+      "pnpm-lock.yaml": "",
+    });
+  });
+
   it("reads only pnpm-workspace.yaml once it exists, as pnpm does", async () => {
     const base = await tree({
       ".git/": "",
@@ -484,6 +544,25 @@ describe("a command that does not run the framework directly is named as such", 
       assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
     });
   }
+
+  it("keeps a wrapper that names an existing Bun spec file as a path", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "custom-runner one.spec.ts" },
+      }),
+      "pnpm-lock.yaml": "",
+      "one.spec.ts": BUN_SPEC,
+      "other.spec.ts": BUN_SPEC,
+    });
+    const result = await initializeRepository(root, { dryRun: true, framework: "bun:test" });
+    assert.equal(result.status, "WOULD_CREATE");
+    const config = JSON.parse(
+      result.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null",
+    );
+    assert.deepEqual(config.adapter.baseTestFiles, ["one.spec.ts"]);
+  });
 
   it("still reports missing tests when the runner itself names a path nothing matches", async () => {
     const root = await tree({
