@@ -132,6 +132,11 @@ describe("doctor accepts the detection overrides of init", () => {
       ["doctor", root, "--runtime", "--package-manager", "pip"],
       ["doctor", root, "--runtime", "--test-command-json", "a.json"],
       ["doctor", root, "--runtime", "--adapter-config", "adapter.json"],
+      // A flag without its value is a usage error, never read as a missing option.
+      ["doctor", root, "--package-manager"],
+      ["doctor", root, "--test-command-json", "--json"],
+      ["doctor", root, "--adapter-config"],
+      ["doctor", root, "--framework"],
     ]) {
       const output = capture(root);
       assert.equal(await runCli(argv, output.io), 64, argv.join(" "));
@@ -301,6 +306,43 @@ describe("a workspace member inherits the package manager of its workspace root"
     await undetected({ ...withoutGit, ...member() }, ["domains", "x", "api"]);
   });
 
+  it("reads only pnpm-workspace.yaml once it exists, as pnpm does", async () => {
+    const base = await tree({
+      ".git/": "",
+      "pnpm-workspace.yaml": "packages:\n  - 'other/*'\n",
+      "pnpm-lock.yaml": "",
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        workspaces: ["domains/*/api"],
+      }),
+      ...member(),
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+  });
+
+  it("revalidates the workspace facts it inherited before writing anything", async () => {
+    const base = await tree({ ...rootFiles, ...member() });
+    const memberRoot = path.join(base, "domains", "x", "api");
+    const result = await initializeRepository(memberRoot, {
+      testCommand: { executable: "bun", arguments: ["test"] },
+      afterEvidenceSnapshot: async () => {
+        await writeFile(
+          path.join(base, "package.json"),
+          JSON.stringify({ name: "root", packageManager: "yarn@4.0.0" }),
+        );
+      },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["REPOSITORY_CHANGED_DURING_INIT"]);
+    assert.deepEqual((await readdir(memberRoot)).sort(), ["a.spec.ts", "package.json"]);
+  });
+
   it("reports conflicting root facts instead of choosing one", async () => {
     const base = await tree({
       ...rootFiles,
@@ -346,6 +388,18 @@ describe("a command that does not run the framework directly is named as such", 
       assert.equal(result.status, "BLOCKED");
       assert.deepEqual(result.reasonCodes, ["TEST_COMMAND_INDIRECT"]);
       assert.equal(result.detections.testCommand.executable, executable);
+    });
+  }
+
+  for (const [script, framework] of [
+    ["pnpm exec node --test tests", "node:test"],
+    ["tsx --test tests", "node:test"],
+    ["pnpm exec bun test tests", "bun:test"],
+  ] as const) {
+    it(`keeps \`${script}\` as a runner that names a path nothing matches`, async () => {
+      const { code, result } = await blocked(script, framework);
+      assert.equal(code, 3);
+      assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
     });
   }
 

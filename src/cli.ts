@@ -823,12 +823,16 @@ export async function runCli(
         const runtime = seenFlags.has("--runtime");
         const allowUnsafeExecution = seenFlags.has("--allow-unsafe-execution");
         const exclude = repeatedFlagValues(argv, "--exclude");
+        // A flag without its value is a usage error: settle it before reading any value.
+        if (usageError) {
+          io.writeStderr(USAGE);
+          return 64;
+        }
         const framework = optionalFlag(argv, "--framework");
         const packageManager = optionalFlag(argv, "--package-manager");
         const commandPath = optionalFlag(argv, "--test-command-json");
         const adapterConfigPath = optionalFlag(argv, "--adapter-config");
         if (
-          usageError ||
           (allowUnsafeExecution && !runtime) ||
           (runtime &&
             (exclude.length > 0 ||

@@ -1330,21 +1330,33 @@ function initCommandPathMatchers(
 }
 
 /**
- * Whether the command reaches the framework's runner through another executable and names no test
- * path. Its operands are then task or script names (`turbo test`, `pnpm -r test`), not filters, so
- * no inventory can be derived from them. A wrapper that names a path keeps that path as its filter.
+ * Whether the command invokes the framework's own runner, itself or behind a launcher
+ * (`pnpm exec node --test`, `tsx --test`, `bunx bun test`): its operands are then that runner's
+ * path filters.
+ */
+function initCommandInvokesRunner(
+  command: { executable: string; arguments: string[] },
+  runner: "node" | "bun",
+): boolean {
+  const words = [command.executable, ...command.arguments];
+  return runner === "bun"
+    ? words.some((word, index) => word === "bun" && words[index + 1] === "test")
+    : words.includes("node") || command.arguments.includes("--test");
+}
+
+/**
+ * Whether the command does not invoke the framework's runner and names no test path. Its operands
+ * are then task or script names (`turbo test`, `pnpm -r test`), not filters, so no inventory can be
+ * derived from them. A bare conventional word such as `test` is not a path here.
  */
 function initCommandIsIndirect(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
   testSources: string[],
 ): boolean {
-  const direct =
-    runner === "bun"
-      ? command.executable === "bun" && command.arguments[0] === "test"
-      : command.executable === "node";
   return (
-    !direct && !command.arguments.some((argument) => initOperandNamesPath(argument, testSources))
+    !initCommandInvokesRunner(command, runner) &&
+    !command.arguments.some((argument) => initOperandNamesPath(argument, testSources))
   );
 }
 
@@ -1449,6 +1461,15 @@ interface InitWorkspaceRootFacts {
   invalidManagerField: boolean;
 }
 
+/** A stable comparison key of what the workspace search concluded. */
+function initWorkspaceFactsKey(facts: InitWorkspaceRootFacts | undefined): string {
+  return JSON.stringify(
+    facts === undefined
+      ? null
+      : { managers: [...facts.managers].sort(), invalid: facts.invalidManagerField },
+  );
+}
+
 /**
  * The package-manager facts of the nearest workspace whose patterns select `root`. The search
  * starts above `root`, stops at the first directory holding a `.git` (included), and does not run
@@ -1479,10 +1500,12 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     const manifest = initPackageDocument(
       await initWorkspaceFileText(path.join(directory, "package.json")),
     );
-    const patterns = [
-      ...initPnpmWorkspacePatterns(workspaceFile),
-      ...initPackageWorkspacePatterns(manifest),
-    ];
+    // pnpm reads its workspace only from pnpm-workspace.yaml once that file exists; the
+    // `workspaces` field of package.json belongs to the other managers.
+    const patterns =
+      workspaceFile === undefined
+        ? initPackageWorkspacePatterns(manifest)
+        : initPnpmWorkspacePatterns(workspaceFile);
     if (!initWorkspaceDeclaresMember(patterns, relative)) continue;
     const managers = new Set<InitPackageManager>();
     let invalidManagerField = false;
@@ -1782,6 +1805,7 @@ export async function initializeRepository(
   let packageManager = managerOverride ?? [...managerFacts][0];
   // Only a package that states nothing itself and receives no override looks at its workspace.
   let managerFromWorkspaceRoot = false;
+  let workspaceFactsKey = "";
   if (packageManager === undefined) {
     const workspace = await initWorkspaceRootFacts(root);
     if (workspace?.invalidManagerField === true) {
@@ -1796,6 +1820,7 @@ export async function initializeRepository(
     }
     packageManager = [...(workspace?.managers ?? [])][0];
     managerFromWorkspaceRoot = packageManager !== undefined;
+    workspaceFactsKey = initWorkspaceFactsKey(workspace);
   }
   if (packageManager === undefined) {
     return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_UNDETECTED"]), [
@@ -2149,6 +2174,11 @@ export async function initializeRepository(
         break;
       }
     }
+  }
+  // The inherited manager is evidence outside the root: the facts it came from are read again.
+  if (!repositoryChanged && managerFromWorkspaceRoot) {
+    repositoryChanged =
+      initWorkspaceFactsKey(await initWorkspaceRootFacts(root)) !== workspaceFactsKey;
   }
   if (repositoryChanged) {
     return initTerminalResult(

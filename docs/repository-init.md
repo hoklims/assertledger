@@ -52,10 +52,13 @@ whose patterns, minus `!` exclusions, select the package directory, and reads th
 `packageManager` field, `pnpm-workspace.yaml` and JavaScript lockfiles. Those facts must converge
 as in the package itself. The search never reads above the first directory holding a `.git`, and
 does not run when the package is itself a repository top or when no `.git` bounds it; a package the
-patterns do not select stays `PACKAGE_MANAGER_UNDETECTED`. Python managers are not inherited. A
-manager found this way is reported with the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`.
-The lock records only files under the package, so a later change at the workspace root is not
-detected by it: rerun `init` after changing the workspace's package manager.
+patterns do not select stays `PACKAGE_MANAGER_UNDETECTED`. When `pnpm-workspace.yaml` exists it
+is the only source of patterns, as in pnpm; `workspaces` is read only without it. Python managers
+are not inherited. A manager found this way is reported with the informational
+`PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before
+writing, and a change returns `CONFLICT` with `REPOSITORY_CHANGED_DURING_INIT`. The lock records
+only files under the package, so a later change at the workspace root is not detected by it: rerun
+`init` after changing the workspace's package manager.
 
 A test command that reaches the runner through an orchestrator or a script runner, such as
 `turbo test` or `pnpm -r test`, and names no test path returns `BLOCKED` with

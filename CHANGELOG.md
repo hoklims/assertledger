@@ -8,8 +8,12 @@
 - A workspace member that declares no package manager now inherits it from the workspace root that
   selects it (`pnpm-workspace.yaml` `packages` or `package.json` `workspaces`), within the same
   repository and never above a `.git`. This previously returned `PACKAGE_MANAGER_UNDETECTED`; it now
-  succeeds and reports the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. Inputs that already
-  detect a manager or take an override are unchanged.
+  succeeds and reports the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When
+  `pnpm-workspace.yaml` exists it alone declares the members, as in pnpm. The inherited facts are
+  read again before writing, like the in-package evidence. Inputs that already detect a manager or
+  take an override are unchanged.
+- `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
+  usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` repository whose test command goes through an orchestrator or script
   runner and names no test path (`turbo test`, `pnpm -r test`) now returns `BLOCKED` with
   `TEST_COMMAND_INDIRECT` instead of `BASE_TEST_FILES_UNAVAILABLE`. Status and exit code are
