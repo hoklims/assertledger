@@ -5,20 +5,23 @@
 - `doctor` accepts the detection overrides of `init`: `--package-manager`, `--test-command-json`
   (`-` reads stdin) and `--adapter-config`, also in `AssertLedger.doctor` options. A dry run that
   `init` accepts is now reproducible by `doctor`. The MCP `assertledger_doctor` input is unchanged.
-- A workspace member that declares no package manager now inherits it from the workspace root that
-  selects it (`pnpm-workspace.yaml` `packages` or `package.json` `workspaces`), within the same
-  repository and never above a `.git`. This previously returned `PACKAGE_MANAGER_UNDETECTED`; it now
-  succeeds and reports the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When
-  `pnpm-workspace.yaml` exists it alone declares the members, as in pnpm. The inherited facts are
-  read again before writing, like the in-package evidence. Inputs that already detect a manager or
-  take an override are unchanged.
+- A workspace package (a directory with a `package.json`) that declares no package manager now
+  inherits it from the workspace root that selects it (`pnpm-workspace.yaml` `packages` or
+  `package.json` `workspaces`), within the same repository and never above a `.git`. This previously
+  returned `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
+  `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When `pnpm-workspace.yaml` exists it alone declares the
+  members, as in pnpm. Patterns are read in the subset the managers share (`*`, `**`, `?`, `{a,b}`,
+  `[a-z]`); other syntax infers nothing. The inherited facts are read again before writing, like
+  the in-package evidence. Inputs that already detect a manager or take an override are unchanged.
 - `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
   usage text, as `--exclude` already did, instead of exit 4.
-- A `node:test` or `bun:test` repository whose test command goes through an orchestrator or script
-  runner and names no test path (`turbo test`, `pnpm -r test`) now returns `BLOCKED` with
-  `TEST_COMMAND_INDIRECT` instead of `BASE_TEST_FILES_UNAVAILABLE`. Status and exit code are
-  unchanged; consumers matching the old code on such inputs should match the new one. Init
-  schemas, digests and accepted inputs are unchanged. Closes
+- A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
+  also behind a launcher) and spells no test path (a glob, a nested path or a test file name) now
+  returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. Its operands were read as path filters:
+  `turbo test` selected the tests under `test/`, or none and `BASE_TEST_FILES_UNAVAILABLE`, and
+  `npm run test:unit` selected every test. A command like that is no longer accepted with a
+  guessed inventory: declare the direct runner with `--test-command-json`. Commands that invoke
+  the runner, or spell a path, are unchanged, as are init schemas and digests. Closes
   [#72](https://github.com/hoklims/assertledger/issues/72).
 
 ## 2.1.0 — 2026-10-13

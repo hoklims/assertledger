@@ -306,6 +306,64 @@ describe("a workspace member inherits the package manager of its workspace root"
     await undetected({ ...withoutGit, ...member() }, ["domains", "x", "api"]);
   });
 
+  it("requires the directory to be a package before inheriting from its workspace", async () => {
+    const base = await tree({
+      ...rootFiles,
+      "domains/x/api/a.spec.ts": BUN_SPEC,
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+      framework: "bun:test",
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+  });
+
+  it("follows the glob dialect of the workspace managers and refuses what it cannot read", async () => {
+    const selecting = [
+      ["pnpm-workspace.yaml", "packages:\n  - '{domains,tools}/*/api'\n"],
+      ["pnpm-workspace.yaml", "packages: ['domains/[a-z]/api']\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/{x,y}/{api,web}'\n"],
+    ] as const;
+    for (const [file, content] of selecting) {
+      const base = await tree({
+        ".git/": "",
+        [file]: content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+      assert.equal(result.detections.packageManager, "pnpm", content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+
+    const refused = [
+      "packages:\n  - 'domains/+(x|y)/api'\n",
+      "packages:\n  - 'domains/{1..3}/api'\n",
+      "packages:\n  - 'domains/[[:alpha:]]/api'\n",
+      "packages:\n  - 'domains/{x}/api'\n",
+      "packages:\n  - 'domains/x/api'\n  - 'domains/@(a|b)'\n",
+    ];
+    for (const content of refused) {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
   it("reads only pnpm-workspace.yaml once it exists, as pnpm does", async () => {
     const base = await tree({
       ".git/": "",
@@ -388,6 +446,30 @@ describe("a command that does not run the framework directly is named as such", 
       assert.equal(result.status, "BLOCKED");
       assert.deepEqual(result.reasonCodes, ["TEST_COMMAND_INDIRECT"]);
       assert.equal(result.detections.testCommand.executable, executable);
+    });
+  }
+
+  for (const framework of ["bun:test", "node:test"] as const) {
+    it(`does not let a task name select the ${framework} tests of a directory of that name`, async () => {
+      const source =
+        framework === "bun:test"
+          ? BUN_SPEC
+          : 'import test from "node:test";\ntest("one", () => {});\n';
+      const root = await tree({
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: "pnpm@12.11.2",
+          scripts: { test: "turbo test" },
+        }),
+        "pnpm-lock.yaml": "",
+        "test/one.test.ts": source,
+        "other/two.test.ts": source,
+      });
+      const { code, result } = await doctorJson([root, "--framework", framework], root);
+      assert.equal(code, 3);
+      assert.equal(result.status, "BLOCKED");
+      assert.deepEqual(result.reasonCodes, ["TEST_COMMAND_INDIRECT"]);
+      assert.deepEqual(result.files, []);
     });
   }
 

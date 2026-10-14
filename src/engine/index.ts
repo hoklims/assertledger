@@ -1267,8 +1267,10 @@ function initSafePathPattern(value: string): boolean {
   }
 }
 
-/** The regular-expression source of a `*`, `**` and `?` path pattern, anchored at its start. */
-function initGlobSource(pattern: string): string {
+function initPathPatternMatcher(pattern: string): (file: string) => boolean {
+  if (!/[*?]/u.test(pattern)) {
+    return (file) => file === pattern || file.startsWith(`${pattern}/`);
+  }
   let expression = "^";
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index] ?? "";
@@ -1288,26 +1290,25 @@ function initGlobSource(pattern: string): string {
       expression += character.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
     }
   }
-  return expression;
-}
-
-function initPathPatternMatcher(pattern: string): (file: string) => boolean {
-  if (!/[*?]/u.test(pattern)) {
-    return (file) => file === pattern || file.startsWith(`${pattern}/`);
-  }
-  const matcher = new RegExp(`${initGlobSource(pattern)}$`, "u");
+  const matcher = new RegExp(`${expression}$`, "u");
   return (file) => matcher.test(file);
 }
 
 const INIT_CONVENTIONAL_TEST_DIRECTORIES = new Set(["test", "tests", "spec", "specs", "__tests__"]);
 
-/** Whether an operand can only be a path: a glob, a nested path, a test file or an existing entry. */
-function initOperandNamesPath(argument: string, testSources: string[]): boolean {
+/** Whether an operand is a path by its spelling alone: a glob, a nested path or a test file. */
+function initOperandSpelledAsPath(argument: string): boolean {
   return (
     initSafePathPattern(argument) &&
-    (/[*?]/u.test(argument) ||
-      argument.includes("/") ||
-      initNodeTestSource(argument) ||
+    (/[*?]/u.test(argument) || argument.includes("/") || initNodeTestSource(argument))
+  );
+}
+
+/** Whether an operand of a runner's command is a path: by spelling or as an existing entry. */
+function initOperandNamesPath(argument: string, testSources: string[]): boolean {
+  return (
+    initOperandSpelledAsPath(argument) ||
+    (initSafePathPattern(argument) &&
       testSources.some((file) => file === argument || file.startsWith(`${argument}/`)))
   );
 }
@@ -1345,18 +1346,18 @@ function initCommandInvokesRunner(
 }
 
 /**
- * Whether the command does not invoke the framework's runner and names no test path. Its operands
+ * Whether the command does not invoke the framework's runner and spells no test path. Its operands
  * are then task or script names (`turbo test`, `pnpm -r test`), not filters, so no inventory can be
- * derived from them. A bare conventional word such as `test` is not a path here.
+ * derived from them. A bare word such as `test` is a task name here even when a directory of that
+ * name exists: only the runner's own operands are read as entries.
  */
 function initCommandIsIndirect(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
-  testSources: string[],
 ): boolean {
   return (
     !initCommandInvokesRunner(command, runner) &&
-    !command.arguments.some((argument) => initOperandNamesPath(argument, testSources))
+    !command.arguments.some((argument) => initOperandSpelledAsPath(argument))
   );
 }
 
@@ -1433,22 +1434,76 @@ function initPackageWorkspacePatterns(document: Record<string, unknown> | undefi
     : [];
 }
 
-/** Whether a directory, given relative to the workspace root, is selected by its patterns. */
-function initWorkspaceDeclaresMember(patterns: readonly string[], relative: string): boolean {
+/**
+ * The regular expression of a workspace pattern in the subset the workspace managers share:
+ * `*`, `**`, `?`, `{a,b}` alternation and `[a-z]` classes. Anything else (extglobs, escapes,
+ * brace ranges, POSIX classes, unbalanced groups) is undefined, so a caller never reads those
+ * operators as literal path characters.
+ */
+function initWorkspacePatternExpression(pattern: string): RegExp | undefined {
+  let expression = "^";
+  const braces: boolean[] = [];
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index] ?? "";
+    if (character === "\\" || character === "(" || character === ")") return undefined;
+    if (character === "." && pattern[index + 1] === "." && braces.length > 0) return undefined;
+    if (character === "*" && pattern[index + 1] === "*") {
+      if (pattern[index + 2] === "/") {
+        expression += "(?:[^/]+/)*";
+        index += 2;
+      } else {
+        expression += ".*";
+        index += 1;
+      }
+    } else if (character === "*") {
+      expression += "[^/]*";
+    } else if (character === "?") {
+      expression += "[^/]";
+    } else if (character === "{") {
+      braces.push(false);
+      expression += "(?:";
+    } else if (character === "," && braces.length > 0) {
+      braces[braces.length - 1] = true;
+      expression += "|";
+    } else if (character === "}") {
+      if (braces.pop() !== true) return undefined;
+      expression += ")";
+    } else if (character === "[") {
+      const close = pattern.indexOf("]", index + 2);
+      const body = close < 0 ? "" : pattern.slice(index + 1, close);
+      if (body.length === 0 || /[[/]/u.test(body)) return undefined;
+      const negated = body.startsWith("!") || body.startsWith("^");
+      const members = (negated ? body.slice(1) : body).replace(/[\\^\]]/gu, "\\$&");
+      if (members.length === 0) return undefined;
+      expression += `(?:(?!/)[${negated ? "^" : ""}${members}])`;
+      index = close;
+    } else {
+      expression += character.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+    }
+  }
+  return braces.length === 0 ? new RegExp(`${expression}$`, "u") : undefined;
+}
+
+/**
+ * Whether a directory, given relative to the workspace root, is selected by its patterns:
+ * undefined when a pattern is outside the supported subset, as the declaration is then not
+ * understood and nothing may be inferred from it.
+ */
+function initWorkspaceDeclaresMember(
+  patterns: readonly string[],
+  relative: string,
+): boolean | undefined {
   let included = false;
   let excluded = false;
   for (const raw of patterns) {
     const negated = raw.startsWith("!");
     const pattern = (negated ? raw.slice(1) : raw).replace(/^\.\//u, "").replace(/\/+$/u, "");
-    if (
-      pattern.length === 0 ||
-      pattern.startsWith("/") ||
-      pattern.includes("\\") ||
-      pattern.split("/").includes("..")
-    ) {
+    if (pattern.length === 0 || pattern.startsWith("/") || pattern.split("/").includes("..")) {
       continue;
     }
-    if (new RegExp(`${initGlobSource(pattern)}$`, "u").test(relative)) {
+    const expression = initWorkspacePatternExpression(pattern);
+    if (expression === undefined) return undefined;
+    if (expression.test(relative)) {
       if (negated) excluded = true;
       else included = true;
     }
@@ -1506,7 +1561,9 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
       workspaceFile === undefined
         ? initPackageWorkspacePatterns(manifest)
         : initPnpmWorkspacePatterns(workspaceFile);
-    if (!initWorkspaceDeclaresMember(patterns, relative)) continue;
+    const declared = initWorkspaceDeclaresMember(patterns, relative);
+    if (declared === undefined) return undefined;
+    if (!declared) continue;
     const managers = new Set<InitPackageManager>();
     let invalidManagerField = false;
     const field = manifest?.packageManager;
@@ -1803,10 +1860,11 @@ export async function initializeRepository(
     ]);
   }
   let packageManager = managerOverride ?? [...managerFacts][0];
-  // Only a package that states nothing itself and receives no override looks at its workspace.
+  // Only a package that states nothing itself and receives no override looks at its workspace,
+  // and only when it is a package: a directory without a manifest is not a workspace member.
   let managerFromWorkspaceRoot = false;
   let workspaceFactsKey = "";
-  if (packageManager === undefined) {
+  if (packageManager === undefined && packageDocument !== undefined) {
     const workspace = await initWorkspaceRootFacts(root);
     if (workspace?.invalidManagerField === true) {
       return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_INVALID"]), [
@@ -2006,17 +2064,18 @@ export async function initializeRepository(
     }
   } else if (framework === "node:test") {
     const testSources = inScopeFiles.filter(initNodeTestSource);
-    const pathMatchers = initCommandPathMatchers(testCommand, testSources);
-    const baseTestFiles =
-      pathMatchers.length === 0
+    // An indirect command is judged before its operands are read as path filters: a task name
+    // that happens to be a directory must not select a partial inventory.
+    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "node");
+    const pathMatchers = indirectCommand ? [] : initCommandPathMatchers(testCommand, testSources);
+    const baseTestFiles = indirectCommand
+      ? []
+      : pathMatchers.length === 0
         ? testSources
         : testSources.filter((file) => pathMatchers.some((matcher) => matcher(file)));
     if (baseTestFiles.length > 0) {
       adapter = { kind: "node-test", executable: "node", baseTestFiles };
       adapterRecommendation = "node-test";
-    } else {
-      indirectCommand =
-        testSources.length > 0 && initCommandIsIndirect(testCommand, "node", testSources);
     }
   } else if (framework === "bun:test") {
     // `bun test` answers `vitest` and `@jest/globals` with its own test API: a Bun repository's
@@ -2026,17 +2085,16 @@ export async function initializeRepository(
       const specifiers = initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file);
       return [...BUN_RUNNER_MODULES, "bun:test"].some((name) => specifiers.has(name));
     });
-    const pathMatchers = initCommandPathMatchers(testCommand, testSources);
-    const baseTestFiles =
-      pathMatchers.length === 0
+    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "bun");
+    const pathMatchers = indirectCommand ? [] : initCommandPathMatchers(testCommand, testSources);
+    const baseTestFiles = indirectCommand
+      ? []
+      : pathMatchers.length === 0
         ? testSources
         : testSources.filter((file) => pathMatchers.some((matcher) => matcher(file)));
     if (baseTestFiles.length > 0) {
       adapter = { kind: "bun-test", executable: "bun", baseTestFiles };
       adapterRecommendation = "bun-test";
-    } else {
-      indirectCommand =
-        testSources.length > 0 && initCommandIsIndirect(testCommand, "bun", testSources);
     }
   }
 
