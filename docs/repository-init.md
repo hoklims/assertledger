@@ -36,6 +36,33 @@ plausible test frameworks, composite shell scripts, contradictory overrides, and
 adapter configurations return `CONFLICT`. Multiple CI providers are only sorted evidence and do not
 block initialization.
 
+`doctor` is `init --dry-run` and takes the same detection overrides, so a dry run that `init`
+accepts can be reproduced by `doctor`: `--framework`, `--package-manager`,
+`--test-command-json PATH` (`-` reads stdin) and `--adapter-config PATH`, each at most once.
+
+```sh
+assertledger doctor packages/api --framework bun:test --package-manager pnpm \
+  --test-command-json bun-test.json --json
+```
+
+In a monorepo, a package that declares no package manager and receives no `--package-manager`
+looks for its workspace. The search starts in the parent directory, selects the nearest
+`pnpm-workspace.yaml` `packages` list or `package.json` `workspaces` (array, or `packages` array)
+whose patterns, minus `!` exclusions, select the package directory, and reads that directory's
+`packageManager` field, `pnpm-workspace.yaml` and JavaScript lockfiles. Those facts must converge
+as in the package itself. The search never reads above the first directory holding a `.git`, and
+does not run when the package is itself a repository top or when no `.git` bounds it; a package the
+patterns do not select stays `PACKAGE_MANAGER_UNDETECTED`. Python managers are not inherited. A
+manager found this way is reported with the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`.
+The lock records only files under the package, so a later change at the workspace root is not
+detected by it: rerun `init` after changing the workspace's package manager.
+
+A test command that reaches the runner through an orchestrator or a script runner, such as
+`turbo test` or `pnpm -r test`, and names no test path returns `BLOCKED` with
+`TEST_COMMAND_INDIRECT`; its operands are task names, not path filters, so no inventory can be
+derived. `detections.testCommand` names the command. Run `doctor` on one workspace package, or
+declare the direct runner with `--test-command-json`.
+
 The static inventory walks the filesystem, not the Git index, and never follows or copies a
 symbolic link: a link inside it returns `CONFLICT` with `UNSUPPORTED_REPOSITORY_SYMLINK` and writes
 nothing. It always skips entries named `.git`, `.testforge`, and `node_modules`, at any depth.

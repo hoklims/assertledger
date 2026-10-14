@@ -54,7 +54,8 @@ Commands:
         --test PATH --base-test PATH [--base-test PATH ...] --out RELATIVE_DIRECTORY
         (--container-image NAME@sha256:DIGEST [--container-runtime JSON_ARGV] [--container-transport MODE]
          | --allow-unsafe-execution)            Qualify one committed node:test regression
-  doctor [repository] [--framework ID] [--exclude NAME ...] [--json]
+  doctor [repository] [--framework ID] [--package-manager ID] [--test-command-json PATH]
+         [--adapter-config PATH] [--exclude NAME ...] [--json]
                                                Inspect static repository readiness without writing
   doctor [repository] --runtime --allow-unsafe-execution [--json]
                                                Run controlled trusted-local runtime probes
@@ -788,17 +789,26 @@ export async function runCli(
         return 0;
       case "doctor": {
         const booleanFlags = new Set(["--json", "--runtime", "--allow-unsafe-execution"]);
+        // The detection overrides of init, each given at most once; --exclude may repeat.
+        const overrideFlags = new Set([
+          "--framework",
+          "--package-manager",
+          "--test-command-json",
+          "--adapter-config",
+        ]);
         const seenFlags = new Set<string>();
         let rootArgument: string | undefined;
         let usageError = false;
         for (let index = 1; index < argv.length && !usageError; index += 1) {
           const argument = argv[index] ?? "";
-          if (argument === "--exclude" || argument === "--framework") {
+          if (argument === "--exclude" || overrideFlags.has(argument)) {
             const value = argv[index + 1];
+            // `-` reads the command from stdin, as it does for init.
+            const standardInput = argument === "--test-command-json" && value === "-";
             usageError =
               value === undefined ||
-              value.startsWith("-") ||
-              (argument === "--framework" && seenFlags.has(argument));
+              (value.startsWith("-") && !standardInput) ||
+              (argument !== "--exclude" && seenFlags.has(argument));
             seenFlags.add(argument);
             index += 1;
           } else if (booleanFlags.has(argument)) {
@@ -814,10 +824,18 @@ export async function runCli(
         const allowUnsafeExecution = seenFlags.has("--allow-unsafe-execution");
         const exclude = repeatedFlagValues(argv, "--exclude");
         const framework = optionalFlag(argv, "--framework");
+        const packageManager = optionalFlag(argv, "--package-manager");
+        const commandPath = optionalFlag(argv, "--test-command-json");
+        const adapterConfigPath = optionalFlag(argv, "--adapter-config");
         if (
           usageError ||
           (allowUnsafeExecution && !runtime) ||
-          (runtime && (exclude.length > 0 || framework !== undefined))
+          (runtime &&
+            (exclude.length > 0 ||
+              framework !== undefined ||
+              packageManager !== undefined ||
+              commandPath !== undefined ||
+              adapterConfigPath !== undefined))
         ) {
           io.writeStderr(USAGE);
           return 64;
@@ -854,6 +872,16 @@ export async function runCli(
         const result = await ledger.doctor(root, {
           ...(exclude.length === 0 ? {} : { exclude }),
           ...(framework === undefined ? {} : { framework }),
+          ...(packageManager === undefined ? {} : { packageManager }),
+          ...(adapterConfigPath === undefined ? {} : { adapterConfigPath }),
+          ...(commandPath === undefined
+            ? {}
+            : {
+                testCommand: (await readJsonInput(commandPath, io)) as {
+                  executable: string;
+                  arguments: string[];
+                },
+              }),
           onLinkAssessment: (assessment) => {
             linkAssessment = assessment;
           },

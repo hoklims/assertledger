@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `doctor` accepts the detection overrides of `init`: `--package-manager`, `--test-command-json`
+  (`-` reads stdin) and `--adapter-config`, also in `AssertLedger.doctor` options. A dry run that
+  `init` accepts is now reproducible by `doctor`. The MCP `assertledger_doctor` input is unchanged.
+- A workspace member that declares no package manager now inherits it from the workspace root that
+  selects it (`pnpm-workspace.yaml` `packages` or `package.json` `workspaces`), within the same
+  repository and never above a `.git`. This previously returned `PACKAGE_MANAGER_UNDETECTED`; it now
+  succeeds and reports the informational `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. Inputs that already
+  detect a manager or take an override are unchanged.
+- A `node:test` or `bun:test` repository whose test command goes through an orchestrator or script
+  runner and names no test path (`turbo test`, `pnpm -r test`) now returns `BLOCKED` with
+  `TEST_COMMAND_INDIRECT` instead of `BASE_TEST_FILES_UNAVAILABLE`. Status and exit code are
+  unchanged; consumers matching the old code on such inputs should match the new one. Init
+  schemas, digests and accepted inputs are unchanged. Closes
+  [#72](https://github.com/hoklims/assertledger/issues/72).
+
 ## 2.1.0 — 2026-10-13
 
 - Add verification request and evidence manifest v5 and witness import request v2. A designated

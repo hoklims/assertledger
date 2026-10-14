@@ -1,6 +1,6 @@
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, constants as fsConstants } from "node:fs";
+import { createReadStream, constants as fsConstants, type Stats } from "node:fs";
 import {
   copyFile,
   cp,
@@ -1267,10 +1267,8 @@ function initSafePathPattern(value: string): boolean {
   }
 }
 
-function initPathPatternMatcher(pattern: string): (file: string) => boolean {
-  if (!/[*?]/u.test(pattern)) {
-    return (file) => file === pattern || file.startsWith(`${pattern}/`);
-  }
+/** The regular-expression source of a `*`, `**` and `?` path pattern, anchored at its start. */
+function initGlobSource(pattern: string): string {
   let expression = "^";
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index] ?? "";
@@ -1290,15 +1288,34 @@ function initPathPatternMatcher(pattern: string): (file: string) => boolean {
       expression += character.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
     }
   }
-  const matcher = new RegExp(`${expression}$`, "u");
+  return expression;
+}
+
+function initPathPatternMatcher(pattern: string): (file: string) => boolean {
+  if (!/[*?]/u.test(pattern)) {
+    return (file) => file === pattern || file.startsWith(`${pattern}/`);
+  }
+  const matcher = new RegExp(`${initGlobSource(pattern)}$`, "u");
   return (file) => matcher.test(file);
+}
+
+const INIT_CONVENTIONAL_TEST_DIRECTORIES = new Set(["test", "tests", "spec", "specs", "__tests__"]);
+
+/** Whether an operand can only be a path: a glob, a nested path, a test file or an existing entry. */
+function initOperandNamesPath(argument: string, testSources: string[]): boolean {
+  return (
+    initSafePathPattern(argument) &&
+    (/[*?]/u.test(argument) ||
+      argument.includes("/") ||
+      initNodeTestSource(argument) ||
+      testSources.some((file) => file === argument || file.startsWith(`${argument}/`)))
+  );
 }
 
 function initCommandPathMatchers(
   command: { executable: string; arguments: string[] },
   testSources: string[],
 ): Array<(file: string) => boolean> {
-  const conventionalDirectories = new Set(["test", "tests", "spec", "specs", "__tests__"]);
   const operands =
     command.executable === "bun" && command.arguments[0] === "test"
       ? command.arguments.slice(1)
@@ -1306,14 +1323,188 @@ function initCommandPathMatchers(
   return operands
     .filter(
       (argument) =>
-        initSafePathPattern(argument) &&
-        (/[*?]/u.test(argument) ||
-          argument.includes("/") ||
-          initNodeTestSource(argument) ||
-          conventionalDirectories.has(argument) ||
-          testSources.some((file) => file === argument || file.startsWith(`${argument}/`))),
+        initOperandNamesPath(argument, testSources) ||
+        (initSafePathPattern(argument) && INIT_CONVENTIONAL_TEST_DIRECTORIES.has(argument)),
     )
     .map(initPathPatternMatcher);
+}
+
+/**
+ * Whether the command reaches the framework's runner through another executable and names no test
+ * path. Its operands are then task or script names (`turbo test`, `pnpm -r test`), not filters, so
+ * no inventory can be derived from them. A wrapper that names a path keeps that path as its filter.
+ */
+function initCommandIsIndirect(
+  command: { executable: string; arguments: string[] },
+  runner: "node" | "bun",
+  testSources: string[],
+): boolean {
+  const direct =
+    runner === "bun"
+      ? command.executable === "bun" && command.arguments[0] === "test"
+      : command.executable === "node";
+  return (
+    !direct && !command.arguments.some((argument) => initOperandNamesPath(argument, testSources))
+  );
+}
+
+const INIT_MANAGER_LOCKFILES: ReadonlyArray<readonly [InitPackageManager, readonly string[]]> = [
+  ["pnpm", ["pnpm-lock.yaml"]],
+  ["npm", ["package-lock.json", "npm-shrinkwrap.json"]],
+  ["yarn", ["yarn.lock"]],
+  ["bun", ["bun.lock", "bun.lockb"]],
+  ["uv", ["uv.lock"]],
+  ["poetry", ["poetry.lock"]],
+  ["pip", ["Pipfile.lock", "requirements.txt"]],
+];
+const INIT_WORKSPACE_MANAGERS: readonly InitPackageManager[] = ["pnpm", "npm", "yarn", "bun"];
+const INIT_WORKSPACE_FILE_LIMIT_BYTES = 1_048_576;
+
+async function initRegularFileStats(file: string): Promise<Stats | undefined> {
+  try {
+    const stats = await lstat(file);
+    return stats.isFile() ? stats : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function initWorkspaceFileText(file: string): Promise<string | undefined> {
+  const stats = await initRegularFileStats(file);
+  if (stats === undefined || stats.size > INIT_WORKSPACE_FILE_LIMIT_BYTES) return undefined;
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The `packages` patterns of a pnpm-workspace.yaml. Only the block and flow list forms are read;
+ * a file in any other shape declares nothing, so a member is never inferred from it.
+ */
+function initPnpmWorkspacePatterns(text: string | undefined): string[] {
+  if (text === undefined) return [];
+  const unquote = (value: string): string => value.trim().replace(/^(['"])(.*)\1$/u, "$2");
+  const patterns: string[] = [];
+  let inPackages = false;
+  for (const raw of text.split(/\r?\n/u)) {
+    const line = raw.replace(/\s+#.*$/u, "");
+    if (line.trim().length === 0 || line.trimStart().startsWith("#")) continue;
+    if (!/^[\s-]/u.test(line)) {
+      const flow = /^packages\s*:\s*\[(.*)\]\s*$/u.exec(line);
+      inPackages = flow === null && /^packages\s*:\s*$/u.test(line);
+      if (flow?.[1] !== undefined) {
+        patterns.push(
+          ...flow[1]
+            .split(",")
+            .map(unquote)
+            .filter((entry) => entry.length > 0),
+        );
+      }
+    } else if (inPackages) {
+      const item = /^\s*-\s+(.+?)\s*$/u.exec(line);
+      if (item?.[1] !== undefined) patterns.push(unquote(item[1]));
+    }
+  }
+  return patterns;
+}
+
+function initPackageWorkspacePatterns(document: Record<string, unknown> | undefined): string[] {
+  const field = document?.workspaces;
+  const list =
+    field !== null && typeof field === "object" && !Array.isArray(field)
+      ? (field as Record<string, unknown>).packages
+      : field;
+  return Array.isArray(list)
+    ? list.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+/** Whether a directory, given relative to the workspace root, is selected by its patterns. */
+function initWorkspaceDeclaresMember(patterns: readonly string[], relative: string): boolean {
+  let included = false;
+  let excluded = false;
+  for (const raw of patterns) {
+    const negated = raw.startsWith("!");
+    const pattern = (negated ? raw.slice(1) : raw).replace(/^\.\//u, "").replace(/\/+$/u, "");
+    if (
+      pattern.length === 0 ||
+      pattern.startsWith("/") ||
+      pattern.includes("\\") ||
+      pattern.split("/").includes("..")
+    ) {
+      continue;
+    }
+    if (new RegExp(`${initGlobSource(pattern)}$`, "u").test(relative)) {
+      if (negated) excluded = true;
+      else included = true;
+    }
+  }
+  return included && !excluded;
+}
+
+interface InitWorkspaceRootFacts {
+  managers: Set<InitPackageManager>;
+  invalidManagerField: boolean;
+}
+
+/**
+ * The package-manager facts of the nearest workspace whose patterns select `root`. The search
+ * starts above `root`, stops at the first directory holding a `.git` (included), and does not run
+ * at all when `root` is itself a repository top or when no `.git` bounds it: it never reads past
+ * the repository that holds the package.
+ */
+async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFacts | undefined> {
+  const exists = async (entry: string): Promise<boolean> => {
+    try {
+      await lstat(entry);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (await exists(path.join(root, ".git"))) return undefined;
+  const ancestors: string[] = [];
+  for (let current = root; ; ) {
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    ancestors.push(parent);
+    if (await exists(path.join(parent, ".git"))) break;
+    current = parent;
+  }
+  for (const directory of ancestors) {
+    const relative = path.relative(directory, root).split(path.sep).join("/");
+    const workspaceFile = await initWorkspaceFileText(path.join(directory, "pnpm-workspace.yaml"));
+    const manifest = initPackageDocument(
+      await initWorkspaceFileText(path.join(directory, "package.json")),
+    );
+    const patterns = [
+      ...initPnpmWorkspacePatterns(workspaceFile),
+      ...initPackageWorkspacePatterns(manifest),
+    ];
+    if (!initWorkspaceDeclaresMember(patterns, relative)) continue;
+    const managers = new Set<InitPackageManager>();
+    let invalidManagerField = false;
+    const field = manifest?.packageManager;
+    if (typeof field === "string") {
+      const id = field.split("@")[0] ?? "";
+      if (isInitPackageManager(id)) managers.add(id);
+      else invalidManagerField = true;
+    }
+    if (workspaceFile !== undefined) managers.add("pnpm");
+    for (const [manager, files] of INIT_MANAGER_LOCKFILES) {
+      if (!INIT_WORKSPACE_MANAGERS.includes(manager)) continue;
+      for (const file of files) {
+        if ((await initRegularFileStats(path.join(directory, file))) !== undefined) {
+          managers.add(manager);
+          break;
+        }
+      }
+    }
+    return { managers, invalidManagerField };
+  }
+  return undefined;
 }
 
 function initJavaScriptModuleSpecifiers(source: string, file?: string): Set<string> {
@@ -1565,16 +1756,7 @@ export async function initializeRepository(
     }
     managerFacts.add(id);
   }
-  const managerLockfiles: Array<[InitPackageManager, string[]]> = [
-    ["pnpm", ["pnpm-lock.yaml"]],
-    ["npm", ["package-lock.json", "npm-shrinkwrap.json"]],
-    ["yarn", ["yarn.lock"]],
-    ["bun", ["bun.lock", "bun.lockb"]],
-    ["uv", ["uv.lock"]],
-    ["poetry", ["poetry.lock"]],
-    ["pip", ["Pipfile.lock", "requirements.txt"]],
-  ];
-  for (const [manager, files] of managerLockfiles) {
+  for (const [manager, files] of INIT_MANAGER_LOCKFILES) {
     if (files.some((file) => inScopeFiles.includes(file))) managerFacts.add(manager);
   }
   const pyproject = contents.get("pyproject.toml") ?? "";
@@ -1597,7 +1779,24 @@ export async function initializeRepository(
       "PACKAGE_MANAGER_AMBIGUOUS",
     ]);
   }
-  const packageManager = managerOverride ?? [...managerFacts][0];
+  let packageManager = managerOverride ?? [...managerFacts][0];
+  // Only a package that states nothing itself and receives no override looks at its workspace.
+  let managerFromWorkspaceRoot = false;
+  if (packageManager === undefined) {
+    const workspace = await initWorkspaceRootFacts(root);
+    if (workspace?.invalidManagerField === true) {
+      return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_INVALID"]), [
+        "PACKAGE_MANAGER_INVALID",
+      ]);
+    }
+    if (workspace !== undefined && workspace.managers.size > 1) {
+      return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_AMBIGUOUS"]), [
+        "PACKAGE_MANAGER_AMBIGUOUS",
+      ]);
+    }
+    packageManager = [...(workspace?.managers ?? [])][0];
+    managerFromWorkspaceRoot = packageManager !== undefined;
+  }
   if (packageManager === undefined) {
     return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_UNDETECTED"]), [
       "PACKAGE_MANAGER_UNDETECTED",
@@ -1735,6 +1934,8 @@ export async function initializeRepository(
   let adapter: RepositoryInitConfigV2["adapter"] | undefined;
   let adapterRecommendation: RepositoryInitDetectionsV2["adapterRecommendation"] = "unavailable";
   let adapterEvidencePath: string | undefined;
+  // The test command reaches the runner through a task runner and names no test path.
+  let indirectCommand = false;
   if (options.adapterConfigPath !== undefined) {
     try {
       const resolvedAdapter = await realpath(path.resolve(root, options.adapterConfigPath));
@@ -1788,6 +1989,9 @@ export async function initializeRepository(
     if (baseTestFiles.length > 0) {
       adapter = { kind: "node-test", executable: "node", baseTestFiles };
       adapterRecommendation = "node-test";
+    } else {
+      indirectCommand =
+        testSources.length > 0 && initCommandIsIndirect(testCommand, "node", testSources);
     }
   } else if (framework === "bun:test") {
     // `bun test` answers `vitest` and `@jest/globals` with its own test API: a Bun repository's
@@ -1805,6 +2009,9 @@ export async function initializeRepository(
     if (baseTestFiles.length > 0) {
       adapter = { kind: "bun-test", executable: "bun", baseTestFiles };
       adapterRecommendation = "bun-test";
+    } else {
+      indirectCommand =
+        testSources.length > 0 && initCommandIsIndirect(testCommand, "bun", testSources);
     }
   }
 
@@ -1812,10 +2019,13 @@ export async function initializeRepository(
     ...(adapter === undefined
       ? [
           framework === "node:test" || framework === "bun:test"
-            ? "BASE_TEST_FILES_UNAVAILABLE"
+            ? indirectCommand
+              ? "TEST_COMMAND_INDIRECT"
+              : "BASE_TEST_FILES_UNAVAILABLE"
             : "OFFICIAL_ADAPTER_UNAVAILABLE",
         ]
       : []),
+    ...(managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"] : []),
     ...linkReasonCodes,
   ].sort();
   const detections: RepositoryInitDetectionsV2 = {

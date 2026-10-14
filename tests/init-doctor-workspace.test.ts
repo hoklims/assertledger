@@ -1,0 +1,389 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { after, describe, it } from "node:test";
+import { type CliIo, runCli } from "../src/cli.js";
+import { initializeRepository } from "../src/engine/index.js";
+import { AssertLedger } from "../src/sdk/index.js";
+
+const temporaryDirectories: string[] = [];
+
+after(async () => {
+  await Promise.all(
+    temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+function capture(cwd: string) {
+  let stdout = "";
+  let stderr = "";
+  const io: CliIo = {
+    cwd,
+    readStdin: async () => "",
+    writeStdout: (text) => {
+      stdout += text;
+    },
+    writeStderr: (text) => {
+      stderr += text;
+    },
+  };
+  return { io, stdout: () => stdout, stderr: () => stderr };
+}
+
+/** Writes `files` under a fresh directory; a key ending in `/` creates an empty directory. */
+async function tree(files: Record<string, string>): Promise<string> {
+  const base = await mkdtemp(path.join(os.tmpdir(), "assertledger-workspace-"));
+  temporaryDirectories.push(base);
+  for (const [relative, content] of Object.entries(files)) {
+    const target = path.join(base, ...relative.split("/"));
+    if (relative.endsWith("/")) {
+      await mkdir(target, { recursive: true });
+    } else {
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, content);
+    }
+  }
+  return base;
+}
+
+const BUN_SPEC = 'import { test } from "bun:test";\ntest("one", () => {});\n';
+// The member script carries a quoted glob, which init refuses to interpret as one safe command.
+const MEMBER_SCRIPT = "bun test --isolate --path-ignore-patterns='**/*.e2e.spec.ts'";
+const BUN_COMMAND = JSON.stringify({ executable: "bun", arguments: ["test", "--isolate"] });
+
+function member(packageDocument: Record<string, unknown> = {}): Record<string, string> {
+  return {
+    "domains/x/api/package.json": JSON.stringify({
+      name: "api",
+      scripts: { test: MEMBER_SCRIPT },
+      ...packageDocument,
+    }),
+    "domains/x/api/a.spec.ts": BUN_SPEC,
+  };
+}
+
+async function doctorJson(argv: string[], cwd: string) {
+  const output = capture(cwd);
+  const code = await runCli(["doctor", ...argv, "--json"], output.io);
+  return { code, result: JSON.parse(output.stdout() || "null"), stderr: output.stderr() };
+}
+
+describe("doctor accepts the detection overrides of init", () => {
+  it("returns the init --dry-run result for the same overrides and writes nothing", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({ name: "api", scripts: { test: MEMBER_SCRIPT } }),
+      "a.spec.ts": BUN_SPEC,
+      "bun-test.json": BUN_COMMAND,
+    });
+    const overrides = [
+      "--framework",
+      "bun:test",
+      "--package-manager",
+      "pnpm",
+      "--test-command-json",
+      path.join(root, "bun-test.json"),
+    ];
+
+    const withoutOverrides = await doctorJson(["--framework", "bun:test"], root);
+    assert.equal(withoutOverrides.code, 4);
+    assert.deepEqual(withoutOverrides.result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+
+    const doctor = await doctorJson([root, ...overrides], root);
+    const init = capture(root);
+    assert.equal(await runCli(["init", root, "--dry-run", ...overrides, "--json"], init.io), 0);
+
+    assert.equal(doctor.stderr, "");
+    assert.equal(doctor.code, 0);
+    assert.equal(doctor.result.status, "WOULD_CREATE");
+    assert.equal(doctor.result.detections.packageManager, "pnpm");
+    assert.deepEqual(doctor.result.detections.testCommand, {
+      executable: "bun",
+      arguments: ["test", "--isolate"],
+    });
+    assert.deepEqual(doctor.result, JSON.parse(init.stdout()));
+    assert.deepEqual((await readdir(root)).sort(), ["a.spec.ts", "bun-test.json", "package.json"]);
+  });
+
+  it("forwards --adapter-config and rejects repeated or runtime-mode overrides", async () => {
+    const root = await tree({
+      "requirements.txt": "pytest==9.0.0\n",
+      "test_app.py": "def test_app(): assert True\n",
+      "adapter.json": JSON.stringify({
+        kind: "testforge-command",
+        executable: "python",
+        arguments: ["adapter.py"],
+        protocolVersion: "1.0.0",
+      }),
+    });
+    const blocked = await doctorJson([root], root);
+    assert.equal(blocked.code, 3);
+    assert(blocked.result.reasonCodes.includes("OFFICIAL_ADAPTER_UNAVAILABLE"));
+
+    const adapted = await doctorJson([root, "--adapter-config", "adapter.json"], root);
+    assert.equal(adapted.code, 0);
+    assert.equal(adapted.result.status, "WOULD_CREATE");
+    assert.equal(adapted.result.detections.adapterRecommendation, "operator-supplied");
+
+    for (const argv of [
+      ["doctor", root, "--package-manager", "pip", "--package-manager", "pip"],
+      ["doctor", root, "--test-command-json", "a.json", "--test-command-json", "b.json"],
+      ["doctor", root, "--adapter-config", "adapter.json", "--adapter-config", "adapter.json"],
+      ["doctor", root, "--runtime", "--package-manager", "pip"],
+      ["doctor", root, "--runtime", "--test-command-json", "a.json"],
+      ["doctor", root, "--runtime", "--adapter-config", "adapter.json"],
+    ]) {
+      const output = capture(root);
+      assert.equal(await runCli(argv, output.io), 64, argv.join(" "));
+    }
+  });
+
+  it("passes the overrides through the SDK facade", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({ name: "api", scripts: { test: MEMBER_SCRIPT } }),
+      "a.spec.ts": BUN_SPEC,
+    });
+    const result = await new AssertLedger().doctor(root, {
+      framework: "bun:test",
+      packageManager: "pnpm",
+      testCommand: { executable: "bun", arguments: ["test", "--isolate"] },
+    });
+    assert.equal(result.status, "WOULD_CREATE");
+    assert.equal(result.detections.packageManager, "pnpm");
+  });
+});
+
+describe("a workspace member inherits the package manager of its workspace root", () => {
+  const rootFiles = {
+    ".git/": "",
+    "pnpm-workspace.yaml": "packages:\n  - 'domains/*/api'\n  - \"!domains/legacy/**\"\n",
+    "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+    "package.json": JSON.stringify({
+      name: "root",
+      packageManager: "pnpm@12.11.2",
+      scripts: { test: "turbo test test:repository" },
+    }),
+  };
+
+  it("detects pnpm from pnpm-workspace.yaml and states where the fact came from", async () => {
+    const base = await tree({ ...rootFiles, ...member(), "bun-test.json": BUN_COMMAND });
+    const memberRoot = path.join(base, "domains", "x", "api");
+    const output = await doctorJson(
+      [memberRoot, "--test-command-json", path.join(base, "bun-test.json")],
+      base,
+    );
+    assert.equal(output.code, 0, JSON.stringify(output.result));
+    assert.equal(output.result.status, "WOULD_CREATE");
+    assert.equal(output.result.detections.packageManager, "pnpm");
+    assert.equal(output.result.detections.framework, "bun:test");
+    assert.deepEqual(output.result.reasonCodes, ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"]);
+  });
+
+  it("creates a stable lock from a member and leaves it UNCHANGED on rerun", async () => {
+    const base = await tree({ ...rootFiles, ...member() });
+    const memberRoot = path.join(base, "domains", "x", "api");
+    const options = { testCommand: { executable: "bun", arguments: ["test", "--isolate"] } };
+    const created = await initializeRepository(memberRoot, options);
+    assert.equal(created.status, "CREATED");
+    assert.equal(created.detections.packageManager, "pnpm");
+    const unchanged = await initializeRepository(memberRoot, options);
+    assert.equal(unchanged.status, "UNCHANGED");
+    assert.deepEqual(unchanged.detections, created.detections);
+  });
+
+  it("reads the workspaces field and the root lockfile for bun, yarn and npm", async () => {
+    const cases = [
+      {
+        files: {
+          "package.json": JSON.stringify({
+            name: "root",
+            packageManager: "bun@1.4.2",
+            workspaces: ["packages/*"],
+          }),
+        },
+        expected: "bun",
+      },
+      {
+        files: {
+          "package.json": JSON.stringify({
+            name: "root",
+            workspaces: { packages: ["packages/*"] },
+          }),
+          "yarn.lock": "",
+        },
+        expected: "yarn",
+      },
+      {
+        files: {
+          "package.json": JSON.stringify({ name: "root", workspaces: ["packages/**"] }),
+          "package-lock.json": "{}\n",
+        },
+        expected: "npm",
+      },
+    ] as const;
+    for (const scenario of cases) {
+      const base = await tree({
+        ".git/": "",
+        ...scenario.files,
+        "packages/app/package.json": JSON.stringify({ name: "app" }),
+        "packages/app/a.test.ts": BUN_SPEC,
+      });
+      const result = await initializeRepository(path.join(base, "packages", "app"), {
+        dryRun: true,
+        framework: "bun:test",
+      });
+      assert.equal(result.detections.packageManager, scenario.expected, JSON.stringify(result));
+      assert.equal(result.status, "WOULD_CREATE");
+    }
+  });
+
+  it("keeps the member's own manager and any explicit override over the root", async () => {
+    const own = await tree({
+      ...rootFiles,
+      ...member(),
+      "domains/x/api/package-lock.json": "{}\n",
+    });
+    const memberRoot = path.join(own, "domains", "x", "api");
+    const detected = await initializeRepository(memberRoot, {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(detected.detections.packageManager, "npm");
+    assert.deepEqual(detected.reasonCodes, []);
+
+    const bare = await tree({ ...rootFiles, ...member() });
+    const overridden = await initializeRepository(path.join(bare, "domains", "x", "api"), {
+      dryRun: true,
+      packageManager: "yarn",
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(overridden.detections.packageManager, "yarn");
+    assert.deepEqual(overridden.reasonCodes, []);
+  });
+
+  it("does not infer a manager from a root that does not declare the package", async () => {
+    const command = { executable: "bun", arguments: ["test"] };
+    const undetected = async (files: Record<string, string>, memberPath: string[]) => {
+      const base = await tree(files);
+      const result = await initializeRepository(path.join(base, ...memberPath), {
+        dryRun: true,
+        framework: "bun:test",
+        testCommand: command,
+      });
+      assert.equal(result.status, "CONFLICT");
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+    };
+
+    // Not matched by any workspace pattern.
+    await undetected(
+      { ...rootFiles, "tools/x/package.json": "{}", "tools/x/a.spec.ts": BUN_SPEC },
+      ["tools", "x"],
+    );
+    // Excluded by a negated pattern.
+    await undetected(
+      {
+        ...rootFiles,
+        "domains/legacy/api/package.json": "{}",
+        "domains/legacy/api/a.spec.ts": BUN_SPEC,
+      },
+      ["domains", "legacy", "api"],
+    );
+    // A .git between the member and the workspace root ends the search.
+    await undetected({ ...rootFiles, ...member(), "domains/.git/": "" }, ["domains", "x", "api"]);
+    // The member is itself the top of its repository.
+    await undetected({ ...rootFiles, ...member(), "domains/x/api/.git/": "" }, [
+      "domains",
+      "x",
+      "api",
+    ]);
+    // Without any .git the search has no boundary and does not run.
+    const { ".git/": _git, ...withoutGit } = rootFiles;
+    await undetected({ ...withoutGit, ...member() }, ["domains", "x", "api"]);
+  });
+
+  it("reports conflicting root facts instead of choosing one", async () => {
+    const base = await tree({
+      ...rootFiles,
+      "package.json": JSON.stringify({ name: "root", packageManager: "yarn@4.0.0" }),
+      ...member(),
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_AMBIGUOUS"]);
+  });
+});
+
+describe("a command that does not run the framework directly is named as such", () => {
+  async function blocked(script: string, framework: "bun:test" | "node:test") {
+    const source =
+      framework === "bun:test"
+        ? BUN_SPEC
+        : 'import test from "node:test";\ntest("one", () => {});\n';
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: script },
+      }),
+      "pnpm-lock.yaml": "",
+      "a/one.test.ts": source,
+      "b/two.test.ts": source,
+    });
+    return { root, ...(await doctorJson([root, "--framework", framework], root)) };
+  }
+
+  for (const [script, framework, executable] of [
+    ["turbo test test:repository", "bun:test", "turbo"],
+    ["pnpm -r test", "node:test", "pnpm"],
+    ["bun run test", "bun:test", "bun"],
+  ] as const) {
+    it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
+      const { code, result } = await blocked(script, framework);
+      assert.equal(code, 3);
+      assert.equal(result.status, "BLOCKED");
+      assert.deepEqual(result.reasonCodes, ["TEST_COMMAND_INDIRECT"]);
+      assert.equal(result.detections.testCommand.executable, executable);
+    });
+  }
+
+  it("still reports missing tests when the runner itself names a path nothing matches", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "bun test tests" },
+      }),
+      "pnpm-lock.yaml": "",
+      "a/one.test.ts": BUN_SPEC,
+    });
+    const { result } = await doctorJson([root, "--framework", "bun:test"], root);
+    assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
+
+    const wrapped = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "turbo run test -- missing/*.test.ts" },
+      }),
+      "pnpm-lock.yaml": "",
+      "a/one.test.ts": BUN_SPEC,
+    });
+    const named = await doctorJson([wrapped, "--framework", "bun:test"], wrapped);
+    assert.deepEqual(named.result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
+  });
+
+  it("is cleared by the direct runner command the diagnostic points to", async () => {
+    const { root } = await blocked("turbo test test:repository", "bun:test");
+    const commandPath = path.join(root, "bun-test.json");
+    await writeFile(commandPath, JSON.stringify({ executable: "bun", arguments: ["test"] }));
+    const repaired = await doctorJson(
+      [root, "--framework", "bun:test", "--test-command-json", commandPath],
+      root,
+    );
+    assert.equal(repaired.code, 0);
+    assert.equal(repaired.result.status, "WOULD_CREATE");
+  });
+});
