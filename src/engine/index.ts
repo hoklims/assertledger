@@ -1339,16 +1339,15 @@ function initCommandPathMatchers(
 /**
  * Whether the command invokes the framework's own runner, itself or behind a launcher
  * (`pnpm exec node --test`, `tsx --test`, `bunx bun test`): its operands are then that runner's
- * path filters.
+ * path filters. Node's runner is the `--test` flag: a bare `node runner` runs a script of its own.
  */
 function initCommandInvokesRunner(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
 ): boolean {
+  if (runner === "node") return command.arguments.includes("--test");
   const words = [command.executable, ...command.arguments];
-  return runner === "bun"
-    ? words.some((word, index) => word === "bun" && words[index + 1] === "test")
-    : words.includes("node") || command.arguments.includes("--test");
+  return words.some((word, index) => word === "bun" && words[index + 1] === "test");
 }
 
 /**
@@ -1379,6 +1378,10 @@ const INIT_MANAGER_LOCKFILES: ReadonlyArray<readonly [InitPackageManager, readon
 ];
 const INIT_WORKSPACE_MANAGERS: readonly InitPackageManager[] = ["pnpm", "npm", "yarn", "bun"];
 const INIT_WORKSPACE_FILE_LIMIT_BYTES = 1_048_576;
+const INIT_WORKSPACE_PATTERN_COUNT = 4_096;
+const INIT_WORKSPACE_PATTERN_LENGTH = 256;
+const INIT_WORKSPACE_BRACE_DEPTH = 4;
+const INIT_WORKSPACE_WILDCARD_LIMIT = 16;
 
 async function initRegularFileStats(file: string): Promise<Stats | undefined> {
   try {
@@ -1451,27 +1454,61 @@ function initFlowListItems(inside: string): string[] {
 function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   if (text === undefined) return [];
   const unquote = (value: string): string => value.trim().replace(/^(['"])(.*)\1$/u, "$2");
+  const flowPatterns = (inside: string): string[] =>
+    initFlowListItems(inside)
+      .map(unquote)
+      .filter((entry) => entry.length > 0);
   const patterns: string[] = [];
   let inPackages = false;
+  // The text of a flow list still open at the end of a line.
+  let flow: string | undefined;
   for (const raw of text.split(/\r?\n/u)) {
     const line = raw.replace(/\s+#.*$/u, "");
     if (line.trim().length === 0 || line.trimStart().startsWith("#")) continue;
-    if (!/^[\s-]/u.test(line)) {
-      const flow = /^packages\s*:\s*\[(.*)\]\s*$/u.exec(line);
-      inPackages = flow === null && /^packages\s*:\s*$/u.test(line);
-      if (flow?.[1] !== undefined) {
-        patterns.push(
-          ...initFlowListItems(flow[1])
-            .map(unquote)
-            .filter((entry) => entry.length > 0),
-        );
+    if (flow !== undefined) {
+      flow = `${flow} ${line}`;
+      const end = initFlowEnd(flow);
+      if (end >= 0) {
+        patterns.push(...flowPatterns(flow.slice(0, end)));
+        flow = undefined;
+      }
+    } else if (!/^[\s-]/u.test(line)) {
+      const open = /^packages\s*:\s*\[(.*)$/u.exec(line);
+      inPackages = open === null && /^packages\s*:\s*$/u.test(line);
+      if (open?.[1] !== undefined) {
+        const end = initFlowEnd(open[1]);
+        if (end >= 0) patterns.push(...flowPatterns(open[1].slice(0, end)));
+        else flow = open[1];
       }
     } else if (inPackages) {
       const item = /^\s*-\s+(.+?)\s*$/u.exec(line);
       if (item?.[1] !== undefined) patterns.push(unquote(item[1]));
     }
   }
-  return patterns;
+  // A flow list that never closes is not a declaration.
+  return flow === undefined ? patterns : [];
+}
+
+/** The index of the bracket closing a YAML flow list whose opening bracket is already consumed. */
+function initFlowEnd(text: string): number {
+  let quote = "";
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index] ?? "";
+    if (quote !== "") {
+      if (character === quote) quote = "";
+    } else if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === "{" || character === "[") {
+      depth += 1;
+    } else if (character === "}") {
+      depth = Math.max(0, depth - 1);
+    } else if (character === "]") {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+  }
+  return -1;
 }
 
 /**
@@ -1505,12 +1542,20 @@ function initPackageWorkspacePatterns(document: Record<string, unknown> | undefi
  * operators as literal path characters.
  */
 function initWorkspacePatternExpression(pattern: string): RegExp | undefined {
+  // Bounded before compiling: a repository controls the pattern, and nested groups or long runs
+  // of wildcards would otherwise cost the compiler or the matcher without limit.
+  if (pattern.length > INIT_WORKSPACE_PATTERN_LENGTH) return undefined;
   let expression = "^";
+  let wildcards = 0;
   const braces: boolean[] = [];
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index] ?? "";
     if (character === "\\" || character === "(" || character === ")") return undefined;
     if (character === "." && pattern[index + 1] === "." && braces.length > 0) return undefined;
+    if ("*?[".includes(character)) {
+      wildcards += 1;
+      if (wildcards > INIT_WORKSPACE_WILDCARD_LIMIT) return undefined;
+    }
     if (character === "*" && pattern[index + 1] === "*") {
       if (pattern[index + 2] === "/") {
         expression += "(?:[^/]+/)*";
@@ -1524,6 +1569,7 @@ function initWorkspacePatternExpression(pattern: string): RegExp | undefined {
     } else if (character === "?") {
       expression += "[^/]";
     } else if (character === "{") {
+      if (braces.length >= INIT_WORKSPACE_BRACE_DEPTH) return undefined;
       braces.push(false);
       expression += "(?:";
     } else if (character === "," && braces.length > 0) {
@@ -1557,6 +1603,7 @@ function initWorkspaceDeclaresMember(
   patterns: readonly string[],
   relative: string,
 ): boolean | undefined {
+  if (patterns.length > INIT_WORKSPACE_PATTERN_COUNT) return undefined;
   let included = false;
   let excluded = false;
   for (const raw of patterns) {

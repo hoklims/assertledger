@@ -63,7 +63,9 @@ manager that does not own the declaration, including a Python manager, selects n
 `PACKAGE_MANIFEST_INVALID`. A `pnpm-workspace.yaml` that exists but cannot be read (larger than
 1 MiB, or not a regular file) infers nothing, and does not fall back to `workspaces`. Patterns are
 read in the subset the managers share (`*`, `**`, `?`, `{a,b}` and `[a-z]`), also inside a quoted
-item of a YAML flow list; any other syntax is not understood and nothing is inferred from it.
+item of a single-line or multiline YAML flow list; any other syntax, and any pattern beyond 256
+characters, 4 nested braces or 16 wildcards (or more than 4,096 patterns), is not understood and
+nothing is inferred from it.
 
 A manager found this way is reported with the informational
 `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before
@@ -72,7 +74,8 @@ only files under the package, so a later change at the workspace root is not det
 `init` after changing the workspace's package manager.
 
 A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
-also behind a launcher such as `pnpm exec` or `tsx`) and spells no test path (a glob, a nested path
+also behind a launcher such as `pnpm exec` or `tsx`; a bare `node script` is not Node's runner)
+and spells no test path (a glob, a nested path
 or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo test`, `pnpm -r test`
 and `npm run test:unit` are such commands: their operands are task names, not path filters, even
 when a directory of that name exists, so no inventory can be derived. `detections.testCommand`

@@ -464,6 +464,62 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
   });
 
+  it("reads a multiline YAML flow list and refuses one that never closes", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const content of [
+      "packages: [\n  'tools/*',\n  '{domains,other}/*/api',\n]\n",
+      "packages: ['tools/*',\n  \"{domains,other}/*/api\" # members\n  ]\nother: 1\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+      assert.equal(result.detections.packageManager, "pnpm", content);
+    }
+    const open = await run("packages: [\n  'domains/*/api',\n");
+    assert.equal(open.status, "CONFLICT");
+    assert.deepEqual(open.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+  });
+
+  it("bounds workspace patterns before compiling them", async () => {
+    const run = async (patterns: string[]) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": `packages:\n${patterns.map((entry) => `  - '${entry}'`).join("\n")}\n`,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    const hostile = [
+      `${"{a,".repeat(5_000)}x${"}".repeat(5_000)}`,
+      `${"**/".repeat(200)}api`,
+      "*".repeat(300),
+      `{{{{{a,b},c},d},e},f}/*/api`,
+    ];
+    for (const pattern of hostile) {
+      const result = await run(["domains/*/api", pattern]);
+      assert.equal(result.status, "CONFLICT", pattern.slice(0, 40));
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], pattern.slice(0, 40));
+    }
+    // Ordinary nesting and wildcards stay inside the limits.
+    const ordinary = await run(["{apps,{domains,tools}}/*/api"]);
+    assert.equal(ordinary.status, "WOULD_CREATE");
+    assert.equal(ordinary.detections.packageManager, "pnpm");
+  });
+
   it("does not read package.json workspaces when pnpm-workspace.yaml cannot be read", async () => {
     const base = await tree({
       ".git/": "",
@@ -556,6 +612,8 @@ describe("a command that does not run the framework directly is named as such", 
     ["turbo test test:repository", "bun:test", "turbo"],
     ["pnpm -r test", "node:test", "pnpm"],
     ["bun run test", "bun:test", "bun"],
+    // A script of its own run by node, not Node's test runner.
+    ["node runner", "node:test", "node"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
