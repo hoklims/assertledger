@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/assertledger-core"]
+members = ["rust/assertledger-core", "rust/assertledger-engine", "rust/assertledger-node"]
 resolver = "2"
 
 [workspace.package]
@@ -15,4 +15,9 @@ serde_json = { version = "1.0", features = ["float_roundtrip"] }
 sha2 = "0.10"
 ryu-js = "1.0"
 regex = "1.12"
+tokio = { version = "1.48", features = ["process", "time", "io-util", "rt-multi-thread", "macros", "sync"] }
+napi = { version = "3", default-features = false, features = ["napi8", "serde-json", "tokio_rt"] }
+napi-derive = "3"
+napi-build = "2"
+
 
