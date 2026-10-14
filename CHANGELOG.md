@@ -14,8 +14,10 @@
   `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
   `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. Only `pnpm-workspace.yaml` declares members: the npm,
   Yarn and Bun `workspaces` field is not read. Its `packages` list is read as a block or flow
-  list (also across lines), with `!` exclusions, `*`, `**`, `?`, `{a,b}` and `[a-z]`; any other
-  syntax, any other shape under `packages`, anything but whitespace after a flow list, a pattern
+  list (also across lines), with `!` exclusions, `*`, `**`, `?`, `{a,b}` and `[a-z]`, where a
+  wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does);
+  any other syntax, any other shape under `packages`, an entry that is not a string (`42`, `true`,
+  `null`, an empty item), anything but whitespace after a flow list, a pattern
   beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and alternations in total,
   1,024-character paths) or a file that exists but cannot be read (over 1 MiB, a link) declares
   nothing. Matching and parsing are linear: no regular expression is built from a pattern. The

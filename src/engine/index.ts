@@ -1328,10 +1328,11 @@ function initCommandPathMatchers(
   testSources: string[],
   isTestFile: (file: string) => boolean,
 ): Array<(file: string) => boolean> {
-  const operands =
-    command.executable === "bun" && command.arguments[0] === "test"
-      ? command.arguments.slice(1)
-      : command.arguments;
+  // After a recognized `bun test` pair, wherever it sits (`pnpm exec bun test x`), only what
+  // follows the pair are filters: `test` itself is the subcommand, not a conventional directory.
+  const words = [command.executable, ...command.arguments];
+  const pair = initBunTestPair(words);
+  const operands = pair >= 0 ? words.slice(pair + 2) : command.arguments;
   return operands
     .filter(
       (argument) =>
@@ -1352,15 +1353,7 @@ function initCommandInvokesRunner(
   runner: "node" | "bun",
 ): boolean {
   const words = [command.executable, ...command.arguments];
-  if (runner === "bun") {
-    // `node runner bun test` hands `bun test` to the script: no runtime may come before the pair.
-    return words.some(
-      (word, index) =>
-        word === "bun" &&
-        words[index + 1] === "test" &&
-        !words.slice(0, index).some((before) => INIT_NODE_RUNTIMES.has(before)),
-    );
-  }
+  if (runner === "bun") return initBunTestPair(words) >= 0;
   const flag = words.indexOf("--test", 1);
   if (flag < 0) return false;
   // The nearest word at or before `from` that is not an option or the value of an option that
@@ -1370,7 +1363,7 @@ function initCommandInvokesRunner(
     while (
       position >= 1 &&
       ((words[position] ?? "").startsWith("-") ||
-        INIT_NODE_VALUE_OPTIONS.has(words[position - 1] ?? ""))
+        initNodeOptionTakesValue(words[position - 1] ?? ""))
     ) {
       position -= 1;
     }
@@ -1386,7 +1379,34 @@ function initCommandInvokesRunner(
   return !spelledAsScript && !runtimeBefore;
 }
 
+/**
+ * The index of `bun` in a `bun test` pair that is Bun's own invocation, or -1. `node runner bun
+ * test` hands the pair to the script: no Node-like runtime may come before it.
+ */
+function initBunTestPair(words: readonly string[]): number {
+  return words.findIndex(
+    (word, index) =>
+      word === "bun" &&
+      words[index + 1] === "test" &&
+      !words.slice(0, index).some((before) => INIT_NODE_RUNTIMES.has(before)),
+  );
+}
+
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
+// Node's own test options that are switches; every other `--test-*` option takes a value.
+const INIT_NODE_TEST_SWITCHES = new Set([
+  "--test-only",
+  "--test-force-exit",
+  "--test-update-snapshots",
+]);
+
+/** Whether a word is a Node option whose value is the next word (`--opt value`, not `--opt=v`). */
+function initNodeOptionTakesValue(word: string): boolean {
+  if (word.includes("=")) return false;
+  if (word.startsWith("--test-")) return !INIT_NODE_TEST_SWITCHES.has(word);
+  return INIT_NODE_VALUE_OPTIONS.has(word);
+}
+
 const INIT_NODE_VALUE_OPTIONS = new Set([
   "--import",
   "--require",
@@ -1559,10 +1579,25 @@ function initYamlStripComment(line: string): string {
   return line;
 }
 
+const INIT_YAML_NOT_A_STRING =
+  /^(?:~|null|Null|NULL|true|True|TRUE|false|False|FALSE|[-+]?(?:\.\d+|\d[\d_]*(?:\.\d*)?)(?:[eE][-+]?\d+)?|0x[0-9a-fA-F]+|0o[0-7]+|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/u;
+
 function initYamlUnquote(value: string): string | undefined {
   const text = value.trim();
   const first = text[0];
-  if (text.length < 2 || (first !== "'" && first !== '"') || !text.endsWith(first)) return text;
+  if (text.length < 2 || (first !== "'" && first !== '"') || !text.endsWith(first)) {
+    // A plain scalar must be a string: a number, a boolean, null, a mapping entry, a flow
+    // collection, an anchor, an alias, a tag or a block scalar header is not a pattern.
+    if (
+      INIT_YAML_NOT_A_STRING.test(text) ||
+      /^[[{&*!|>]/u.test(text) ||
+      text.includes(": ") ||
+      text.endsWith(":")
+    ) {
+      return undefined;
+    }
+    return text;
+  }
   const inside = text.slice(1, -1);
   // Single quotes: a doubled quote stands for one quote and nothing else is an escape.
   if (first === "'") return inside.replaceAll("''", "'");
@@ -1625,10 +1660,16 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   if (text === undefined) return [];
   const flowPatterns = (inside: string): string[] | undefined => {
     const entries: string[] = [];
-    for (const item of initFlowListItems(inside)) {
+    const items = initFlowListItems(inside);
+    for (const [index, item] of items.entries()) {
+      // An empty item is null, except after the last comma of the list.
+      if (item.trim().length === 0) {
+        if (index === items.length - 1) continue;
+        return undefined;
+      }
       const entry = initYamlUnquote(item);
       if (entry === undefined) return undefined;
-      if (entry.length > 0) entries.push(entry);
+      entries.push(entry);
     }
     return entries;
   };
@@ -1686,12 +1727,10 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       const indent = line.length - line.trimStart().length;
       if (!isItem || (itemIndent !== undefined && indent !== itemIndent)) return [];
       itemIndent = indent;
-      const item = trimmed.slice(1).trim();
-      if (item.length > 0) {
-        const entry = initYamlUnquote(item);
-        if (entry === undefined) return [];
-        patterns.push(entry);
-      }
+      // An empty item is null: not a pattern, so the file declares nothing.
+      const entry = initYamlUnquote(trimmed.slice(1));
+      if (entry === undefined || entry.length === 0) return [];
+      patterns.push(entry);
     }
   }
   // A flow list that never closes is not a declaration.
@@ -1811,6 +1850,10 @@ function initGlobTokenMatches(token: InitGlobToken, character: string): boolean 
 
 /** Matches one segment against its tokens in time proportional to the product of their lengths. */
 function initGlobSegmentMatches(tokens: readonly InitGlobToken[], text: string): boolean {
+  // A wildcard, `?` or class does not select a name that starts with a dot: only a pattern that
+  // spells the dot does.
+  const first = tokens[0];
+  if (text.startsWith(".") && !(first?.kind === "literal" && first.value === ".")) return false;
   let token = 0;
   let position = 0;
   let starToken = -1;
@@ -1865,8 +1908,12 @@ function initGlobMatchesPath(
     const current: boolean[] = new Array<boolean>(path.length + 1).fill(false);
     for (let position = path.length; position >= 0; position -= 1) {
       if (part === "**") {
+        // `**` does not step through a dot-prefixed directory either.
         current[position] =
-          next[position] === true || (position < path.length && current[position + 1] === true);
+          next[position] === true ||
+          (position < path.length &&
+            !(path[position] ?? "").startsWith(".") &&
+            current[position + 1] === true);
       } else {
         current[position] =
           position < path.length &&

@@ -60,9 +60,13 @@ workspaces.
 
 `packages` is read as a block list or a flow list (also across lines) with the subset of globs the
 managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
-their position. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote,
-and a double-quoted escape other than `\\`, `\"` and `\/` is refused. Anything else declares nothing and infers
-nothing: another syntax, another shape under `packages` (a mapping, a nested sequence), text
+their position. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
+with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
+`packages/.*`) does, as in pnpm. A `#` inside a quoted pattern is kept, a doubled single quote
+decodes to one quote, and a double-quoted escape other than `\\`, `\"` and `\/` is refused.
+Anything else declares nothing and infers nothing: another syntax, another shape under `packages`
+(a mapping, a nested sequence), an entry that is not a string (a number, a boolean, `null`, `~`,
+an empty item, a mapping or a list), text
 after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
 than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a
 `pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, not a regular file).

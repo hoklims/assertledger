@@ -587,6 +587,83 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
   });
 
+  it("refuses package entries that are not strings", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const content of [
+      "packages: ['domains/*/api']\n",
+      "packages: ['domains/*/api',]\n",
+      "packages:\n  - 'domains/*/api'\n  - '42'\n  - \"true\"\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+    for (const content of [
+      "packages: ['domains/*/api', 42]\n",
+      "packages: ['domains/*/api', true]\n",
+      "packages: ['domains/*/api', null]\n",
+      "packages: ['domains/*/api', ~]\n",
+      "packages: ['domains/*/api', 1.5]\n",
+      "packages: ['domains/*/api', , 'tools/*']\n",
+      "packages: ['domains/*/api', {a: b}]\n",
+      "packages: ['domains/*/api', [nested]]\n",
+      "packages:\n  - 'domains/*/api'\n  - 7\n",
+      "packages:\n  - 'domains/*/api'\n  - false\n",
+      "packages:\n  - 'domains/*/api'\n  -\n",
+      "packages:\n  - 'domains/*/api'\n  - key: value\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+  });
+
+  it("does not let a wildcard select a dot-prefixed directory", async () => {
+    const run = async (directory: string, content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        [`${directory}/package.json`]: JSON.stringify({ name: "api" }),
+        [`${directory}/a.spec.ts`]: BUN_SPEC,
+      });
+      return initializeRepository(path.join(base, ...directory.split("/")), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const [directory, content] of [
+      ["packages/.hidden", "packages:\n  - 'packages/*'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/?hidden'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/[.]hidden'\n"],
+      ["packages/.hidden/api", "packages:\n  - 'packages/**'\n"],
+    ] as const) {
+      const result = await run(directory, content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
+    }
+    // A pattern that spells the dot selects it, and an ordinary directory is still selected.
+    for (const [directory, content] of [
+      ["packages/.hidden", "packages:\n  - 'packages/.hidden'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/.*'\n"],
+      ["packages/a", "packages:\n  - 'packages/*'\n"],
+      ["packages/a/b", "packages:\n  - 'packages/**'\n"],
+    ] as const) {
+      const result = await run(directory, content);
+      assert.equal(result.status, "WOULD_CREATE", content);
+    }
+  });
+
   it("counts nesting of braces, not sibling groups", async () => {
     // Nine sibling groups: 2^9 = 512 alternations, nesting depth one.
     const base = await tree({
@@ -822,6 +899,8 @@ describe("a command that does not run the framework directly is named as such", 
     ["tsx runner --test", "node:test", "tsx"],
     // `bun test` is an argument of the script here, not the runner.
     ["node runner bun test", "bun:test", "node"],
+    // A test-runner switch takes no value: the word after it is the entry point.
+    ["node --test-only runner --test", "node:test", "node"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -862,6 +941,7 @@ describe("a command that does not run the framework directly is named as such", 
     ["npx tsx --test tests", "node:test"],
     ["node --import tsx --test tests", "node:test"],
     ["node --test-name-pattern unit --test tests", "node:test"],
+    ["node --test-rerun-failures state.json --test tests", "node:test"],
     ["node --test-reporter spec --test-concurrency 2 --test tests", "node:test"],
     ["pnpm exec bun test tests", "bun:test"],
   ] as const) {
@@ -871,6 +951,23 @@ describe("a command that does not run the framework directly is named as such", 
       assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
     });
   }
+
+  it("keeps the Bun subcommand out of the path filters behind a launcher", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "pnpm exec bun test missing.spec.ts" },
+      }),
+      "pnpm-lock.yaml": "",
+      "test/one.test.ts": BUN_SPEC,
+      "other/two.test.ts": BUN_SPEC,
+    });
+    const { code, result } = await doctorJson([root, "--framework", "bun:test"], root);
+    assert.equal(code, 3);
+    assert.equal(result.status, "BLOCKED");
+    assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
+  });
 
   it("keeps an unmatched Bun spec file name as a filter, not as no filter", async () => {
     const root = await tree({
