@@ -47,7 +47,8 @@
   runner, and `bun test` (global switches such as `--smol` allowed before `test`) counts only when
   the command is Bun or a launcher that runs it, so `echo bun test`, `npm run bun test` and
   `pnpm bun test` are not Bun; from a package script, the program that owns `--test` must be a
-  Node runtime, so `echo --test` and `npm run node --test` are not Node's runner, while a
+  Node runtime and the command a runtime or one of its launchers, so `echo --test`, `echo node
+  --test`, `npm run node --test`, `corepack bun test` and `bun -e test` are not a runner, while a
   command declared with
   `--test-command-json` is taken for the direct runner) and spells no test path (a glob, a nested
   path or a test file name) now returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. For a command that

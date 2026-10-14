@@ -876,6 +876,25 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.equal(result.status, "WOULD_CREATE");
   });
 
+  it("says the manager was inherited on results that stop early too", async () => {
+    const base = await tree({
+      ".git/": "",
+      "pnpm-workspace.yaml": "packages: ['domains/*/api']\n",
+      "pnpm-lock.yaml": "",
+      // A package with no test source: the framework is undetected and the run stops there.
+      "domains/x/api/package.json": JSON.stringify({ name: "api" }),
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.equal(result.detections.packageManager, "pnpm");
+    assert.deepEqual(result.reasonCodes, [
+      "FRAMEWORK_UNDETECTED",
+      "PACKAGE_MANAGER_FROM_WORKSPACE_ROOT",
+    ]);
+  });
+
   it("does not let a member with an unusable packageManager inherit its workspace's", async () => {
     const run = async (field: unknown) => {
       const base = await tree({
@@ -1204,6 +1223,12 @@ describe("a command that does not run the framework directly is named as such", 
     ["env CI=1 echo bun test", "bun:test", "env"],
     // `--` ends Node's options: `--test` after it is a script name.
     ["node -- --test", "node:test", "node"],
+    // The command must be a runtime or one of its launchers, not a program that prints them.
+    ["echo node --test", "node:test", "echo"],
+    // `corepack` only dispatches to a package manager, and Bun's `-e` takes code, not a command.
+    ["corepack bun test", "bun:test", "corepack"],
+    ["bun -e test", "bun:test", "bun"],
+    ["bun --unknown-option test", "bun:test", "bun"],
     // A runtime spelled as a path is still the runtime that was given a script.
     // From a script, the program that owns `--test` must be a Node runtime.
     ["echo --test", "node:test", "echo"],
@@ -1267,6 +1292,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["npx --package bun bun test tests", "bun:test"],
     ["npx -p bun bun test tests", "bun:test"],
     // The value of a launcher's option is not the program that owns `--test`.
+    ["c8 node --test tests", "node:test"],
+    ["cross-env NODE_ENV=test node --test tests", "node:test"],
+    ["corepack pnpm exec node --test tests", "node:test"],
     ["npx --package tsx tsx --test tests", "node:test"],
     ["npx -p tsx tsx --test tests", "node:test"],
     ["env -u FOO bun test tests", "bun:test"],

@@ -96,7 +96,8 @@ root `package.json` that is not valid JSON returns `CONFLICT` with `PACKAGE_MANI
 one that cannot be read (larger than 16 MiB, or not a regular file) infers nothing.
 
 A manager found this way is reported with the informational
-`PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before
+`PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`, also on the results that stop early afterwards (no
+framework detected, an unsafe command). The workspace facts are read again immediately before
 writing, and a change returns `CONFLICT` with `REPOSITORY_CHANGED_DURING_INIT`. The lock records
 only files under the package, so a later change at the workspace root is not detected by it: rerun
 `init` after changing the workspace's package manager.
@@ -120,10 +121,15 @@ names the command. Run `doctor` on one workspace package, or declare the direct 
 are path filters: the launcher words before it (`exec`, `node`) never are, and the executable
 itself (`./node`) is never read as a script given to Node. A `--` that precedes the runtime
 belongs to the launcher (`npm exec -- node --test`). From a package script, the program that owns
-`--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`), so `echo
---test` is not Node's runner, and neither is `npm run node --test`, which runs the script called
-`node` (a program only follows `exec`, `dlx` or `x`); a command declared with `--test-command-json` is taken for the
-direct runner whatever its executable. For `bun test`, the values of its options (`--preload
+`--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`) and the
+command must be that runtime or one of its launchers (`npx`, `bunx`, `npm`/`pnpm`/`yarn` with
+`exec` or `dlx`, `env`, `cross-env`, `dotenv`, `c8`, `nyc`, behind `corepack` when it dispatches
+a package manager), so `echo --test` and `echo node --test` are not Node's runner, and neither is
+`npm run node --test`, which runs the script called `node` (a program only follows `exec`, `dlx`
+or `x`); a command declared with `--test-command-json` is taken for the direct runner whatever
+its executable. A Bun global option other than the known switches and the `--opt=value` forms
+leaves the subcommand unknown (`bun -e test` evaluates `test`), and `corepack bun test` is a
+syntax error of corepack, not Bun. For `bun test`, the values of its options (`--preload
 file`, `--timeout 5000`) are not path filters either.
 
 The static inventory walks the filesystem, not the Git index, and never follows or copies a

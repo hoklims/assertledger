@@ -1402,9 +1402,12 @@ function initNodeRunnerFlag(words: readonly string[], declared: boolean): number
   const spelledAsScript = program >= 1 && (name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name));
   const runtimeBefore =
     previous >= 0 && INIT_NODE_RUNTIMES.has(initCommandWordName(words[previous] ?? ""));
-  // `echo --test` only prints its argument: unless the operator declared the command, the
-  // program that owns `--test` must be a Node runtime.
-  const isRuntime = declared || INIT_NODE_RUNTIMES.has(initCommandWordName(name));
+  // `echo node --test` only prints its arguments: unless the operator declared the command, the
+  // program that owns `--test` must be a Node runtime and the command must be that runtime or
+  // one of its launchers.
+  const executable = initEffectiveLauncher(words).launcher;
+  const launched = INIT_NODE_RUNTIMES.has(executable) || INIT_NODE_LAUNCHERS.has(executable);
+  const isRuntime = declared || (INIT_NODE_RUNTIMES.has(initCommandWordName(name)) && launched);
   return !spelledAsScript && !runtimeBefore && isRuntime ? flag : -1;
 }
 
@@ -1428,12 +1431,7 @@ function initNodeRunnerOperands(words: readonly string[], flag: number): string[
  * the manager's `exec`, `dlx` or `x`, and a `run` before it makes the next word a script name.
  */
 function initRunsPackageScript(words: readonly string[]): boolean {
-  let start = 0;
-  let launcher = initCommandWordName(words[0] ?? "");
-  if (launcher === "corepack") {
-    start = 1;
-    launcher = initCommandWordName(words[1] ?? "");
-  }
+  const { start, launcher } = initEffectiveLauncher(words);
   const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher);
   if (subcommands === undefined) return false;
   const index = words.findIndex((word, position) => position > start && subcommands.includes(word));
@@ -1444,6 +1442,38 @@ function initRunsPackageScript(words: readonly string[]): boolean {
 function initCommandWordName(word: string): string {
   return (word.split("/").pop() ?? "").replace(/\.(?:cmd|exe)$/iu, "");
 }
+
+// What `corepack` can dispatch to: `corepack bun test` is a syntax error, not Bun.
+const INIT_COREPACK_MANAGERS = new Set(["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg"]);
+
+/**
+ * The launcher a command starts with and the index of its word: `corepack` is only a prefix when a
+ * manager it dispatches follows it, and is no known launcher (empty name) otherwise.
+ */
+function initEffectiveLauncher(words: readonly string[]): { start: number; launcher: string } {
+  const first = initCommandWordName(words[0] ?? "");
+  if (first !== "corepack") return { start: 0, launcher: first };
+  const next = initCommandWordName(words[1] ?? "");
+  return INIT_COREPACK_MANAGERS.has(next)
+    ? { start: 1, launcher: next }
+    : { start: 0, launcher: "" };
+}
+
+// Executables that can start Node's runner for the program that follows them: a Node runtime, a
+// package manager's executing subcommand, an environment wrapper or a coverage wrapper. Anything
+// else (`echo node --test`) only carries the words.
+const INIT_NODE_LAUNCHERS = new Set([
+  "npx",
+  "bunx",
+  "pnpm",
+  "npm",
+  "yarn",
+  "env",
+  "cross-env",
+  "dotenv",
+  "c8",
+  "nyc",
+]);
 
 // Options of `npx`, `bunx` and `npm exec` that take a value (`--opt=value` is one word).
 const INIT_LAUNCHER_VALUE_OPTIONS = new Set([
@@ -1521,13 +1551,8 @@ function initBunTestOperands(words: readonly string[], subcommand: number): stri
  * words, and `node runner bun test` hands them to the script.
  */
 function initBunTestPair(words: readonly string[]): number {
-  let start = 0;
-  let launcher = initCommandWordName(words[0] ?? "");
   // `corepack pnpm exec bun test`: corepack only selects the manager that follows.
-  if (launcher === "corepack") {
-    start = 1;
-    launcher = initCommandWordName(words[1] ?? "");
-  }
+  const { start, launcher } = initEffectiveLauncher(words);
   // The index where the program is looked for, before options are skipped.
   let cursor = -1;
   let skipsOptions = true;
@@ -1566,11 +1591,44 @@ function initBunTestPair(words: readonly string[]): number {
     }
   }
   if (initCommandWordName(words[cursor] ?? "") !== "bun") return -1;
-  // Bun's global switches come before its subcommand (`bun --smol test`).
+  // Bun's global switches come before its subcommand (`bun --smol test`). Any other option is not
+  // known to leave `test` as the subcommand: `bun -e test` evaluates `test` as code.
   let position = cursor + 1;
-  while ((words[position] ?? "").startsWith("-")) position += 1;
+  while ((words[position] ?? "").startsWith("-")) {
+    const word = words[position] ?? "";
+    const name = word.includes("=") ? word.slice(0, word.indexOf("=")) : word;
+    const understood = word.includes("=")
+      ? INIT_BUN_GLOBAL_VALUE_OPTIONS.has(name)
+      : INIT_BUN_GLOBAL_SWITCHES.has(name);
+    if (!understood) return -1;
+    position += 1;
+  }
   return words[position] === "test" ? position : -1;
 }
+
+// Bun's global switches, and its global options that take a value in the `--opt=value` form.
+const INIT_BUN_GLOBAL_SWITCHES = new Set([
+  "--smol",
+  "--bun",
+  "-b",
+  "--silent",
+  "--hot",
+  "--watch",
+  "--no-install",
+  "--prefer-offline",
+  "--prefer-latest",
+  "--if-present",
+  "--no-clear-screen",
+]);
+const INIT_BUN_GLOBAL_VALUE_OPTIONS = new Set([
+  "--cwd",
+  "--config",
+  "--env-file",
+  "--tsconfig-override",
+  "--port",
+  "--install",
+  "--preload",
+]);
 
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
 // Node's own test options that are switches; every other `--test-*` option takes a value.
@@ -2647,12 +2705,14 @@ export async function initializeRepository(
   const linkConflict = (
     assessment: RepositoryLinkAssessment,
     detections: RepositoryInitDetections,
+    notices: string[] = [],
   ) => {
     options.onLinkAssessment?.(assessment);
     const code = assessment.refused?.reasonCode;
     const codes = [
       "UNSUPPORTED_REPOSITORY_SYMLINK",
       ...(code === undefined || code === "TEST_CLOSURE_UNSUPPORTED" ? [] : [code]),
+      ...notices,
     ];
     return initTerminalResult("CONFLICT", { ...detections, reasonCodes: codes }, codes);
   };
@@ -2759,6 +2819,19 @@ export async function initializeRepository(
       "PACKAGE_MANAGER_UNDETECTED",
     ]);
   }
+  // A manager that came from outside the package is said so on every result from here on, early
+  // ones included: the package's own lock does not cover it.
+  const inheritedNotice = managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"] : [];
+  const terminal = (
+    status: "BLOCKED" | "CONFLICT",
+    detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
+    reasonCodes: string[],
+  ) =>
+    initTerminalResult(
+      status,
+      { ...detections, reasonCodes: [...detections.reasonCodes, ...inheritedNotice] },
+      [...reasonCodes, ...inheritedNotice],
+    );
 
   const frameworkFacts = new Set<InitFramework>();
   const dependencies = initDependencies(packageDocument);
@@ -2809,7 +2882,7 @@ export async function initializeRepository(
   if (frameworkOverride !== undefined && !isInitFramework(frameworkOverride)) {
     const detections = initEmptyDetections(["FRAMEWORK_OVERRIDE_INVALID"]);
     detections.packageManager = packageManager;
-    return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_OVERRIDE_INVALID"]);
+    return terminal("CONFLICT", detections, ["FRAMEWORK_OVERRIDE_INVALID"]);
   }
   if (
     (frameworkFacts.size > 1 && frameworkOverride === undefined) ||
@@ -2819,13 +2892,13 @@ export async function initializeRepository(
   ) {
     const detections = initEmptyDetections(["FRAMEWORK_AMBIGUOUS"]);
     detections.packageManager = packageManager;
-    return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_AMBIGUOUS"]);
+    return terminal("CONFLICT", detections, ["FRAMEWORK_AMBIGUOUS"]);
   }
   const framework = frameworkOverride ?? [...frameworkFacts][0];
   if (framework === undefined) {
     const detections = initEmptyDetections(["FRAMEWORK_UNDETECTED"]);
     detections.packageManager = packageManager;
-    return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_UNDETECTED"]);
+    return terminal("CONFLICT", detections, ["FRAMEWORK_UNDETECTED"]);
   }
 
   const linkReasonCodes: string[] = [];
@@ -2843,7 +2916,7 @@ export async function initializeRepository(
       const detections = initEmptyDetections([]);
       detections.packageManager = packageManager;
       detections.framework = framework;
-      return linkConflict(assessment, detections);
+      return linkConflict(assessment, detections, inheritedNotice);
     }
     options.onLinkAssessment?.(assessment);
     linkReasonCodes.push("REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE");
@@ -2856,7 +2929,7 @@ export async function initializeRepository(
     const detections = initEmptyDetections(["TEST_COMMAND_INVALID"]);
     detections.packageManager = packageManager;
     detections.framework = framework;
-    return initTerminalResult("CONFLICT", detections, ["TEST_COMMAND_INVALID"]);
+    return terminal("CONFLICT", detections, ["TEST_COMMAND_INVALID"]);
   }
   if (testCommand === undefined && testScript !== undefined)
     testCommand = parseInitScript(testScript);
@@ -2864,7 +2937,7 @@ export async function initializeRepository(
     const detections = initEmptyDetections(["TEST_COMMAND_UNSAFE_OR_AMBIGUOUS"]);
     detections.packageManager = packageManager;
     detections.framework = framework;
-    return initTerminalResult("CONFLICT", detections, ["TEST_COMMAND_UNSAFE_OR_AMBIGUOUS"]);
+    return terminal("CONFLICT", detections, ["TEST_COMMAND_UNSAFE_OR_AMBIGUOUS"]);
   }
   testCommand ??=
     framework === "pytest"
@@ -2919,7 +2992,7 @@ export async function initializeRepository(
           adapterRecommendation: "unavailable",
           reasonCodes: ["ADAPTER_FRAMEWORK_INCOMPATIBLE"],
         };
-        return initTerminalResult("CONFLICT", incompatible, ["ADAPTER_FRAMEWORK_INCOMPATIBLE"]);
+        return terminal("CONFLICT", incompatible, ["ADAPTER_FRAMEWORK_INCOMPATIBLE"]);
       }
       adapter = parsed.data;
       adapterRecommendation = "operator-supplied";
@@ -2934,7 +3007,7 @@ export async function initializeRepository(
         adapterRecommendation: "unavailable",
         reasonCodes: ["ADAPTER_CONFIG_INVALID"],
       };
-      return initTerminalResult("CONFLICT", detections, ["ADAPTER_CONFIG_INVALID"]);
+      return terminal("CONFLICT", detections, ["ADAPTER_CONFIG_INVALID"]);
     }
   } else if (framework === "node:test") {
     const testSources = inScopeFiles.filter(initNodeTestSource);
@@ -3002,13 +3075,13 @@ export async function initializeRepository(
     adapterRecommendation,
     reasonCodes,
   };
-  if (adapter === undefined) return initTerminalResult("BLOCKED", detections, reasonCodes);
+  if (adapter === undefined) return terminal("BLOCKED", detections, reasonCodes);
   if (
     (adapter.kind === "node-test" || adapter.kind === "bun-test") &&
     adapter.baseTestFiles.length > 1_000
   ) {
     const code = "BASE_TEST_FILES_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   await options.afterEvidenceSnapshot?.();
 
@@ -3028,7 +3101,7 @@ export async function initializeRepository(
   const configContent = initJsonBytes(config);
   if (configContent.length > 16 * 1024 * 1024) {
     const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   const configDigest =
     config.schemaVersion === "2.0.0"
@@ -3039,7 +3112,7 @@ export async function initializeRepository(
     evidenceFiles.push(adapterEvidencePath);
   if (evidenceFiles.some((file) => file.length > 1_024)) {
     const code = "INIT_EVIDENCE_PATH_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   evidenceFiles.sort(comparePortablePaths);
   const evidence: RepositoryInitLock["evidence"] = [];
@@ -3084,7 +3157,7 @@ export async function initializeRepository(
   const lockContent = initJsonBytes(lock);
   if (lockContent.length > 16 * 1024 * 1024) {
     const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   const plannedFiles: RepositoryInitResult["files"] = [
     { path: INIT_CONFIG_FILE, digest: rawSha256(configContent), content: configContent },
@@ -3122,6 +3195,7 @@ export async function initializeRepository(
       initWorkspaceFactsKey(await initWorkspaceRootFacts(root)) !== workspaceFactsKey;
   }
   if (repositoryChanged) {
+    // The evidence the notice would point at has just changed: this result carries the change.
     return initTerminalResult(
       "CONFLICT",
       { ...detections, reasonCodes: ["REPOSITORY_CHANGED_DURING_INIT"] },
@@ -3145,16 +3219,14 @@ export async function initializeRepository(
   const configRead = await readManaged(INIT_CONFIG_FILE);
   const lockRead = await readManaged(INIT_LOCK_FILE);
   if (configRead.kind === "UNSAFE" || lockRead.kind === "UNSAFE") {
-    return initTerminalResult(
-      "CONFLICT",
-      { ...detections, reasonCodes: ["INIT_MANAGED_PATH_UNSAFE"] },
-      ["INIT_MANAGED_PATH_UNSAFE"],
-    );
+    return terminal("CONFLICT", { ...detections, reasonCodes: ["INIT_MANAGED_PATH_UNSAFE"] }, [
+      "INIT_MANAGED_PATH_UNSAFE",
+    ]);
   }
   const existingConfig = configRead.kind === "FILE" ? configRead.content : undefined;
   const existingLock = lockRead.kind === "FILE" ? lockRead.content : undefined;
   if (existingConfig !== undefined && existingConfig !== configContent) {
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: ["CONFIG_CONFLICT"] }, [
+    return terminal("CONFLICT", { ...detections, reasonCodes: ["CONFIG_CONFLICT"] }, [
       "CONFIG_CONFLICT",
     ]);
   }
@@ -3164,16 +3236,14 @@ export async function initializeRepository(
       const value = JSON.parse(existingLock) as unknown;
       structural = parseVersionedRepositoryInitLock(value);
     } catch {
-      return initTerminalResult("CONFLICT", { ...detections, reasonCodes: ["LOCK_INVALID"] }, [
+      return terminal("CONFLICT", { ...detections, reasonCodes: ["LOCK_INVALID"] }, [
         "LOCK_INVALID",
       ]);
     }
     if (structural.configDigest !== configDigest) {
-      return initTerminalResult(
-        "CONFLICT",
-        { ...detections, reasonCodes: ["LOCK_CONFIG_MISMATCH"] },
-        ["LOCK_CONFIG_MISMATCH"],
-      );
+      return terminal("CONFLICT", { ...detections, reasonCodes: ["LOCK_CONFIG_MISMATCH"] }, [
+        "LOCK_CONFIG_MISMATCH",
+      ]);
     }
   }
   if (existingConfig === configContent && existingLock === lockContent) {
