@@ -726,6 +726,10 @@ describe("a workspace member inherits the package manager of its workspace root"
       `${packages}catalog:\n  foo: '1.0'\n  bar: [x, y]\n`,
       `${packages}catalog:\n  - [a, b]\n  - "c"\n`,
       `${packages}note: it's [fine\n`,
+      `${packages}catalog: {a: [b], c: {d: e}}\n`,
+      // A block sequence at the column of its key is that key's value.
+      `catalog:\n- a\n- b\n${packages}`,
+      "packages:\n- 'domains/*/api'\n",
     ]) {
       const result = await run(content);
       assert.equal(result.status, "WOULD_CREATE", content);
@@ -740,6 +744,14 @@ describe("a workspace member inherits the package manager of its workspace root"
       `${packages}catalog:\n  foo: [\n`,
       `${packages}catalog:\n  - 'abc\n`,
       `catalog: [\n${packages}`,
+      // A closing bracket must be the one its opener asks for.
+      `catalog: [}\n${packages}`,
+      `${packages}catalog: {a: [b}]\n`,
+      `${packages}catalog: [a, {b: c]}\n`,
+      // A root mapping cannot turn into a sequence.
+      `${packages}- invalid\n`,
+      `${packages}catalog: x\n- a\n`,
+      `${packages}catalog:\n  a: 1\n- b\n`,
     ]) {
       const result = await run(content);
       assert.equal(result.status, "CONFLICT", content);
@@ -1102,6 +1114,14 @@ describe("a command that does not run the framework directly is named as such", 
     ["node --test-only runner --test", "node:test", "node"],
     // `echo` only prints `bun test`: it is neither Bun nor a launcher of Bun.
     ["echo bun test", "bun:test", "echo"],
+    // After `run` the next word is a script name, whatever it is called.
+    ["npm run bun test", "bun:test", "npm"],
+    ["pnpm run bun test", "bun:test", "pnpm"],
+    ["pnpm bun test", "bun:test", "pnpm"],
+    ["yarn run bun test", "bun:test", "yarn"],
+    // The program after the launcher is `echo`, which only prints the rest.
+    ["pnpm exec echo bun test", "bun:test", "pnpm"],
+    ["env CI=1 echo bun test", "bun:test", "env"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -1146,6 +1166,13 @@ describe("a command that does not run the framework directly is named as such", 
     ["node --experimental-test-isolation process --test tests", "node:test"],
     ["node --test-reporter spec --test-concurrency 2 --test tests", "node:test"],
     ["pnpm exec bun test tests", "bun:test"],
+    ["pnpm --filter api exec bun test tests", "bun:test"],
+    ["npm exec -- bun test tests", "bun:test"],
+    ["npx bun test tests", "bun:test"],
+    ["bunx bun test tests", "bun:test"],
+    ["env CI=1 bun test tests", "bun:test"],
+    ["corepack pnpm exec bun test tests", "bun:test"],
+    ["dotenv -e .env -- bun test tests", "bun:test"],
   ] as const) {
     it(`keeps \`${script}\` as a runner that names a path nothing matches`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -1169,6 +1196,48 @@ describe("a command that does not run the framework directly is named as such", 
     assert.equal(code, 3);
     assert.equal(result.status, "BLOCKED");
     assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
+  });
+
+  it("keeps the launcher words of Node's runner out of the path filters", async () => {
+    const source = 'import test from "node:test";\ntest("one", () => {});\n';
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "pnpm exec node --test" },
+      }),
+      "pnpm-lock.yaml": "",
+      // A directory called like the runtime must not become a filter.
+      "node/one.test.ts": source,
+      "exec/two.test.ts": source,
+      "other/three.test.ts": source,
+    });
+    const result = await initializeRepository(root, { dryRun: true, framework: "node:test" });
+    assert.equal(result.status, "WOULD_CREATE");
+    const config = JSON.parse(
+      result.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null",
+    );
+    assert.deepEqual([...config.adapter.baseTestFiles].sort(), [
+      "exec/two.test.ts",
+      "node/one.test.ts",
+      "other/three.test.ts",
+    ]);
+  });
+
+  it("does not read the executable slot as a script given to Node", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({ name: "root", packageManager: "pnpm@12.11.2" }),
+      "pnpm-lock.yaml": "",
+      "one.test.ts": 'import test from "node:test";\ntest("one", () => {});\n',
+    });
+    for (const executable of ["./node", "tools/node"]) {
+      const result = await initializeRepository(root, {
+        dryRun: true,
+        framework: "node:test",
+        testCommand: { executable, arguments: ["--test"] },
+      });
+      assert.equal(result.status, "WOULD_CREATE", executable);
+    }
   });
 
   it("keeps an unmatched Bun spec file name as a filter, not as no filter", async () => {

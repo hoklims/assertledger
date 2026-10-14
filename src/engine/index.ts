@@ -1332,7 +1332,11 @@ function initCommandPathMatchers(
   // follows the pair are filters: `test` itself is the subcommand, not a conventional directory.
   const words = [command.executable, ...command.arguments];
   const pair = initBunTestPair(words);
-  const operands = pair >= 0 ? words.slice(pair + 2) : command.arguments;
+  const flag = pair < 0 ? initNodeRunnerFlag(words) : -1;
+  // Behind a launcher (`pnpm exec node --test`), the launcher's own words are not filters either.
+  let operands = command.arguments;
+  if (pair >= 0) operands = words.slice(pair + 2);
+  else if (flag >= 0) operands = initNodeRunnerOperands(words, flag);
   return operands
     .filter(
       (argument) =>
@@ -1354,8 +1358,17 @@ function initCommandInvokesRunner(
 ): boolean {
   const words = [command.executable, ...command.arguments];
   if (runner === "bun") return initBunTestPair(words) >= 0;
+  return initNodeRunnerFlag(words) >= 0;
+}
+
+/**
+ * The index of the `--test` option that makes a command Node's own test runner, or -1. Options
+ * come before the program entry point, so `node runner --test` runs a script of its own and
+ * hands it `--test`.
+ */
+function initNodeRunnerFlag(words: readonly string[]): number {
   const flag = words.indexOf("--test", 1);
-  if (flag < 0) return false;
+  if (flag < 0) return -1;
   // The nearest word at or before `from` that is not an option or the value of an option that
   // takes one: the executable at index 0 always is a word.
   const nearestWord = (from: number): number => {
@@ -1374,45 +1387,93 @@ function initCommandInvokesRunner(
   const program = nearestWord(flag - 1);
   const previous = program >= 1 ? nearestWord(program - 1) : -1;
   const name = words[program] ?? "";
-  const spelledAsScript = name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name);
+  // The executable slot (`./node --test`) is the command itself, not a script it was given.
+  const spelledAsScript = program >= 1 && (name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name));
   const runtimeBefore = previous >= 0 && INIT_NODE_RUNTIMES.has(words[previous] ?? "");
-  return !spelledAsScript && !runtimeBefore;
+  return !spelledAsScript && !runtimeBefore ? flag : -1;
 }
 
 /**
- * The index of `bun` in a `bun test` pair that is Bun's own invocation, or -1. `node runner bun
- * test` hands the pair to the script: no Node-like runtime may come before it.
+ * The path operands of Node's runner: the words after `--test` that are neither options nor the
+ * value of one. What precedes `--test` (a launcher, `exec`, the runtime) is not a filter.
+ */
+function initNodeRunnerOperands(words: readonly string[], flag: number): string[] {
+  const operands: string[] = [];
+  for (let index = flag + 1; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (word.startsWith("-") || initNodeOptionTakesValue(words[index - 1] ?? "")) continue;
+    operands.push(word);
+  }
+  return operands;
+}
+
+/** The name of a command word: its last path segment without a Windows launcher suffix. */
+function initCommandWordName(word: string): string {
+  return (word.split("/").pop() ?? "").replace(/\.(?:cmd|exe)$/iu, "");
+}
+
+// Launchers whose subcommand runs the program that follows it. `npm run bun test` is not among
+// them: after `run` the next word is a script name, whatever it is called.
+const INIT_BUN_SUBCOMMAND_LAUNCHERS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["pnpm", ["exec", "dlx"]],
+  ["npm", ["exec", "x"]],
+  ["yarn", ["exec", "dlx"]],
+]);
+
+/**
+ * The index of `bun` in a `bun test` pair that is Bun's own invocation, or -1: the command is
+ * Bun, or a launcher that runs the program right after its options (`pnpm exec bun test`, `npx
+ * bun test`, `env A=1 bun test`). `echo bun test` and `npm run bun test` only carry the words,
+ * and `node runner bun test` hands the pair to the script.
  */
 function initBunTestPair(words: readonly string[]): number {
-  // `echo bun test` only prints its arguments: the command must be Bun or one of its launchers.
-  const launcher =
-    (words[0] ?? "")
-      .split("/")
-      .pop()
-      ?.replace(/\.(?:cmd|exe)$/iu, "") ?? "";
-  if (!INIT_BUN_LAUNCHERS.has(launcher)) return -1;
-  return words.findIndex(
-    (word, index) =>
-      word === "bun" &&
-      words[index + 1] === "test" &&
-      !words.slice(0, index).some((before) => INIT_NODE_RUNTIMES.has(before)),
-  );
+  let start = 0;
+  let launcher = initCommandWordName(words[0] ?? "");
+  // `corepack pnpm exec bun test`: corepack only selects the manager that follows.
+  if (launcher === "corepack") {
+    start = 1;
+    launcher = initCommandWordName(words[1] ?? "");
+  }
+  // The index where the program is looked for, before options are skipped.
+  let cursor = -1;
+  let skipsOptions = true;
+  const subcommands = INIT_BUN_SUBCOMMAND_LAUNCHERS.get(launcher);
+  if (launcher === "bun") {
+    cursor = start;
+    skipsOptions = false;
+  } else if (subcommands !== undefined) {
+    const index = words.findIndex(
+      (word, position) => position > start && subcommands.includes(word),
+    );
+    const runsScript = words.slice(start + 1, index < 0 ? 0 : index).includes("run");
+    if (index >= 0 && !runsScript) cursor = index + 1;
+  } else if (launcher === "npx" || launcher === "bunx") {
+    cursor = start + 1;
+  } else if (launcher === "env" || launcher === "cross-env") {
+    cursor = start + 1;
+    skipsOptions = false;
+    // Assignments and options come before the program: `env -i A=1 bun test`.
+    while (
+      /^[A-Za-z_][A-Za-z0-9_]*=/u.test(words[cursor] ?? "") ||
+      (words[cursor] ?? "").startsWith("-")
+    ) {
+      cursor += 1;
+    }
+  } else if (launcher === "dotenv") {
+    const separator = words.indexOf("--", start + 1);
+    if (separator >= 0) cursor = separator + 1;
+    skipsOptions = false;
+  }
+  if (cursor < 0) return -1;
+  if (skipsOptions) {
+    while ((words[cursor] ?? "").startsWith("-")) cursor += 1;
+  }
+  return initCommandWordName(words[cursor] ?? "") === "bun" && words[cursor + 1] === "test"
+    ? cursor
+    : -1;
 }
 
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
-// Executables that run the program named in their arguments: Bun itself and the launchers.
-const INIT_BUN_LAUNCHERS = new Set([
-  "bun",
-  "bunx",
-  "pnpm",
-  "npm",
-  "npx",
-  "yarn",
-  "corepack",
-  "env",
-  "cross-env",
-  "dotenv",
-]);
 // Node's own test options that are switches; every other `--test-*` option takes a value.
 const INIT_NODE_TEST_SWITCHES = new Set([
   "--test-only",
@@ -1676,12 +1737,23 @@ function initFlowScan(state: InitFlowScan, text: string): number {
   return -1;
 }
 
+/** The scanner state of a value of another key: its open quote and the closers it still owes. */
+interface InitOpenValue {
+  quote: string;
+  closers: string[];
+}
+
+/** What `initYamlValueEnd` returns while the value is open, and when its brackets do not match. */
+const INIT_YAML_VALUE_OPEN = -1;
+const INIT_YAML_VALUE_MISMATCHED = -2;
+
 /**
  * Scans a value that opens with a quote or a flow bracket and returns the index just past its end,
- * or -1 while it is still open. The state carries over lines, so a value is read once however many
- * lines it spans.
+ * `INIT_YAML_VALUE_OPEN` while it is still open, or `INIT_YAML_VALUE_MISMATCHED` when a closing
+ * bracket is not the one its opener asks for (`[}`). The state carries over lines, so a value is
+ * read once however many lines it spans.
  */
-function initYamlValueEnd(state: InitFlowScan, text: string): number {
+function initYamlValueEnd(state: InitOpenValue, text: string): number {
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index] ?? "";
     if (state.quote !== "") {
@@ -1689,18 +1761,20 @@ function initYamlValueEnd(state: InitFlowScan, text: string): number {
       else if (state.quote === "'" && character === "'" && text[index + 1] === "'") index += 1;
       else if (character === state.quote) {
         state.quote = "";
-        if (state.depth === 0) return index + 1;
+        if (state.closers.length === 0) return index + 1;
       }
     } else if (initYamlQuoteOpens(text, index)) {
       state.quote = character;
-    } else if (character === "[" || character === "{") {
-      state.depth += 1;
+    } else if (character === "[") {
+      state.closers.push("]");
+    } else if (character === "{") {
+      state.closers.push("}");
     } else if (character === "]" || character === "}") {
-      state.depth -= 1;
-      if (state.depth <= 0) return index + 1;
+      if (state.closers.pop() !== character) return INIT_YAML_VALUE_MISMATCHED;
+      if (state.closers.length === 0) return index + 1;
     }
   }
-  return -1;
+  return INIT_YAML_VALUE_OPEN;
 }
 
 /**
@@ -1709,12 +1783,13 @@ function initYamlValueEnd(state: InitFlowScan, text: string): number {
  * when it is not, the scanner state when it is still open at the end of the line, undefined when
  * there is nothing to check.
  */
-function initYamlOpenValue(value: string): InitFlowScan | "INVALID" | undefined {
+function initYamlOpenValue(value: string): InitOpenValue | "INVALID" | undefined {
   const first = value[0];
   if (first !== "'" && first !== '"' && first !== "[" && first !== "{") return undefined;
-  const state: InitFlowScan = { quote: "", depth: 0 };
+  const state: InitOpenValue = { quote: "", closers: [] };
   const end = initYamlValueEnd(state, value);
-  if (end < 0) return state;
+  if (end === INIT_YAML_VALUE_MISMATCHED) return "INVALID";
+  if (end === INIT_YAML_VALUE_OPEN) return state;
   return value.slice(end).trim().length > 0 ? "INVALID" : undefined;
 }
 
@@ -1787,7 +1862,11 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   let flow: string[] | undefined;
   const scan: InitFlowScan = { quote: "", depth: 0 };
   // A quoted scalar or a flow collection of another key that is still open at the end of a line.
-  let opaque: InitFlowScan | undefined;
+  let opaque: InitOpenValue | undefined;
+  // What the last top-level key holds, so that a `-` at column 0 is known to continue a sequence
+  // value: NONE (a scalar or a flow value), OPEN (empty, a block value may follow), NESTED (an
+  // indented block follows) or SEQUENCE (a block sequence at the key's own column).
+  let blockValue: "NONE" | "OPEN" | "NESTED" | "SEQUENCE" = "NONE";
   // A byte-order mark opens a YAML stream and is not part of its first line.
   const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   for (const raw of source.split(/\r?\n/u)) {
@@ -1796,6 +1875,7 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
     if (opaque !== undefined) {
       const end = initYamlValueEnd(opaque, line);
+      if (end === INIT_YAML_VALUE_MISMATCHED) return [];
       if (end >= 0) {
         if (line.slice(end).trim().length > 0) return [];
         opaque = undefined;
@@ -1828,6 +1908,7 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       // pnpm refuses a mapping that repeats a key, so such a file is no workspace to infer from.
       if (keys.has(entry.key)) return [];
       keys.add(entry.key);
+      blockValue = entry.value.trim().length === 0 ? "OPEN" : "NONE";
       if (entry.key !== "packages") {
         // The value of another key is not read, but it must be valid YAML for the file to be one.
         const pending = initYamlOpenValue(entry.value.trim());
@@ -1865,6 +1946,19 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       if (entry === undefined || entry.length === 0) return [];
       patterns.push(entry);
     } else {
+      if (!/^\s/u.test(line)) {
+        // A line at column 0 that starts with `-`: the document marker, or an item of the block
+        // sequence that is the value of the key above. A root collection cannot turn from a
+        // mapping into a sequence.
+        if (/^---(?:\s|$)/u.test(line)) {
+          blockValue = "NONE";
+          continue;
+        }
+        if (blockValue !== "OPEN" && blockValue !== "SEQUENCE") return [];
+        blockValue = "SEQUENCE";
+      } else if (blockValue === "OPEN") {
+        blockValue = "NESTED";
+      }
       // A line below another key: only its value is checked for being closed.
       const pending = initYamlOpenValue(initYamlLineValue(line));
       if (pending === "INVALID") return [];
