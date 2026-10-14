@@ -345,6 +345,9 @@ describe("a workspace member inherits the package manager of its workspace root"
       ["pnpm-workspace.yaml", "packages:\n  - '**/api'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/x/ap?'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/**'\n"],
+      // A class holds its comma: it is not an alternative separator.
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/{[x-y],z}/api'\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/{[a,x],q}/api'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/*/*'\n  - '!domains/*/web'\n"],
     ] as const;
     for (const [file, content] of selecting) {
@@ -366,6 +369,8 @@ describe("a workspace member inherits the package manager of its workspace root"
       // Understood, and not selecting the member.
       "packages:\n  - 'domains/[^x]/api'\n",
       "packages:\n  - 'domains/y/api'\n",
+      // `..` is normalized: this is `domains/y/api`.
+      "packages:\n  - 'domains/x/../y/api'\n",
       "packages:\n  - 'domains/x/ap'\n",
       "packages:\n  - 'domains/*'\n",
       "packages:\n  - 'domains/*/*'\n  - '!domains/x/*'\n",
@@ -821,6 +826,11 @@ describe("a workspace member inherits the package manager of its workspace root"
       "packages: ['domains/*//api']\n",
       "packages: ['domains/x/api//']\n",
       "packages: ['./domains//x/./api']\n",
+      // Parent segments are normalized, and a pattern that climbs out of the root is ignored.
+      "packages: ['domains/y/../x/api']\n",
+      "packages: ['domains/*/../x/api']\n",
+      "packages: ['tools/../domains/x/api']\n",
+      "packages:\n  - '../outside/*'\n  - 'domains/*/api'\n",
       "packages: ['domains/{x,y}//api']\n",
       "packages: ['domains/**//api']\n",
     ]) {
@@ -897,7 +907,6 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const [directory, content] of [
       ["packages/.hidden", "packages:\n  - 'packages/*'\n"],
       ["packages/.hidden", "packages:\n  - 'packages/?hidden'\n"],
-      ["packages/.hidden", "packages:\n  - 'packages/[.]hidden'\n"],
       ["packages/.hidden/api", "packages:\n  - 'packages/**'\n"],
     ] as const) {
       const result = await run(directory, content);
@@ -908,6 +917,7 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const [directory, content] of [
       ["packages/.hidden", "packages:\n  - 'packages/.hidden'\n"],
       ["packages/.hidden", "packages:\n  - 'packages/.*'\n"],
+      ["packages/.hidden", "packages:\n  - 'packages/[.]hidden'\n"],
       ["packages/a", "packages:\n  - 'packages/*'\n"],
       ["packages/a/b", "packages:\n  - 'packages/**'\n"],
     ] as const) {
@@ -1169,6 +1179,11 @@ describe("a command that does not run the framework directly is named as such", 
     // From a script, the program that owns `--test` must be a Node runtime.
     ["echo --test", "node:test", "echo"],
     ["pnpm exec echo --test", "node:test", "pnpm"],
+    // After `run`, `node` is the name of a package script, not a program.
+    ["npm run node --test", "node:test", "npm"],
+    ["pnpm run node --test", "node:test", "pnpm"],
+    ["pnpm node --test", "node:test", "pnpm"],
+    ["yarn run tsx --test", "node:test", "yarn"],
     // Bun only takes `--cwd=dir` before its subcommand: the separate value is not understood.
     ["bun --cwd api test", "bun:test", "bun"],
     ["./node runner --test", "node:test", "./node"],

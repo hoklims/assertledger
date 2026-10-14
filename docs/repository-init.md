@@ -66,8 +66,10 @@ managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which a
 their position. A class that opens with `!` or `^` is not understood, as glob dialects disagree on
 whether it negates. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
 with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
-`packages/.*`) does, as in pnpm. Redundant separators and `.` segments in a pattern
-(`packages//a`, `./packages/a`) are normalized, and a directory below `node_modules` or
+`packages/.*`, `packages/[.]hidden`) does, as in pnpm. Redundant separators, `.` and `..` segments
+in a pattern (`packages//a`, `./packages/a`, `packages/../other/a`) are normalized, a pattern that
+climbs out of the workspace root is ignored, a `,` inside a class (`{[a,b],x}`) is not an
+alternative separator, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
 is skipped, and a document that indents its whole root mapping equally is read from that column;
 content to its left makes the file declare nothing. Lines end with `\r\n`, `\r` or `\n`. YAML
@@ -117,7 +119,8 @@ are path filters: the launcher words before it (`exec`, `node`) never are, and t
 itself (`./node`) is never read as a script given to Node. A `--` that precedes the runtime
 belongs to the launcher (`npm exec -- node --test`). From a package script, the program that owns
 `--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`), so `echo
---test` is not Node's runner; a command declared with `--test-command-json` is taken for the
+--test` is not Node's runner, and neither is `npm run node --test`, which runs the script called
+`node` (a program only follows `exec`, `dlx` or `x`); a command declared with `--test-command-json` is taken for the
 direct runner whatever its executable. For `bun test`, the values of its options (`--preload
 file`, `--timeout 5000`) are not path filters either.
 

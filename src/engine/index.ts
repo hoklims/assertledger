@@ -1371,6 +1371,8 @@ function initCommandInvokesRunner(
 function initNodeRunnerFlag(words: readonly string[], declared: boolean): number {
   const flag = words.indexOf("--test", 1);
   if (flag < 0) return -1;
+  // `npm run node --test` runs the package script called `node`: no word of it is a runtime.
+  if (initRunsPackageScript(words)) return -1;
   // `--` ends the options: what follows it (`node -- --test`) is a script name, not an option.
   // A `--` before the runtime belongs to a launcher (`npm exec -- node --test`).
   const runtime = words.findIndex((word) => INIT_NODE_RUNTIMES.has(initCommandWordName(word)));
@@ -1418,6 +1420,24 @@ function initNodeRunnerOperands(words: readonly string[], flag: number): string[
   return operands;
 }
 
+/**
+ * Whether the command is a package manager running one of the package's scripts (or its own
+ * subcommand) rather than a program: `npm run node --test`, `pnpm test`. A program only follows
+ * the manager's `exec`, `dlx` or `x`, and a `run` before it makes the next word a script name.
+ */
+function initRunsPackageScript(words: readonly string[]): boolean {
+  let start = 0;
+  let launcher = initCommandWordName(words[0] ?? "");
+  if (launcher === "corepack") {
+    start = 1;
+    launcher = initCommandWordName(words[1] ?? "");
+  }
+  const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher);
+  if (subcommands === undefined) return false;
+  const index = words.findIndex((word, position) => position > start && subcommands.includes(word));
+  return index < 0 || words.slice(start + 1, index).includes("run");
+}
+
 /** The name of a command word: its last path segment without a Windows launcher suffix. */
 function initCommandWordName(word: string): string {
   return (word.split("/").pop() ?? "").replace(/\.(?:cmd|exe)$/iu, "");
@@ -1437,7 +1457,7 @@ const INIT_LAUNCHER_VALUE_OPTIONS = new Set([
 
 // Launchers whose subcommand runs the program that follows it. `npm run bun test` is not among
 // them: after `run` the next word is a script name, whatever it is called.
-const INIT_BUN_SUBCOMMAND_LAUNCHERS: ReadonlyMap<string, readonly string[]> = new Map([
+const INIT_LAUNCHER_SUBCOMMANDS: ReadonlyMap<string, readonly string[]> = new Map([
   ["pnpm", ["exec", "dlx"]],
   ["npm", ["exec", "x"]],
   ["yarn", ["exec", "dlx"]],
@@ -1509,7 +1529,7 @@ function initBunTestPair(words: readonly string[]): number {
   // The index where the program is looked for, before options are skipped.
   let cursor = -1;
   let skipsOptions = true;
-  const subcommands = INIT_BUN_SUBCOMMAND_LAUNCHERS.get(launcher);
+  const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher);
   if (launcher === "bun") {
     cursor = start;
     skipsOptions = false;
@@ -2094,7 +2114,11 @@ function initExpandBraces(pattern: string, budget: { left: number }): string[] |
   const cuts: number[] = [open];
   for (let index = open; index < pattern.length; index += 1) {
     const character = pattern[index];
-    if (character === "{") {
+    if (character === "[") {
+      // A class holds its characters as they are: a `,` or a brace inside it is not a separator.
+      const classEnd = pattern.indexOf("]", index + 2);
+      if (classEnd >= 0) index = classEnd;
+    } else if (character === "{") {
       level += 1;
     } else if (character === "}") {
       level -= 1;
@@ -2175,9 +2199,12 @@ function initGlobTokenMatches(token: InitGlobToken, character: string): boolean 
 /** Matches one segment against its tokens in time proportional to the product of their lengths. */
 function initGlobSegmentMatches(tokens: readonly InitGlobToken[], text: string): boolean {
   // A wildcard, `?` or class does not select a name that starts with a dot: only a pattern that
-  // spells the dot does.
+  // spells the dot does, as a literal or as the class `[.]`.
   const first = tokens[0];
-  if (text.startsWith(".") && !(first?.kind === "literal" && first.value === ".")) return false;
+  const spellsDot =
+    (first?.kind === "literal" && first.value === ".") ||
+    (first?.kind === "class" && first.members === ".");
+  if (text.startsWith(".") && !spellsDot) return false;
   let token = 0;
   let position = 0;
   let starToken = -1;
@@ -2253,6 +2280,24 @@ function initGlobMatchesPath(
 }
 
 /**
+ * A plain pattern with its `.` and empty segments dropped and each `..` cancelling the segment
+ * before it; undefined when a `..` has none to cancel or nothing is left.
+ */
+function initNormalizeGlobPath(pattern: string): string | undefined {
+  const segments: string[] = [];
+  for (const segment of pattern.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return undefined;
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  return segments.length === 0 ? undefined : segments.join("/");
+}
+
+/**
  * Whether a directory, given relative to the workspace root, is selected by its patterns:
  * undefined when a pattern is outside the supported subset or past a bound, as the declaration is
  * then not understood and nothing may be inferred from it. Matching never backtracks beyond a
@@ -2276,15 +2321,17 @@ function initWorkspaceDeclaresMember(
     let pattern = negated ? raw.slice(1) : raw;
     if (pattern.startsWith("./")) pattern = pattern.slice(2);
     while (pattern.endsWith("/")) pattern = pattern.slice(0, -1);
-    if (pattern.length === 0 || pattern.startsWith("/") || pattern.split("/").includes("..")) {
-      continue;
-    }
+    if (pattern.length === 0 || pattern.startsWith("/")) continue;
     if (pattern.length > INIT_WORKSPACE_PATTERN_LENGTH) return undefined;
     if (initBraceNesting(pattern) > INIT_WORKSPACE_BRACE_DEPTH) return undefined;
     const expansions = initExpandBraces(pattern, budget);
     if (expansions === undefined) return undefined;
     for (const expansion of expansions) {
-      const segments = initGlobSegments(expansion);
+      // `a/../b` is `b`, as pnpm normalizes it; a pattern that climbs out of the workspace
+      // root selects nothing in it.
+      const normalized = initNormalizeGlobPath(expansion);
+      if (normalized === undefined) continue;
+      const segments = initGlobSegments(normalized);
       if (segments === undefined) return undefined;
       if (initGlobMatchesPath(segments, path)) {
         if (negated) excluded = true;
