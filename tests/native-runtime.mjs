@@ -83,6 +83,19 @@ test("native array getters observe live length like the JavaScript reference", (
   }
 });
 
+test("native development reader refuses Proxy arrays instead of hashing them as objects", () => {
+  const value = new Proxy([1, 2], {
+    get(target, key, receiver) {
+      return key === "length" ? 1 : Reflect.get(target, key, receiver);
+    },
+  });
+  assert.equal(canonicalize(value), "[1]");
+  assert.throws(() => native.canonicalize(value), /Proxy arrays/);
+  const date = new Proxy(new Date(), {});
+  assert.throws(() => canonicalize(date), /plain objects/);
+  assert.throws(() => native.canonicalize(date), /plain objects/);
+});
+
 test("native operation dispatch refuses unknown operations", () => {
   assert.throws(() => native.dispatchJson("missing-operation", "[]"));
 });

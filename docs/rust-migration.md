@@ -73,6 +73,9 @@ The build writes only a development addon under `.testforge/native`.
   payloads have not all been mapped into the core dispatcher.
 - The native value reader refuses nesting beyond 512 objects. This is an explicit
   development limit, not a claim of unrestricted legacy API parity.
+- The ordinary JSON dispatcher currently also has serde_json's 128-level parsing
+  limit. Proxy arrays are explicitly refused instead of being hashed as ordinary
+  objects. Both limitations must be resolved before the public SDK cutover.
 - Malformed primitive entries in manifest digest projections fail closed rather
   than reproducing every JavaScript spread/coercion behavior.
 - The native process supervisor does not yet carry streaming standard input for

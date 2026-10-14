@@ -5,6 +5,42 @@ use napi::{Env, JsValue, Result, bindgen_prelude::Unknown, sys};
 use napi_derive::napi;
 use std::ptr;
 
+fn call_builtin(
+    env: sys::napi_env,
+    constructor: &std::ffi::CStr,
+    method: &std::ffi::CStr,
+    argument: sys::napi_value,
+) -> Result<sys::napi_value> {
+    let mut global = ptr::null_mut();
+    let mut receiver = ptr::null_mut();
+    let mut function = ptr::null_mut();
+    let mut result = ptr::null_mut();
+    unsafe {
+        checked(sys::napi_get_global(env, &mut global))?;
+        checked(sys::napi_get_named_property(
+            env,
+            global,
+            constructor.as_ptr(),
+            &mut receiver,
+        ))?;
+        checked(sys::napi_get_named_property(
+            env,
+            receiver,
+            method.as_ptr(),
+            &mut function,
+        ))?;
+        checked(sys::napi_call_function(
+            env,
+            receiver,
+            function,
+            1,
+            &argument,
+            &mut result,
+        ))?;
+    }
+    Ok(result)
+}
+
 fn checked(status: sys::napi_status) -> Result<()> {
     if status == sys::Status::napi_ok {
         Ok(())
@@ -112,6 +148,18 @@ fn read_object(
     unsafe {
         checked(sys::napi_is_array(env, value, &mut array))?;
     }
+    // Node-API's native IsArray does not classify Proxy arrays like JS Array.isArray.
+    // Refuse the currently unsupported conversion instead of sealing object-shaped bytes.
+    let js_array = call_builtin(env, c"Array", c"isArray", value)?;
+    let mut array_from_js = false;
+    unsafe {
+        checked(sys::napi_get_value_bool(env, js_array, &mut array_from_js))?;
+    }
+    if array_from_js && !array {
+        return Err(invalid(
+            "Native canonicalization does not yet support Proxy arrays",
+        ));
+    }
     if array {
         let mut items = Vec::new();
         let mut index = 0;
@@ -140,13 +188,12 @@ fn read_object(
         return Ok(CanonicalValue::Array(items));
     }
 
-    let mut prototype = ptr::null_mut();
+    let prototype = call_builtin(env, c"Object", c"getPrototypeOf", value)?;
     let mut null = ptr::null_mut();
     let mut global = ptr::null_mut();
     let mut object = ptr::null_mut();
     let mut plain_prototype = ptr::null_mut();
     unsafe {
-        checked(sys::napi_get_prototype(env, value, &mut prototype))?;
         checked(sys::napi_get_null(env, &mut null))?;
         checked(sys::napi_get_global(env, &mut global))?;
         checked(sys::napi_get_named_property(
