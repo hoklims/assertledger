@@ -803,11 +803,12 @@ export async function runCli(
           const argument = argv[index] ?? "";
           if (argument === "--exclude" || overrideFlags.has(argument)) {
             const value = argv[index + 1];
-            // `-` reads the command from stdin, as it does for init.
-            const standardInput = argument === "--test-command-json" && value === "-";
+            // The flags shared with init accept what init accepts: a value is refused only when
+            // it looks like another flag, so `-` (stdin) and `-file.json` stay valid paths.
+            const shared = argument !== "--exclude" && argument !== "--framework";
             usageError =
               value === undefined ||
-              (value.startsWith("-") && !standardInput) ||
+              value.startsWith(shared ? "--" : "-") ||
               (argument !== "--exclude" && seenFlags.has(argument));
             seenFlags.add(argument);
             index += 1;

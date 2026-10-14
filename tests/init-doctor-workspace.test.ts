@@ -143,6 +143,26 @@ describe("doctor accepts the detection overrides of init", () => {
     }
   });
 
+  it("accepts the same single-dash path values as init", async () => {
+    const root = await tree({
+      "requirements.txt": "pytest==9.0.0\n",
+      "test_app.py": "def test_app(): assert True\n",
+      "-adapter.json": JSON.stringify({
+        kind: "testforge-command",
+        executable: "python",
+        arguments: ["adapter.py"],
+        protocolVersion: "1.0.0",
+      }),
+    });
+    const argv = ["--adapter-config", "-adapter.json", "--json"];
+    const doctor = await doctorJson([root, ...argv.slice(0, 2)], root);
+    const init = capture(root);
+    assert.equal(await runCli(["init", root, "--dry-run", ...argv], init.io), 0);
+    assert.equal(doctor.code, 0);
+    assert.equal(doctor.result.status, "WOULD_CREATE");
+    assert.deepEqual(doctor.result, JSON.parse(init.stdout()));
+  });
+
   it("passes the overrides through the SDK facade", async () => {
     const root = await tree({
       "package.json": JSON.stringify({ name: "api", scripts: { test: MEMBER_SCRIPT } }),
@@ -422,6 +442,43 @@ describe("a workspace member inherits the package manager of its workspace root"
       "package.json": JSON.stringify({ name: "root", workspaces: ["domains/*/api"] }),
       "pnpm-lock.yaml": "",
     });
+  });
+
+  it("keeps commas inside quotes and braces of a YAML flow list", async () => {
+    for (const content of [
+      "packages: ['{domains,tools}/*/api']\n",
+      'packages: ["tools/*", \'{domains,other}/*/api\', "!tools/legacy"]\n',
+    ]) {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+      assert.equal(result.status, "WOULD_CREATE", content);
+      assert.equal(result.detections.packageManager, "pnpm", content);
+    }
+  });
+
+  it("does not read package.json workspaces when pnpm-workspace.yaml cannot be read", async () => {
+    const base = await tree({
+      ".git/": "",
+      // Larger than the 1 MiB read limit: it exists, so pnpm would still read it.
+      "pnpm-workspace.yaml": `packages:\n  - 'domains/*/api'\n# ${"x".repeat(1_048_700)}\n`,
+      "package.json": JSON.stringify({ name: "root", workspaces: ["domains/*/api"] }),
+      "package-lock.json": "{}\n",
+      ...member(),
+    });
+    const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
   });
 
   it("reads only pnpm-workspace.yaml once it exists, as pnpm does", async () => {

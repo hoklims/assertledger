@@ -38,7 +38,8 @@ block initialization.
 
 `doctor` is `init --dry-run` and takes the same detection overrides, so a dry run that `init`
 accepts can be reproduced by `doctor`: `--framework`, `--package-manager`,
-`--test-command-json PATH` (`-` reads stdin) and `--adapter-config PATH`, each at most once.
+`--test-command-json PATH` (`-` reads stdin) and `--adapter-config PATH`, each at most once and
+with the values `init` accepts (a value is refused only when it starts with `--`).
 
 ```sh
 assertledger doctor packages/api --framework bun:test --package-manager pnpm \
@@ -59,8 +60,10 @@ patterns and only pnpm owns it, as in pnpm; `workspaces` is read only without it
 belongs to npm, Yarn and Bun, and its `{ "packages": [...] }` object form to Yarn and Bun. A lone
 manager that does not own the declaration, including a Python manager, selects nothing. A
 `package.json` at the workspace root that is not valid JSON returns `CONFLICT` with
-`PACKAGE_MANIFEST_INVALID`. Patterns are read in the subset the managers share (`*`, `**`, `?`,
-`{a,b}` and `[a-z]`); any other syntax is not understood and nothing is inferred from it.
+`PACKAGE_MANIFEST_INVALID`. A `pnpm-workspace.yaml` that exists but cannot be read (larger than
+1 MiB, or not a regular file) infers nothing, and does not fall back to `workspaces`. Patterns are
+read in the subset the managers share (`*`, `**`, `?`, `{a,b}` and `[a-z]`), also inside a quoted
+item of a YAML flow list; any other syntax is not understood and nothing is inferred from it.
 
 A manager found this way is reported with the informational
 `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before

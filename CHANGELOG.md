@@ -4,14 +4,17 @@
 
 - `doctor` accepts the detection overrides of `init`: `--package-manager`, `--test-command-json`
   (`-` reads stdin) and `--adapter-config`, also in `AssertLedger.doctor` options. A dry run that
-  `init` accepts is now reproducible by `doctor`. The MCP `assertledger_doctor` input is unchanged.
+  `init` accepts is now reproducible by `doctor`: these flags take the same values as for `init`
+  (`-` for stdin, a path such as `-adapter.json`). The MCP `assertledger_doctor` input is unchanged.
 - A workspace package (a directory with a `package.json`) that declares no package manager now
   inherits it from the workspace root that selects it (`pnpm-workspace.yaml` `packages` or
   `package.json` `workspaces`), within the same repository and never above a `.git`. This previously
   returned `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
   `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When `pnpm-workspace.yaml` exists it alone declares the
   members, as in pnpm. Patterns are read in the subset the managers share (`*`, `**`, `?`, `{a,b}`,
-  `[a-z]`); other syntax infers nothing. Each manager keeps its own declaration: the array
+  `[a-z]`), including inside a YAML flow list; other syntax infers nothing, and so does a
+  `pnpm-workspace.yaml` that exists but cannot be read (oversized, a link). Each manager keeps its
+  own declaration: the array
   `workspaces` form is npm, Yarn and Bun's, the object form Yarn and Bun's, and a lone manager that
   does not own it, such as a Python manager, selects nothing. A workspace root `package.json` that
   is not valid JSON returns `PACKAGE_MANIFEST_INVALID`. The inherited facts are read again before

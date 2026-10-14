@@ -1389,14 +1389,59 @@ async function initRegularFileStats(file: string): Promise<Stats | undefined> {
   }
 }
 
-async function initWorkspaceFileText(file: string): Promise<string | undefined> {
-  const stats = await initRegularFileStats(file);
-  if (stats === undefined || stats.size > INIT_WORKSPACE_FILE_LIMIT_BYTES) return undefined;
+/**
+ * What is at a workspace file's path: nothing, text, or something that exists but cannot be read
+ * as a bounded regular file (a link, a directory, an oversized file). An unreadable file is never
+ * the same as an absent one, because the manager that owns the file would still read it.
+ */
+type InitWorkspaceFileRead =
+  | { kind: "ABSENT" }
+  | { kind: "UNREADABLE" }
+  | { kind: "TEXT"; text: string };
+
+async function initWorkspaceFileRead(file: string): Promise<InitWorkspaceFileRead> {
+  let stats: Stats;
   try {
-    return await readFile(file, "utf8");
-  } catch {
-    return undefined;
+    stats = await lstat(file);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { kind: "ABSENT" }
+      : { kind: "UNREADABLE" };
   }
+  if (!stats.isFile() || stats.size > INIT_WORKSPACE_FILE_LIMIT_BYTES) {
+    return { kind: "UNREADABLE" };
+  }
+  try {
+    return { kind: "TEXT", text: await readFile(file, "utf8") };
+  } catch {
+    return { kind: "UNREADABLE" };
+  }
+}
+
+/** Splits the inside of a YAML flow list on the commas outside quotes and braces. */
+function initFlowListItems(inside: string): string[] {
+  const items: string[] = [];
+  let current = "";
+  let quote = "";
+  let depth = 0;
+  for (const character of inside) {
+    if (quote !== "") {
+      if (character === quote) quote = "";
+    } else if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === "{" || character === "[") {
+      depth += 1;
+    } else if ((character === "}" || character === "]") && depth > 0) {
+      depth -= 1;
+    } else if (character === "," && depth === 0) {
+      items.push(current);
+      current = "";
+      continue;
+    }
+    current += character;
+  }
+  items.push(current);
+  return items;
 }
 
 /**
@@ -1416,8 +1461,7 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       inPackages = flow === null && /^packages\s*:\s*$/u.test(line);
       if (flow?.[1] !== undefined) {
         patterns.push(
-          ...flow[1]
-            .split(",")
+          ...initFlowListItems(flow[1])
             .map(unquote)
             .filter((entry) => entry.length > 0),
         );
@@ -1577,9 +1621,14 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
   }
   for (const directory of ancestors) {
     const relative = path.relative(directory, root).split(path.sep).join("/");
-    const workspaceFile = await initWorkspaceFileText(path.join(directory, "pnpm-workspace.yaml"));
-    const manifestPath = path.join(directory, "package.json");
-    const manifest = initPackageDocument(await initWorkspaceFileText(manifestPath));
+    // An unreadable pnpm-workspace.yaml is still pnpm's declaration: nothing is inferred.
+    const workspaceRead = await initWorkspaceFileRead(path.join(directory, "pnpm-workspace.yaml"));
+    if (workspaceRead.kind === "UNREADABLE") return undefined;
+    const workspaceFile = workspaceRead.kind === "TEXT" ? workspaceRead.text : undefined;
+    const manifestRead = await initWorkspaceFileRead(path.join(directory, "package.json"));
+    const manifest = initPackageDocument(
+      manifestRead.kind === "TEXT" ? manifestRead.text : undefined,
+    );
     // pnpm reads its workspace only from pnpm-workspace.yaml once that file exists; the
     // `workspaces` field of package.json belongs to npm, Yarn and Bun, and its object form to
     // Yarn and Bun alone.
@@ -1621,8 +1670,7 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     return {
       managers,
       invalidManagerField,
-      invalidManifest:
-        manifest === undefined && (await initRegularFileStats(manifestPath)) !== undefined,
+      invalidManifest: manifest === undefined && manifestRead.kind !== "ABSENT",
     };
   }
   return undefined;
