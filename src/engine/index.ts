@@ -1311,9 +1311,13 @@ function initOperandSpelledAsPath(
 }
 
 /** Whether an operand of a runner's command is a path: by spelling or as an existing entry. */
-function initOperandNamesPath(argument: string, testSources: string[]): boolean {
+function initOperandNamesPath(
+  argument: string,
+  testSources: string[],
+  isTestFile: (file: string) => boolean,
+): boolean {
   return (
-    initOperandSpelledAsPath(argument, initNodeTestSource) ||
+    initOperandSpelledAsPath(argument, isTestFile) ||
     (initSafePathPattern(argument) &&
       testSources.some((file) => file === argument || file.startsWith(`${argument}/`)))
   );
@@ -1322,6 +1326,7 @@ function initOperandNamesPath(argument: string, testSources: string[]): boolean 
 function initCommandPathMatchers(
   command: { executable: string; arguments: string[] },
   testSources: string[],
+  isTestFile: (file: string) => boolean,
 ): Array<(file: string) => boolean> {
   const operands =
     command.executable === "bun" && command.arguments[0] === "test"
@@ -1330,7 +1335,7 @@ function initCommandPathMatchers(
   return operands
     .filter(
       (argument) =>
-        initOperandNamesPath(argument, testSources) ||
+        initOperandNamesPath(argument, testSources, isTestFile) ||
         (initSafePathPattern(argument) && INIT_CONVENTIONAL_TEST_DIRECTORIES.has(argument)),
     )
     .map(initPathPatternMatcher);
@@ -1348,7 +1353,13 @@ function initCommandInvokesRunner(
 ): boolean {
   const words = [command.executable, ...command.arguments];
   if (runner === "bun") {
-    return words.some((word, index) => word === "bun" && words[index + 1] === "test");
+    // `node runner bun test` hands `bun test` to the script: no runtime may come before the pair.
+    return words.some(
+      (word, index) =>
+        word === "bun" &&
+        words[index + 1] === "test" &&
+        !words.slice(0, index).some((before) => INIT_NODE_RUNTIMES.has(before)),
+    );
   }
   const flag = words.indexOf("--test", 1);
   if (flag < 0) return false;
@@ -1386,6 +1397,20 @@ const INIT_NODE_VALUE_OPTIONS = new Set([
   "--conditions",
   "-C",
   "--input-type",
+  "--test-concurrency",
+  "--test-coverage-branches",
+  "--test-coverage-exclude",
+  "--test-coverage-functions",
+  "--test-coverage-include",
+  "--test-coverage-lines",
+  "--test-global-setup",
+  "--test-isolation",
+  "--test-name-pattern",
+  "--test-reporter",
+  "--test-reporter-destination",
+  "--test-shard",
+  "--test-skip-pattern",
+  "--test-timeout",
 ]);
 
 /**
@@ -1578,6 +1603,8 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       .filter((entry) => entry.length > 0);
   const patterns: string[] = [];
   let inPackages = false;
+  // The indentation of the items of the block list under `packages`.
+  let itemIndent: number | undefined;
   // The pieces of a flow list still open at the end of a line, and its scanner state.
   let flow: string[] | undefined;
   const scan: InitFlowScan = { quote: "", depth: 0 };
@@ -1598,6 +1625,7 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       }
     } else if (!/^[\s-]/u.test(line)) {
       inPackages = false;
+      itemIndent = undefined;
       const rest = line.startsWith("packages") ? line.slice("packages".length).trimStart() : "";
       if (!rest.startsWith(":")) continue;
       const value = rest.slice(1).trim();
@@ -1615,41 +1643,20 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
           flow = [inside];
         }
       }
-    } else if (
-      inPackages &&
-      trimmed.startsWith("-") &&
-      (trimmed[1] === undefined || /\s/u.test(trimmed[1]))
-    ) {
+    } else if (inPackages) {
+      // Every line under `packages` must be an item at one indentation: a mapping or a nested
+      // sequence is not the package list, so the file declares nothing.
+      const isItem =
+        trimmed.startsWith("-") && (trimmed[1] === undefined || /\s/u.test(trimmed[1]));
+      const indent = line.length - line.trimStart().length;
+      if (!isItem || (itemIndent !== undefined && indent !== itemIndent)) return [];
+      itemIndent = indent;
       const item = trimmed.slice(1).trim();
       if (item.length > 0) patterns.push(initYamlUnquote(item));
     }
   }
   // A flow list that never closes is not a declaration.
   return flow === undefined ? patterns : [];
-}
-
-/**
- * The `workspaces` patterns of a package.json and the shape that declared them: npm takes the
- * array form only, Yarn and Bun also take an object holding a `packages` array.
- */
-function initPackageWorkspacePatterns(document: Record<string, unknown> | undefined): {
-  patterns: string[];
-  shape: "array" | "object" | undefined;
-} {
-  const field = document?.workspaces;
-  const shape =
-    field !== null && typeof field === "object"
-      ? Array.isArray(field)
-        ? "array"
-        : "object"
-      : undefined;
-  const list = shape === "object" ? (field as Record<string, unknown>).packages : field;
-  return {
-    patterns: Array.isArray(list)
-      ? list.filter((entry): entry is string => typeof entry === "string")
-      : [],
-    shape,
-  };
 }
 
 /** The deepest nesting of braces in a pattern: sibling groups do not nest. */
@@ -1920,10 +1927,17 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
   }
   for (const directory of ancestors) {
     const relative = path.relative(directory, root).split(path.sep).join("/");
-    // An unreadable pnpm-workspace.yaml is still pnpm's declaration: nothing is inferred.
+    // pnpm-workspace.yaml is the only declaration read. One that exists but cannot be read is
+    // still pnpm's declaration: nothing is inferred from it.
     const workspaceRead = await initWorkspaceFileRead(path.join(directory, "pnpm-workspace.yaml"));
     if (workspaceRead.kind === "UNREADABLE") return undefined;
-    const workspaceFile = workspaceRead.kind === "TEXT" ? workspaceRead.text : undefined;
+    if (workspaceRead.kind !== "TEXT") continue;
+    const declared = initWorkspaceDeclaresMember(
+      initPnpmWorkspacePatterns(workspaceRead.text),
+      relative,
+    );
+    if (declared === undefined) return undefined;
+    if (!declared) continue;
     const manifestRead = await initWorkspaceFileRead(
       path.join(directory, "package.json"),
       INIT_WORKSPACE_MANIFEST_LIMIT_BYTES,
@@ -1934,23 +1948,9 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     const manifest = initPackageDocument(
       manifestRead.kind === "TEXT" ? manifestRead.text : undefined,
     );
-    // pnpm reads its workspace only from pnpm-workspace.yaml once that file exists; the
-    // `workspaces` field of package.json belongs to npm, Yarn and Bun, and its object form to
-    // Yarn and Bun alone.
-    let patterns: string[];
-    let owners: readonly InitPackageManager[];
-    if (workspaceFile !== undefined) {
-      patterns = initPnpmWorkspacePatterns(workspaceFile);
-      owners = ["pnpm"];
-    } else {
-      const declaration = initPackageWorkspacePatterns(manifest);
-      patterns = declaration.patterns;
-      owners = declaration.shape === "object" ? ["yarn", "bun"] : ["npm", "yarn", "bun"];
-    }
-    const declared = initWorkspaceDeclaresMember(patterns, relative);
-    if (declared === undefined) return undefined;
-    if (!declared) continue;
-    const managers = new Set<InitPackageManager>();
+    // The yaml makes the directory a pnpm workspace; the manifest field and the lockfiles of the
+    // JavaScript managers must converge on it, or the facts conflict.
+    const managers = new Set<InitPackageManager>(["pnpm"]);
     let invalidManagerField = false;
     const field = manifest?.packageManager;
     if (typeof field === "string") {
@@ -1958,7 +1958,6 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
       if (isInitPackageManager(id)) managers.add(id);
       else invalidManagerField = true;
     }
-    if (workspaceFile !== undefined) managers.add("pnpm");
     for (const [manager, files] of INIT_MANAGER_LOCKFILES) {
       if (!INIT_WORKSPACE_MANAGERS.includes(manager)) continue;
       for (const file of files) {
@@ -1968,10 +1967,6 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
         }
       }
     }
-    // A single manager that does not own this declaration, or is not a JavaScript manager at
-    // all, does not select the package: nothing is inherited. Several managers stay a conflict.
-    const [only] = managers;
-    if (managers.size === 1 && only !== undefined && !owners.includes(only)) return undefined;
     return {
       managers,
       invalidManagerField,
@@ -2466,7 +2461,9 @@ export async function initializeRepository(
     // An indirect command is judged before its operands are read as path filters: a task name
     // that happens to be a directory must not select a partial inventory.
     indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "node");
-    const pathMatchers = indirectCommand ? [] : initCommandPathMatchers(testCommand, testSources);
+    const pathMatchers = indirectCommand
+      ? []
+      : initCommandPathMatchers(testCommand, testSources, initNodeTestSource);
     const baseTestFiles = indirectCommand
       ? []
       : pathMatchers.length === 0
@@ -2485,7 +2482,9 @@ export async function initializeRepository(
       return [...BUN_RUNNER_MODULES, "bun:test"].some((name) => specifiers.has(name));
     });
     indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "bun");
-    const pathMatchers = indirectCommand ? [] : initCommandPathMatchers(testCommand, testSources);
+    const pathMatchers = indirectCommand
+      ? []
+      : initCommandPathMatchers(testCommand, testSources, initBunTestSource);
     const baseTestFiles = indirectCommand
       ? []
       : pathMatchers.length === 0

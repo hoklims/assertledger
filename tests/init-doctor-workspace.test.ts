@@ -216,40 +216,37 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.deepEqual(unchanged.detections, created.detections);
   });
 
-  it("reads the workspaces field and the root lockfile for bun, yarn and npm", async () => {
+  it("reads only pnpm-workspace.yaml: package.json workspaces declare nothing", async () => {
+    // The npm, Yarn and Bun declarations are out of scope: a manager is inherited from pnpm only.
     const cases = [
       {
-        files: {
-          "package.json": JSON.stringify({
-            name: "root",
-            packageManager: "bun@1.4.2",
-            workspaces: ["packages/*"],
-          }),
-        },
-        expected: "bun",
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: "bun@1.4.2",
+          workspaces: ["packages/*"],
+        }),
       },
       {
-        files: {
-          "package.json": JSON.stringify({
-            name: "root",
-            workspaces: { packages: ["packages/*"] },
-          }),
-          "yarn.lock": "",
-        },
-        expected: "yarn",
+        "package.json": JSON.stringify({ name: "root", workspaces: { packages: ["packages/*"] } }),
+        "yarn.lock": "",
       },
       {
-        files: {
-          "package.json": JSON.stringify({ name: "root", workspaces: ["packages/**"] }),
-          "package-lock.json": "{}\n",
-        },
-        expected: "npm",
+        "package.json": JSON.stringify({ name: "root", workspaces: ["packages/**"] }),
+        "package-lock.json": "{}\n",
       },
-    ] as const;
-    for (const scenario of cases) {
+      {
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: "pnpm@12.11.2",
+          workspaces: ["packages/*"],
+        }),
+        "pnpm-lock.yaml": "",
+      },
+    ];
+    for (const files of cases) {
       const base = await tree({
         ".git/": "",
-        ...scenario.files,
+        ...files,
         "packages/app/package.json": JSON.stringify({ name: "app" }),
         "packages/app/a.test.ts": BUN_SPEC,
       });
@@ -257,8 +254,8 @@ describe("a workspace member inherits the package manager of its workspace root"
         dryRun: true,
         framework: "bun:test",
       });
-      assert.equal(result.detections.packageManager, scenario.expected, JSON.stringify(result));
-      assert.equal(result.status, "WOULD_CREATE");
+      assert.equal(result.status, "CONFLICT", JSON.stringify(files));
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], JSON.stringify(files));
     }
   });
 
@@ -420,40 +417,36 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.equal(accepted.detections.packageManager, "pnpm");
   });
 
-  it("inherits only a manager that owns the workspace declaration", async () => {
-    const command = { executable: "bun", arguments: ["test"] };
-    const refused = async (files: Record<string, string>) => {
-      const base = await tree({ ".git/": "", ...files, ...member() });
-      const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+  it("reads the package list only as a flat sequence under packages", async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
         dryRun: true,
-        testCommand: command,
+        testCommand: { executable: "bun", arguments: ["test"] },
       });
-      assert.equal(result.status, "CONFLICT", JSON.stringify(files));
-      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], JSON.stringify(files));
     };
-    // A Python manager named by a JavaScript workspace root.
-    for (const manager of ["uv@0.5.0", "poetry@2.0.0", "pip@25.0"]) {
-      await refused({
-        "package.json": JSON.stringify({
-          name: "root",
-          packageManager: manager,
-          workspaces: ["domains/*/api"],
-        }),
-      });
+    const flat = await run("packages:\n  - 'domains/*/api'\n  - 'tools/*'\n");
+    assert.equal(flat.status, "WOULD_CREATE");
+    // A sequence at the indentation of the key is still the list.
+    const aligned = await run("packages:\n- 'domains/*/api'\n");
+    assert.equal(aligned.status, "WOULD_CREATE");
+    for (const content of [
+      // A mapping under packages, whose sequence is not the package list.
+      "packages:\n  include:\n    - 'domains/*/api'\n",
+      // Items at different indentations: a nested sequence.
+      "packages:\n  - 'tools/*'\n    - 'domains/*/api'\n",
+      // Something other than an item under the key.
+      "packages:\n  - 'domains/*/api'\n  exclude: 'x'\n",
+    ]) {
+      const result = await run(content);
+      assert.equal(result.status, "CONFLICT", content);
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], content);
     }
-    // The object form of `workspaces` is not npm's.
-    await refused({
-      "package.json": JSON.stringify({
-        name: "root",
-        workspaces: { packages: ["domains/*/api"] },
-      }),
-      "package-lock.json": "{}\n",
-    });
-    // pnpm reads its workspace from pnpm-workspace.yaml only.
-    await refused({
-      "package.json": JSON.stringify({ name: "root", workspaces: ["domains/*/api"] }),
-      "pnpm-lock.yaml": "",
-    });
   });
 
   it("keeps commas inside quotes and braces of a YAML flow list", async () => {
@@ -771,6 +764,8 @@ describe("a command that does not run the framework directly is named as such", 
     ["node --no-warnings runner --test", "node:test", "node"],
     ["node runner.js --test", "node:test", "node"],
     ["tsx runner --test", "node:test", "tsx"],
+    // `bun test` is an argument of the script here, not the runner.
+    ["node runner bun test", "bun:test", "node"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -810,6 +805,8 @@ describe("a command that does not run the framework directly is named as such", 
     ["tsx --test tests", "node:test"],
     ["npx tsx --test tests", "node:test"],
     ["node --import tsx --test tests", "node:test"],
+    ["node --test-name-pattern unit --test tests", "node:test"],
+    ["node --test-reporter spec --test-concurrency 2 --test tests", "node:test"],
     ["pnpm exec bun test tests", "bun:test"],
   ] as const) {
     it(`keeps \`${script}\` as a runner that names a path nothing matches`, async () => {
@@ -818,6 +815,22 @@ describe("a command that does not run the framework directly is named as such", 
       assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
     });
   }
+
+  it("keeps an unmatched Bun spec file name as a filter, not as no filter", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "bun test missing.spec.ts" },
+      }),
+      "pnpm-lock.yaml": "",
+      "a/one.test.ts": BUN_SPEC,
+      "b/two.spec.ts": BUN_SPEC,
+    });
+    const { code, result } = await doctorJson([root, "--framework", "bun:test"], root);
+    assert.equal(code, 3);
+    assert.deepEqual(result.reasonCodes, ["BASE_TEST_FILES_UNAVAILABLE"]);
+  });
 
   it("keeps a wrapper that names an existing Bun spec file as a path", async () => {
     const root = await tree({

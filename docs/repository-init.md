@@ -46,31 +46,27 @@ assertledger doctor packages/api --framework bun:test --package-manager pnpm \
   --test-command-json bun-test.json --json
 ```
 
-In a monorepo, a package that has a `package.json`, declares no package manager and receives no
-`--package-manager` looks for its workspace. The search starts in the parent directory and selects
-the nearest `pnpm-workspace.yaml` `packages` list or `package.json` `workspaces` whose patterns,
-minus `!` exclusions, select the package directory, then reads that directory's `packageManager`
-field, `pnpm-workspace.yaml` and JavaScript lockfiles. Those facts must converge as in the package
-itself. The search never reads above the first directory holding a `.git`, and does not run when
-the package is itself a repository top or when no `.git` bounds it; a package the patterns do not
-select stays `PACKAGE_MANAGER_UNDETECTED`.
+In a pnpm workspace, a package that has a `package.json`, declares no package manager and receives
+no `--package-manager` looks for its workspace. The search starts in the parent directory and
+selects the nearest `pnpm-workspace.yaml` whose `packages` patterns, minus `!` exclusions, select
+the package directory, then reads that directory's `package.json` `packageManager` field and
+JavaScript lockfiles, which must converge on pnpm as in the package itself. The search never
+reads above the first directory holding a `.git`, and does not run when the package is itself a
+repository top or when no `.git` bounds it; a package the patterns do not select stays
+`PACKAGE_MANAGER_UNDETECTED`. Only `pnpm-workspace.yaml` declares members: the `workspaces` field
+of npm, Yarn and Bun is not read, and pass `--package-manager` for those workspaces.
 
-Each manager keeps its own declaration. When `pnpm-workspace.yaml` exists it is the only source of
-patterns and only pnpm owns it, as in pnpm; `workspaces` is read only without it. Its array form
-belongs to npm, Yarn and Bun, and its `{ "packages": [...] }` object form to Yarn and Bun. A lone
-manager that does not own the declaration, including a Python manager, selects nothing. A
-`package.json` at the workspace root that is not valid JSON returns `CONFLICT` with
-`PACKAGE_MANIFEST_INVALID`; one that cannot be read (larger than 16 MiB, or not a regular file)
-infers nothing. A `pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, or not a
-regular file) infers nothing either, and does not fall back to `workspaces`. A `#` inside a quoted
-pattern is kept, and anything but whitespace after the closing bracket of a flow list declares
-nothing. Patterns are
-read in the subset the managers share (`*`, `**`, `?`, `{a,b}` and `[a-z]`), also inside a quoted
-item of a single-line or multiline YAML flow list; any other syntax, and any pattern beyond 256
-characters or 8 nested braces (or more than 1,024 patterns and alternations in total, or a package
-path over 1,024 characters), is not understood and nothing is inferred from it. Matching is done
-segment by segment without regular expressions built from the repository, so its cost is a product
-of lengths, and the YAML file is read in a single linear pass.
+`packages` is read as a block list or a flow list (also across lines) with the subset of globs the
+managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
+their position. A `#` inside a quoted pattern is kept. Anything else declares nothing and infers
+nothing: another syntax, another shape under `packages` (a mapping, a nested sequence), text
+after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
+than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a
+`pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, not a regular file).
+Matching is done segment by segment, without regular expressions built from the repository, so
+its cost is a product of lengths, and the YAML file is read in a single linear pass. A workspace
+root `package.json` that is not valid JSON returns `CONFLICT` with `PACKAGE_MANIFEST_INVALID`;
+one that cannot be read (larger than 16 MiB, or not a regular file) infers nothing.
 
 A manager found this way is reported with the informational
 `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before

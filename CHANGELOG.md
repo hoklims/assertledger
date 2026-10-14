@@ -6,25 +6,21 @@
   (`-` reads stdin) and `--adapter-config`, also in `AssertLedger.doctor` options. A dry run that
   `init` accepts is now reproducible by `doctor`: these flags take the same values as for `init`
   (`-` for stdin, a path such as `-adapter.json`). The MCP `assertledger_doctor` input is unchanged.
-- A workspace package (a directory with a `package.json`) that declares no package manager now
-  inherits it from the workspace root that selects it (`pnpm-workspace.yaml` `packages` or
-  `package.json` `workspaces`), within the same repository and never above a `.git`. This previously
-  returned `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
-  `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When `pnpm-workspace.yaml` exists it alone declares the
-  members, as in pnpm. Patterns are read in the subset the managers share (`*`, `**`, `?`, `{a,b}`,
-  `[a-z]`), including inside a single-line or multiline YAML flow list; other syntax infers
-  nothing, as do patterns beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and
-  alternations in total, 1,024-character paths), and so does a `pnpm-workspace.yaml` that exists but
-  cannot be read (oversized, a link). Matching and YAML parsing are linear: no regular expression
-  is built from a pattern. Each manager keeps its own declaration: the array
-  `workspaces` form is npm, Yarn and Bun's, the object form Yarn and Bun's, and a lone manager that
-  does not own it, such as a Python manager, selects nothing. A workspace root `package.json` that
-  is not valid JSON returns `PACKAGE_MANIFEST_INVALID`; one beyond 16 MiB, or not a regular file,
-  infers nothing. A `#` inside a quoted pattern is kept, and anything but whitespace after a flow
-  list's closing bracket declares nothing. Brace limits count nesting, not sibling groups. The
-  inherited facts are read again before
-  writing, like the in-package evidence. Inputs that already detect a manager or take an override
-  are unchanged.
+- A package of a pnpm workspace (a directory with a `package.json`) that declares no package
+  manager now inherits it from the workspace root whose `pnpm-workspace.yaml` selects it, within
+  the same repository and never above a `.git`. This previously returned
+  `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
+  `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. Only `pnpm-workspace.yaml` declares members: the npm,
+  Yarn and Bun `workspaces` field is not read. Its `packages` list is read as a block or flow
+  list (also across lines), with `!` exclusions, `*`, `**`, `?`, `{a,b}` and `[a-z]`; any other
+  syntax, any other shape under `packages`, anything but whitespace after a flow list, a pattern
+  beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and alternations in total,
+  1,024-character paths) or a file that exists but cannot be read (over 1 MiB, a link) declares
+  nothing. Matching and parsing are linear: no regular expression is built from a pattern. The
+  root `package.json` must be valid JSON (`PACKAGE_MANIFEST_INVALID`) and within 16 MiB, and its
+  `packageManager` field and lockfiles must converge on pnpm. The inherited facts are read again
+  before writing, like the in-package evidence. Inputs that already detect a manager or take an
+  override are unchanged.
 - `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
   usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
