@@ -1,0 +1,21 @@
+[package]
+name = "assertledger-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+assertledger-core = { path = "../assertledger-core" }
+assertledger-engine = { path = "../assertledger-engine" }
+napi.workspace = true
+napi-derive.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+napi-build.workspace = true
