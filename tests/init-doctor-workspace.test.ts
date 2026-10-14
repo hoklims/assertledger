@@ -751,6 +751,11 @@ describe("a workspace member inherits the package manager of its workspace root"
       `catalog: [}\n${packages}`,
       `${packages}catalog: {a: [b}]\n`,
       `${packages}catalog: [a, {b: c]}\n`,
+      // Whitespace other than space and tab is content in YAML, not separation: the file is
+      // not read rather than trimmed into a different pattern.
+      "packages:\n  - 'domains/*/api'\n  - domains/x \n",
+      "packages: ['domains/*/api'] \n",
+      "packages: \n  - 'domains/*/api'\n",
       // Nothing may sit left of the root mapping's column.
       "  packages: ['domains/*/api']\ncatalog: x\n",
       "    packages: ['domains/*/api']\n  other: x\n",
@@ -803,6 +808,10 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const content of [
       "﻿packages: ['domains/*/api']\n",
       "﻿packages:\n  - 'domains/*/api'\n",
+      // YAML lines end with `\r`, `\n` or `\r\n`.
+      "packages:\r  - 'domains/*/api'\r",
+      "packages: ['domains/*/api']\r",
+      "catalog:\r  a: 1\rpackages:\r\n  - 'domains/*/api'\n",
       // A document may indent its whole root mapping.
       "  packages:\n    - 'domains/*/api'\n",
       "  packages: ['domains/*/api']\n  catalog:\n    a: 1\n",
@@ -1157,6 +1166,11 @@ describe("a command that does not run the framework directly is named as such", 
     // `--` ends Node's options: `--test` after it is a script name.
     ["node -- --test", "node:test", "node"],
     // A runtime spelled as a path is still the runtime that was given a script.
+    // From a script, the program that owns `--test` must be a Node runtime.
+    ["echo --test", "node:test", "echo"],
+    ["pnpm exec echo --test", "node:test", "pnpm"],
+    // Bun only takes `--cwd=dir` before its subcommand: the separate value is not understood.
+    ["bun --cwd api test", "bun:test", "bun"],
     ["./node runner --test", "node:test", "./node"],
     ["tools/node runner --test", "node:test", "tools/node"],
   ] as const) {
@@ -1212,7 +1226,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["env --unset=FOO CI=1 bun test tests", "bun:test"],
     ["env -C . bun test tests", "bun:test"],
     ["bun --smol test tests", "bun:test"],
-    ["bun --cwd packages/api test tests", "bun:test"],
+    ["bun --cwd=packages/api test tests", "bun:test"],
+    ["npm exec -- node --test tests", "node:test"],
+    ["npx -- tsx --test tests", "node:test"],
     ["pnpm exec bun --bun test tests", "bun:test"],
     ["node --test -- tests", "node:test"],
     ["bunx bun test tests", "bun:test"],
@@ -1268,6 +1284,53 @@ describe("a command that does not run the framework directly is named as such", 
       "node/one.test.ts",
       "other/three.test.ts",
     ]);
+  });
+
+  it("keeps the values of Bun test options out of the path filters", async () => {
+    for (const script of [
+      "bun test --preload setup/preload.ts",
+      "bun test --timeout 5000 --reporter junit --reporter-outfile out/report.xml",
+      "pnpm exec bun test -r setup/preload.ts --rerun-each 2",
+    ]) {
+      const root = await tree({
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: "pnpm@12.11.2",
+          scripts: { test: script },
+        }),
+        "pnpm-lock.yaml": "",
+        "a/one.test.ts": BUN_SPEC,
+        "setup/preload.ts": "export {};\n",
+      });
+      const result = await initializeRepository(root, { dryRun: true, framework: "bun:test" });
+      assert.equal(result.status, "WOULD_CREATE", script);
+      const config = JSON.parse(
+        result.files.find((file) => file.path === "assertledger.config.json")?.content ?? "null",
+      );
+      assert.deepEqual(config.adapter.baseTestFiles, ["a/one.test.ts"], script);
+    }
+  });
+
+  it("takes a declared command for the direct runner, whatever its executable", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({
+        name: "root",
+        packageManager: "pnpm@12.11.2",
+        scripts: { test: "echo --test" },
+      }),
+      "pnpm-lock.yaml": "",
+      "one.test.ts": 'import test from "node:test";\ntest("one", () => {});\n',
+    });
+    // From the script, `echo` is no Node runtime; declared, the operator's command stands.
+    const inferred = await initializeRepository(root, { dryRun: true, framework: "node:test" });
+    assert.equal(inferred.status, "BLOCKED");
+    assert.deepEqual(inferred.reasonCodes, ["TEST_COMMAND_INDIRECT"]);
+    const declared = await initializeRepository(root, {
+      dryRun: true,
+      framework: "node:test",
+      testCommand: { executable: "custom-runner", arguments: ["--test"] },
+    });
+    assert.equal(declared.status, "WOULD_CREATE");
   });
 
   it("does not read the executable slot as a script given to Node", async () => {

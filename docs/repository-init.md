@@ -70,7 +70,9 @@ with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.
 (`packages//a`, `./packages/a`) are normalized, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
 is skipped, and a document that indents its whole root mapping equally is read from that column;
-content to its left makes the file declare nothing. The value of any other key is not read, but one that opens with a quote or a flow
+content to its left makes the file declare nothing. Lines end with `\r\n`, `\r` or `\n`. YAML
+separates with spaces and tabs only, so a file that holds any other Unicode whitespace (such as a
+non-breaking space) is not read. The value of any other key is not read, but one that opens with a quote or a flow
 bracket must be closed by the bracket its opener asks for (`[}` is not), with nothing after it,
 and a `-` at column 0 must continue the block sequence that is the value of the key above it (a
 root mapping cannot turn into a sequence), or the file declares nothing. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and
@@ -102,7 +104,9 @@ point and before a `--`, so `node script`, `node script --test`, `./node script 
 only when the command is Bun or a launcher that runs it: `pnpm exec`, `npm exec`, `yarn exec` or
 `dlx`, `npx` and `bunx` (with their valued options such as `--package`), `env` and `cross-env`
 assignments and valued options (`env -u NAME`), `dotenv --`, behind `corepack`, with Bun's global
-flags allowed before `test` (`bun --smol test`); so `echo bun test`, `npm run bun test` and `pnpm bun test` are not Bun) and spells no test path (a
+switches allowed before `test` (`bun --smol test`; `--cwd=dir` is one word, and a separate value
+such as `--cwd dir` is not understood); so `echo bun test`, `npm run bun test` and `pnpm bun test`
+are not Bun) and spells no test path (a
 glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
 test`, `pnpm -r test`
 and `npm run test:unit` are such commands: their operands are task names, not path filters, even
@@ -110,7 +114,12 @@ when a directory of that name exists, so no inventory can be derived. `detection
 names the command. Run `doctor` on one workspace package, or declare the direct runner with
 `--test-command-json`. For a command that does invoke Node's runner, only the words after `--test`
 are path filters: the launcher words before it (`exec`, `node`) never are, and the executable
-itself (`./node`) is never read as a script given to Node.
+itself (`./node`) is never read as a script given to Node. A `--` that precedes the runtime
+belongs to the launcher (`npm exec -- node --test`). From a package script, the program that owns
+`--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`), so `echo
+--test` is not Node's runner; a command declared with `--test-command-json` is taken for the
+direct runner whatever its executable. For `bun test`, the values of its options (`--preload
+file`, `--timeout 5000`) are not path filters either.
 
 The static inventory walks the filesystem, not the Git index, and never follows or copies a
 symbolic link: a link inside it returns `CONFLICT` with `UNSUPPORTED_REPOSITORY_SYMLINK` and writes

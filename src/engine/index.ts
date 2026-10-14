@@ -1327,15 +1327,16 @@ function initCommandPathMatchers(
   command: { executable: string; arguments: string[] },
   testSources: string[],
   isTestFile: (file: string) => boolean,
+  declared: boolean,
 ): Array<(file: string) => boolean> {
   // After a recognized `bun test`, wherever it sits (`pnpm exec bun test x`), only what follows
   // the subcommand are filters: `test` itself is not a conventional directory.
   const words = [command.executable, ...command.arguments];
   const subcommand = initBunTestPair(words);
-  const flag = subcommand < 0 ? initNodeRunnerFlag(words) : -1;
+  const flag = subcommand < 0 ? initNodeRunnerFlag(words, declared) : -1;
   // Behind a launcher (`pnpm exec node --test`), the launcher's own words are not filters either.
   let operands = command.arguments;
-  if (subcommand >= 0) operands = words.slice(subcommand + 1);
+  if (subcommand >= 0) operands = initBunTestOperands(words, subcommand);
   else if (flag >= 0) operands = initNodeRunnerOperands(words, flag);
   return operands
     .filter(
@@ -1355,10 +1356,11 @@ function initCommandPathMatchers(
 function initCommandInvokesRunner(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
+  declared: boolean,
 ): boolean {
   const words = [command.executable, ...command.arguments];
   if (runner === "bun") return initBunTestPair(words) >= 0;
-  return initNodeRunnerFlag(words) >= 0;
+  return initNodeRunnerFlag(words, declared) >= 0;
 }
 
 /**
@@ -1366,11 +1368,13 @@ function initCommandInvokesRunner(
  * come before the program entry point, so `node runner --test` runs a script of its own and
  * hands it `--test`.
  */
-function initNodeRunnerFlag(words: readonly string[]): number {
+function initNodeRunnerFlag(words: readonly string[], declared: boolean): number {
   const flag = words.indexOf("--test", 1);
   if (flag < 0) return -1;
   // `--` ends the options: what follows it (`node -- --test`) is a script name, not an option.
-  const separator = words.indexOf("--", 1);
+  // A `--` before the runtime belongs to a launcher (`npm exec -- node --test`).
+  const runtime = words.findIndex((word) => INIT_NODE_RUNTIMES.has(initCommandWordName(word)));
+  const separator = words.indexOf("--", Math.max(runtime, 0) + 1);
   if (separator >= 0 && separator < flag) return -1;
   // The nearest word at or before `from` that is not an option or the value of an option that
   // takes one: the executable at index 0 always is a word.
@@ -1394,7 +1398,10 @@ function initNodeRunnerFlag(words: readonly string[]): number {
   const spelledAsScript = program >= 1 && (name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name));
   const runtimeBefore =
     previous >= 0 && INIT_NODE_RUNTIMES.has(initCommandWordName(words[previous] ?? ""));
-  return !spelledAsScript && !runtimeBefore ? flag : -1;
+  // `echo --test` only prints its argument: unless the operator declared the command, the
+  // program that owns `--test` must be a Node runtime.
+  const isRuntime = declared || INIT_NODE_RUNTIMES.has(initCommandWordName(name));
+  return !spelledAsScript && !runtimeBefore && isRuntime ? flag : -1;
 }
 
 /**
@@ -1439,27 +1446,57 @@ const INIT_BUN_SUBCOMMAND_LAUNCHERS: ReadonlyMap<string, readonly string[]> = ne
 // `env` options that take a value (`--unset=NAME` is one word).
 const INIT_ENV_VALUE_OPTIONS = new Set(["-u", "--unset", "-C", "--chdir"]);
 
-// Bun's global options that take a value (`--opt=value` is one word); the others are switches.
-const INIT_BUN_VALUE_OPTIONS = new Set([
-  "--cwd",
-  "-c",
-  "--config",
-  "--env-file",
-  "--tsconfig-override",
-  "-r",
+// The options of `bun test` that take a value in a separate word (`--opt=value` is one word); the
+// others are switches. A value is not a path filter.
+const INIT_BUN_TEST_VALUE_OPTIONS = new Set([
   "--preload",
+  "-r",
   "--require",
   "--import",
-  "--install",
-  "--port",
+  "--timeout",
+  "--rerun-each",
+  "--test-name-pattern",
+  "-t",
+  "--reporter",
+  "--reporter-outfile",
+  "--coverage-reporter",
+  "--coverage-dir",
+  "--max-concurrency",
+  "--seed",
+  "--path-ignore-patterns",
+  "--config",
+  "-c",
+  "--env-file",
+  "--cwd",
+  "--tsconfig-override",
+  "--define",
+  "-d",
+  "--loader",
+  "-l",
+  "--conditions",
 ]);
+
+/** The path operands of `bun test`: the words after the subcommand that are not options or values. */
+function initBunTestOperands(words: readonly string[], subcommand: number): string[] {
+  const operands: string[] = [];
+  for (let index = subcommand + 1; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (!word.startsWith("-")) {
+      operands.push(word);
+    } else if (INIT_BUN_TEST_VALUE_OPTIONS.has(word)) {
+      index += 1;
+    }
+  }
+  return operands;
+}
 
 /**
  * The index of the `test` subcommand of an invocation of `bun` that is Bun's own, or -1: the
  * command is Bun, or a launcher that runs the program right after its options (`pnpm exec bun
- * test`, `npx bun test`, `env A=1 bun test`), and global flags (`bun --smol test`) may come
- * between. `echo bun test` and `npm run bun test` only carry the words, and `node runner bun
- * test` hands them to the script.
+ * test`, `npx bun test`, `env A=1 bun test`), and global switches (`bun --smol test`) may come
+ * between. A global option with a separate value (`bun --cwd dir test`) is not understood: Bun
+ * only takes the `--cwd=dir` form there. `echo bun test` and `npm run bun test` only carry the
+ * words, and `node runner bun test` hands them to the script.
  */
 function initBunTestPair(words: readonly string[]): number {
   let start = 0;
@@ -1507,11 +1544,9 @@ function initBunTestPair(words: readonly string[]): number {
     }
   }
   if (initCommandWordName(words[cursor] ?? "") !== "bun") return -1;
-  // Bun's global flags come before its subcommand (`bun --smol test`).
+  // Bun's global switches come before its subcommand (`bun --smol test`).
   let position = cursor + 1;
-  while ((words[position] ?? "").startsWith("-")) {
-    position += INIT_BUN_VALUE_OPTIONS.has(words[position] ?? "") ? 2 : 1;
-  }
+  while ((words[position] ?? "").startsWith("-")) position += 1;
   return words[position] === "test" ? position : -1;
 }
 
@@ -1566,10 +1601,11 @@ const INIT_NODE_VALUE_OPTIONS = new Set([
 function initCommandIsIndirect(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
+  declared: boolean,
 ): boolean {
   const isTestFile = runner === "bun" ? initBunTestSource : initNodeTestSource;
   return (
-    !initCommandInvokesRunner(command, runner) &&
+    !initCommandInvokesRunner(command, runner, declared) &&
     !command.arguments.some((argument) => initOperandSpelledAsPath(argument, isTestFile))
   );
 }
@@ -1911,9 +1947,13 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   let blockValue: "NONE" | "OPEN" | "NESTED" | "SEQUENCE" = "NONE";
   // A byte-order mark opens a YAML stream and is not part of its first line.
   const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  // YAML separates with spaces and tabs only. Any other Unicode whitespace is content that the
+  // trimming below would drop, so a file that has one is not read.
+  if (/[^\S \t\r\n]/u.test(source)) return [];
   // The indentation of the root mapping: a document may indent all of its content equally.
   let rootIndent: number | undefined;
-  for (const raw of source.split(/\r?\n/u)) {
+  // Lines end with `\r\n`, `\r` or `\n`.
+  for (const raw of source.split(/\r\n|\r|\n/u)) {
     let line = initYamlStripComment(raw);
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
@@ -2842,10 +2882,14 @@ export async function initializeRepository(
     const testSources = inScopeFiles.filter(initNodeTestSource);
     // An indirect command is judged before its operands are read as path filters: a task name
     // that happens to be a directory must not select a partial inventory.
-    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "node");
+    // A command the operator declared is taken for the direct runner; one read from a script must
+    // name a Node runtime for its `--test` to be Node's.
+    const declared = options.testCommand !== undefined;
+    indirectCommand =
+      testSources.length > 0 && initCommandIsIndirect(testCommand, "node", declared);
     const pathMatchers = indirectCommand
       ? []
-      : initCommandPathMatchers(testCommand, testSources, initNodeTestSource);
+      : initCommandPathMatchers(testCommand, testSources, initNodeTestSource, declared);
     const baseTestFiles = indirectCommand
       ? []
       : pathMatchers.length === 0
@@ -2863,10 +2907,11 @@ export async function initializeRepository(
       const specifiers = initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file);
       return [...BUN_RUNNER_MODULES, "bun:test"].some((name) => specifiers.has(name));
     });
-    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "bun");
+    const declared = options.testCommand !== undefined;
+    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "bun", declared);
     const pathMatchers = indirectCommand
       ? []
-      : initCommandPathMatchers(testCommand, testSources, initBunTestSource);
+      : initCommandPathMatchers(testCommand, testSources, initBunTestSource, declared);
     const baseTestFiles = indirectCommand
       ? []
       : pathMatchers.length === 0
