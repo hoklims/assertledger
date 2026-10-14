@@ -2121,6 +2121,12 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       continue;
     }
     if (flow !== undefined) {
+      // YAML folds a line break inside a scalar to one space and drops the indentation: the
+      // scanner does not, so a break is only read between two items (or before the closing
+      // bracket), never inside a quoted or plain scalar.
+      const previous = (flow[flow.length - 1] ?? "").trimEnd();
+      const betweenItems = previous === "" || previous.endsWith(",") || trimmed.startsWith("]");
+      if (scan.quote !== "" || !betweenItems) return [];
       const end = initFlowScan(scan, line);
       if (end >= 0) {
         // Only whitespace may follow the closing bracket: anything else is not valid YAML.
@@ -2133,7 +2139,9 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
       } else {
         flow.push(line);
       }
-    } else if (!/^[\s-]/u.test(line)) {
+    } else if (!/^(?:\s|-(?:\s|$)|---(?:\s|$))/u.test(line)) {
+      // A line at the root that starts a mapping entry: `-foo: bar` is a plain key, and only a
+      // `-` followed by white space is a sequence marker.
       inPackages = false;
       itemIndent = undefined;
       const entry = initYamlTopLevelEntry(line);

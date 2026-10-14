@@ -74,7 +74,10 @@ climbs out of the workspace root is ignored, a `,` or a brace inside a class (`{
 alternative separator, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
 is skipped, and a document that indents its whole root mapping equally is read from that column;
-content to its left makes the file declare nothing. Lines end with `\r\n`, `\r` or `\n`. YAML
+content to its left makes the file declare nothing. Lines end with `\r\n`, `\r` or `\n`. In a
+flow list a line break is read between two items; one inside a quoted or plain scalar (which YAML
+folds to a space) makes the file declare nothing. Only a `-` followed by white space is a sequence
+marker: `-foo: bar` is an ordinary key. YAML
 separates with spaces and tabs only, so a file that holds any other Unicode whitespace (such as a
 non-breaking space) is not read, nor is one whose line is indented with a tab. The value of any
 other key is not read, but one that opens with a quote or a flow

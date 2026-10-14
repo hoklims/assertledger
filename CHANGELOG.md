@@ -21,7 +21,9 @@
   negation), where a
   wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does),
   redundant separators and `.` segments are normalized, a directory below `node_modules` or
-  `bower_components` is never selected, a leading byte-order mark is skipped, lines may end with
+  `bower_components` is never selected, a leading byte-order mark is skipped, a line break
+  inside a flow-list scalar makes the file unread (between items it is fine), `-foo: bar` is an
+  ordinary key, lines may end with
   `\r`, a line indented with a tab makes the file unread, parent segments are normalized (`packages/../other/a`), a leading class that can match a dot (`[.]`, `[.a]`) spells it, a comma
   or a brace inside a class is not a brace separator, and an equally indented root mapping is read from its
   column; Unicode whitespace other

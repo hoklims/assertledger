@@ -777,6 +777,11 @@ describe("a workspace member inherits the package manager of its workspace root"
       `catalog: [}\n${packages}`,
       `${packages}catalog: {a: [b}]\n`,
       `${packages}catalog: [a, {b: c]}\n`,
+      // YAML folds a break inside a scalar to one space and drops the indentation; the file is
+      // not read rather than matched on its raw lines.
+      "packages: [\n  'domains/*/api',\n  \"other/\n    dir\"\n]\n",
+      "packages: [\n  'domains/*/api',\n  tools/\n    x\n]\n",
+      "packages: ['domains/*/api', \"a,\n b\"]\n",
       // A tab in the indentation is not valid YAML.
       "packages:\n\t- 'domains/*/api'\n",
       "packages:\n  \t- 'domains/*/api'\n",
@@ -838,6 +843,13 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const content of [
       "﻿packages: ['domains/*/api']\n",
       "﻿packages:\n  - 'domains/*/api'\n",
+      // A line break between flow items is separation; one inside a scalar is not read.
+      "packages: [\n  'domains/*/api',\n  'tools/*'\n]\n",
+      "packages: [\n  'domains/*/api',\n  'tools/*',\n]\n",
+      // Only `-` followed by white space is a sequence marker: `-foo` is a plain key.
+      "packages: ['domains/*/api']\n-foo: bar\n",
+      "-foo: bar\npackages: ['domains/*/api']\n",
+      "packages:\n  - 'domains/*/api'\n-foo: bar\n",
       // A tab separates tokens, it does not indent.
       "packages:\t['domains/*/api']\n",
       "packages:\n  - 'domains/*/api'\t# comment\n",
