@@ -68,12 +68,25 @@ async fn deadlines_include_descendant_open_pipes() {
 }
 #[tokio::test]
 async fn environment_is_explicit_and_cleared() {
-    let r = run_process(input(&["env", "PATH"])).await.unwrap();
+    // Cargo's inherited metadata is not one of libuv's required Windows names.
+    assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some());
+    let r = run_process(input(&["env", "CARGO_MANIFEST_DIR"]))
+        .await
+        .unwrap();
     assert_eq!(r["stdout"]["text"], "");
     let mut i = input(&["env", "ASSERTLEDGER_EXPLICIT"]);
     i["environment"] = json!({"ASSERTLEDGER_EXPLICIT":"native-value"});
     let r = run_process(i).await.unwrap();
     assert_eq!(r["stdout"]["text"], "native-value");
+    #[cfg(windows)]
+    {
+        let mut i = input(&["env", "PATH"]);
+        i["environment"] = json!({"path":"explicit-path"});
+        assert_eq!(
+            run_process(i).await.unwrap()["stdout"]["text"],
+            "explicit-path"
+        );
+    }
 }
 #[tokio::test]
 async fn timeout_terminates_live_parent_descendants() {
@@ -90,23 +103,39 @@ async fn timeout_terminates_live_parent_descendants() {
     #[cfg(windows)]
     {
         // Windows tree cleanup can complete after the bounded public grace period.
-        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
-        let output = std::process::Command::new("tasklist.exe")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-            .output()
-            .unwrap();
-        assert!(
-            !String::from_utf8_lossy(&output.stdout)
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+        loop {
+            let output = std::process::Command::new("tasklist.exe")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+                .output()
+                .unwrap();
+            let exists = String::from_utf8_lossy(&output.stdout)
                 .split_whitespace()
-                .any(|word| word == pid.to_string())
-        );
+                .any(|word| word == pid.to_string());
+            if !exists {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                // Clean only this fixture descendant before reporting the failure.
+                let _ = std::process::Command::new("taskkill.exe")
+                    .args(["/PID", &pid.to_string(), "/F", "/T"])
+                    .output();
+                panic!("fixture descendant survived bounded native cleanup");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     }
     #[cfg(unix)]
     {
-        // A killed descendant can briefly remain a zombie until the init process reaps it.
-        let proc = std::fs::read_to_string(format!("/proc/{pid}/stat"));
-        if let Ok(stat) = proc {
-            assert_eq!(stat.split_whitespace().nth(2), Some("Z"));
-        }
+        // ps works on both Linux and macOS; /proc alone would silently omit macOS.
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .unwrap();
+        let state = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            state.trim().is_empty() || state.trim().starts_with('Z'),
+            "descendant is still running: {state}"
+        );
     }
 }

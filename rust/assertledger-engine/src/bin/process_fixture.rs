@@ -20,6 +20,7 @@ fn main() {
         }
         "crash" => std::process::exit(7),
         "sleep" => std::thread::sleep(Duration::from_secs(3)),
+        "long-sleep" => std::thread::sleep(Duration::from_secs(30)),
         "descendant" => {
             let child = Command::new(std::env::current_exe().unwrap())
                 .arg("sleep")
@@ -29,7 +30,7 @@ fn main() {
         }
         "tree" => {
             let child = Command::new(std::env::current_exe().unwrap())
-                .arg("sleep")
+                .arg("long-sleep")
                 .spawn()
                 .unwrap();
             println!("{}", child.id());

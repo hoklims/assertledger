@@ -132,7 +132,32 @@ pub async fn run_process(input: Value) -> Result<Value, String> {
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     #[cfg(windows)]
-    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    {
+        // Match libuv's required Windows environment, which Node also inserts
+        // when callers supply an explicit environment. SYSTEMROOT is required
+        // by Windows crypto APIs used during Node startup.
+        // https://github.com/libuv/libuv/blob/v1.51.0/src/win/process.c#L47-L59
+        for name in [
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "LOGONSERVER",
+            "PATH",
+            "SYSTEMDRIVE",
+            "SYSTEMROOT",
+            "TEMP",
+            "USERDOMAIN",
+            "USERNAME",
+            "USERPROFILE",
+            "WINDIR",
+        ] {
+            if !environment.keys().any(|key| key.eq_ignore_ascii_case(name))
+                && let Some(value) = std::env::var_os(name)
+            {
+                command.env(name, value);
+            }
+        }
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
     #[cfg(unix)]
     command.process_group(0);
     let mut child = match command.spawn() {

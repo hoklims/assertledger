@@ -4,6 +4,7 @@
     "includes": [
       "**",
       "!!dist",
+      "!!target",
       "!!coverage",
       "!!.testforge",
       "!!.omx",
