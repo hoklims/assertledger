@@ -113,12 +113,16 @@ fn read_object(
         checked(sys::napi_is_array(env, value, &mut array))?;
     }
     if array {
-        let mut length = 0;
-        unsafe {
-            checked(sys::napi_get_array_length(env, value, &mut length))?;
-        }
         let mut items = Vec::new();
-        for index in 0..length {
+        let mut index = 0;
+        loop {
+            let mut length = 0;
+            unsafe {
+                checked(sys::napi_get_array_length(env, value, &mut length))?;
+            }
+            if index >= length {
+                break;
+            }
             let mut exists = false;
             unsafe {
                 checked(sys::napi_has_element(env, value, index, &mut exists))?;
@@ -131,6 +135,7 @@ fn read_object(
                 checked(sys::napi_get_element(env, value, index, &mut item))?;
             }
             items.push(read_value(env, item, ancestors)?);
+            index += 1;
         }
         return Ok(CanonicalValue::Array(items));
     }

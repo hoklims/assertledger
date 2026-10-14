@@ -16,4 +16,3 @@ regex.workspace = true
 
 [lints.rust]
 unsafe_code = "forbid"
-

@@ -45,15 +45,45 @@ impl Capture {
         json!({"text":text,"totalBytes":self.total,"truncated":self.total>self.bytes.len() as u64,"digest":format!("sha256:{:x}",self.hash.clone().finalize())})
     }
 }
-async fn drain(mut stream: impl AsyncRead + Unpin, capture: Arc<Mutex<Capture>>) {
+async fn drain(
+    mut stream: impl AsyncRead + Unpin,
+    capture: Arc<Mutex<Capture>>,
+) -> std::io::Result<()> {
     let mut buffer = [0; 8192];
     loop {
         match stream.read(&mut buffer).await {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
+            Err(error) => return Err(error),
             Ok(n) => capture.lock().unwrap().add(&buffer[..n]),
         }
     }
+    Ok(())
 }
+
+fn reader_error(result: Result<std::io::Result<()>, tokio::task::JoinError>) -> Option<String> {
+    match result {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(format!("stream capture failed: {error}")),
+        Err(error) => Some(format!("stream capture task failed: {error}")),
+    }
+}
+
+fn process_outcome(
+    completed: bool,
+    status: Option<ExitStatus>,
+    error: Option<&str>,
+) -> &'static str {
+    if !completed {
+        "TIMEOUT"
+    } else if error.is_some() {
+        "INFRA_ERROR"
+    } else if status.and_then(|s| s.code()) == Some(0) {
+        "PASS"
+    } else {
+        "PROCESS_CRASH"
+    }
+}
+
 fn positive(input: &Value, key: &str, error: &str) -> Result<u64, String> {
     input[key]
         .as_f64()
@@ -179,7 +209,11 @@ pub async fn run_process(input: Value) -> Result<Value, String> {
             Ok(s) => status = Some(s),
             Err(e) => wait_error = Some(e.to_string()),
         };
-        let _ = tokio::join!(&mut out, &mut err);
+        let (stdout_result, stderr_result) = tokio::join!(&mut out, &mut err);
+        wait_error = wait_error
+            .take()
+            .or_else(|| reader_error(stdout_result))
+            .or_else(|| reader_error(stderr_result));
     })
     .await
     .is_ok();
@@ -236,18 +270,62 @@ pub async fn run_process(input: Value) -> Result<Value, String> {
         out.abort();
         err.abort();
     }
-    let outcome = if !completed {
-        "TIMEOUT"
-    } else if wait_error.is_some() {
-        "INFRA_ERROR"
-    } else if status.and_then(|s| s.code()) == Some(0) {
-        "PASS"
-    } else {
-        "PROCESS_CRASH"
-    };
+    let outcome = process_outcome(completed, status, wait_error.as_deref());
     let mut result = json!({"outcome":outcome,"exitCode":status.and_then(|s|s.code()),"signal":signal(status),"timedOut":!completed,"durationMs":started.elapsed().as_millis(),"stdout":stdout.lock().unwrap().finish(),"stderr":stderr.lock().unwrap().finish()});
     if let Some(error) = wait_error {
         result["error"] = json!(error);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        pin::Pin,
+        task::{Context, Poll},
+    };
+    use tokio::io::ReadBuf;
+
+    struct BrokenReader;
+    impl AsyncRead for BrokenReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "fixture read failure",
+            )))
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_read_failure_is_infrastructure_even_after_zero_exit() {
+        let capture = Arc::new(Mutex::new(Capture::new(128)));
+        let result = tokio::spawn(drain(BrokenReader, capture)).await;
+        let error = reader_error(result);
+        assert!(error.is_some(), "a read error must not be accepted as EOF");
+        assert_eq!(
+            process_outcome(true, Some(ExitStatus::default()), error.as_deref()),
+            "INFRA_ERROR"
+        );
+        assert_eq!(
+            process_outcome(false, Some(ExitStatus::default()), error.as_deref()),
+            "TIMEOUT"
+        );
+    }
+
+    #[tokio::test]
+    async fn capture_task_failure_is_infrastructure() {
+        let task: tokio::task::JoinHandle<std::io::Result<()>> =
+            tokio::spawn(async { panic!("fixture capture panic") });
+        let error = reader_error(task.await);
+        assert!(error.is_some());
+        assert_eq!(
+            process_outcome(true, Some(ExitStatus::default()), error.as_deref()),
+            "INFRA_ERROR"
+        );
+    }
 }

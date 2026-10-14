@@ -19,4 +19,3 @@ serde_json.workspace = true
 
 [build-dependencies]
 napi-build.workspace = true
-

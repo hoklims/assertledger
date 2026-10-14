@@ -63,6 +63,24 @@ test("native canonicalization accepts shared children without treating them as c
   assert.equal(native.canonicalize(value), canonicalize(value));
 });
 
+test("native array getters observe live length like the JavaScript reference", () => {
+  for (const mode of ["shrink", "grow"]) {
+    const make = () => {
+      const array = mode === "shrink" ? [0, 9] : [0];
+      Object.defineProperty(array, "0", {
+        get() {
+          if (mode === "shrink") array.length = 1;
+          else array[1] = 9;
+          return 7;
+        },
+      });
+      return array;
+    };
+    assert.equal(native.canonicalize(make()), canonicalize(make()));
+    assert.equal(native.sha256Canonical(make()), sha256Canonical(make()));
+  }
+});
+
 test("native operation dispatch refuses unknown operations", () => {
   assert.throws(() => native.dispatchJson("missing-operation", "[]"));
 });

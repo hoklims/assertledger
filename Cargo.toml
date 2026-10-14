@@ -19,5 +19,3 @@ tokio = { version = "1.48", features = ["process", "time", "io-util", "rt-multi-
 napi = { version = "3", default-features = false, features = ["napi8", "serde-json", "tokio_rt", "dyn-symbols"] }
 napi-derive = "3"
 napi-build = "2"
-
-
