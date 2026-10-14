@@ -344,7 +344,6 @@ describe("a workspace member inherits the package manager of its workspace root"
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/{x,y}/{api,web}'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - '**/api'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/x/ap?'\n"],
-      ["pnpm-workspace.yaml", "packages:\n  - 'domains/[!a-c]/api'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/**'\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/*/*'\n  - '!domains/*/web'\n"],
     ] as const;
@@ -370,7 +369,11 @@ describe("a workspace member inherits the package manager of its workspace root"
       "packages:\n  - 'domains/x/ap'\n",
       "packages:\n  - 'domains/*'\n",
       "packages:\n  - 'domains/*/*'\n  - '!domains/x/*'\n",
-      // Not understood.
+      // Not understood: a class that opens with `!` or `^` is a negation in some glob dialects
+      // and a literal in others, so it selects nothing here whichever the manager means.
+      "packages:\n  - 'domains/[!a-c]/api'\n",
+      "packages:\n  - 'domains/[!b]/api'\n",
+      "packages:\n  - 'domains/[^b]/api'\n",
       "packages:\n  - 'domains/+(x|y)/api'\n",
       "packages:\n  - 'domains/{1..3}/api'\n",
       "packages:\n  - 'domains/[[:alpha:]]/api'\n",
@@ -839,6 +842,27 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.equal(result.status, "WOULD_CREATE");
   });
 
+  it("refuses a workspace root packageManager that is not a string", async () => {
+    const run = async (field: unknown) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": "packages: ['domains/*/api']\n",
+        "package.json": JSON.stringify({ name: "root", packageManager: field }),
+        ...member(),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const field of [42, true, null, { name: "pnpm" }, ["pnpm@12"]]) {
+      const result = await run(field);
+      assert.equal(result.status, "CONFLICT", JSON.stringify(field));
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_INVALID"], JSON.stringify(field));
+    }
+    assert.equal((await run("pnpm@12.11.2")).status, "WOULD_CREATE");
+  });
+
   it("does not let a wildcard select a dot-prefixed directory", async () => {
     const run = async (directory: string, content: string) => {
       const base = await tree({
@@ -1122,6 +1146,8 @@ describe("a command that does not run the framework directly is named as such", 
     // The program after the launcher is `echo`, which only prints the rest.
     ["pnpm exec echo bun test", "bun:test", "pnpm"],
     ["env CI=1 echo bun test", "bun:test", "env"],
+    // `--` ends Node's options: `--test` after it is a script name.
+    ["node -- --test", "node:test", "node"],
   ] as const) {
     it(`blocks \`${script}\` with TEST_COMMAND_INDIRECT, not a missing-tests code`, async () => {
       const { code, result } = await blocked(script, framework);
@@ -1169,6 +1195,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["pnpm --filter api exec bun test tests", "bun:test"],
     ["npm exec -- bun test tests", "bun:test"],
     ["npx bun test tests", "bun:test"],
+    ["npx --package bun bun test tests", "bun:test"],
+    ["npx -p bun bun test tests", "bun:test"],
+    ["node --test -- tests", "node:test"],
     ["bunx bun test tests", "bun:test"],
     ["env CI=1 bun test tests", "bun:test"],
     ["corepack pnpm exec bun test tests", "bun:test"],

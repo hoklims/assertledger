@@ -16,7 +16,8 @@
   Yarn and Bun `workspaces` field is not read. Its `packages` list is read as a block or flow
   list (also across lines), under a plain or quoted `packages` key (a file that repeats a
   top-level key declares nothing, as pnpm refuses it), with `!` exclusions, `*`, `**`, `?`,
-  `{a,b}` and `[a-z]`, where a
+  `{a,b}` and `[a-z]` (a class opening with `!` or `^` is not understood, as dialects disagree on
+  negation), where a
   wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does),
   redundant separators and `.` segments are normalized, a directory below `node_modules` or
   `bower_components` is never selected and a leading byte-order mark is skipped; a lone quote
@@ -29,14 +30,16 @@
   1,024-character paths) or a file that exists but cannot be read (over 1 MiB, a link) declares
   nothing. Matching and parsing are linear: no regular expression is built from a pattern. The
   root `package.json` must be valid JSON (`PACKAGE_MANIFEST_INVALID`) and within 16 MiB, and its
-  `packageManager` field and lockfiles must converge on pnpm. The inherited facts are read again
+  `packageManager` field (a value that is not a string is `PACKAGE_MANAGER_INVALID`) and lockfiles
+  must converge on pnpm. The inherited facts are read again
   before writing, like the in-package evidence. Inputs that already detect a manager or take an
   override are unchanged.
 - `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
   usage text, as `--exclude` already did, instead of exit 4.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
-  also behind a launcher; `--test` must come before a program's entry point, so `node script` and
-  `node script --test` are not Node's runner, and `bun test` counts only when the command is Bun
+  also behind a launcher; `--test` must come before a program's entry point and before a `--`, so
+  `node script`, `node script --test` and `node -- --test` are not Node's runner, and `bun test`
+  counts only when the command is Bun
   or a launcher that runs it, so `echo bun test`, `npm run bun test` and `pnpm bun test` are not
   Bun) and spells no test path (a glob, a nested path or a test file name) now returns `BLOCKED`
   with `TEST_COMMAND_INDIRECT`. For a command that does invoke Node's runner, only the words after

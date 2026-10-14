@@ -1369,6 +1369,9 @@ function initCommandInvokesRunner(
 function initNodeRunnerFlag(words: readonly string[]): number {
   const flag = words.indexOf("--test", 1);
   if (flag < 0) return -1;
+  // `--` ends the options: what follows it (`node -- --test`) is a script name, not an option.
+  const separator = words.indexOf("--", 1);
+  if (separator >= 0 && separator < flag) return -1;
   // The nearest word at or before `from` that is not an option or the value of an option that
   // takes one: the executable at index 0 always is a word.
   const nearestWord = (from: number): number => {
@@ -1411,6 +1414,18 @@ function initNodeRunnerOperands(words: readonly string[], flag: number): string[
 function initCommandWordName(word: string): string {
   return (word.split("/").pop() ?? "").replace(/\.(?:cmd|exe)$/iu, "");
 }
+
+// Options of `npx`, `bunx` and `npm exec` that take a value (`--opt=value` is one word).
+const INIT_LAUNCHER_VALUE_OPTIONS = new Set([
+  "--package",
+  "-p",
+  "--registry",
+  "--cache",
+  "--userconfig",
+  "--prefix",
+  "--workspace",
+  "-w",
+]);
 
 // Launchers whose subcommand runs the program that follows it. `npm run bun test` is not among
 // them: after `run` the next word is a script name, whatever it is called.
@@ -1466,7 +1481,10 @@ function initBunTestPair(words: readonly string[]): number {
   }
   if (cursor < 0) return -1;
   if (skipsOptions) {
-    while ((words[cursor] ?? "").startsWith("-")) cursor += 1;
+    // An option's value is not the program: `npx --package bun bun test`.
+    while ((words[cursor] ?? "").startsWith("-")) {
+      cursor += INIT_LAUNCHER_VALUE_OPTIONS.has(words[cursor] ?? "") ? 2 : 1;
+    }
   }
   return initCommandWordName(words[cursor] ?? "") === "bun" && words[cursor + 1] === "test"
     ? cursor
@@ -2033,7 +2051,7 @@ type InitGlobToken =
   | { kind: "literal"; value: string }
   | { kind: "any" }
   | { kind: "star" }
-  | { kind: "class"; negated: boolean; members: string };
+  | { kind: "class"; members: string };
 
 /** The tokens of one path segment: `*`, `?`, `[a-z]` and literal characters; undefined otherwise. */
 function initGlobTokens(segment: string): InitGlobToken[] | undefined {
@@ -2047,12 +2065,13 @@ function initGlobTokens(segment: string): InitGlobToken[] | undefined {
     } else if (character === "[") {
       const close = segment.indexOf("]", index + 2);
       if (close < 0) return undefined;
-      let members = segment.slice(index + 1, close);
+      const members = segment.slice(index + 1, close);
       if (members.includes("[")) return undefined;
-      const negated = members.startsWith("!") || members.startsWith("^");
-      if (negated) members = members.slice(1);
+      // A class that opens with `!` or `^` is a negation for some glob dialects and a literal
+      // for others: not understood, so nothing is inferred from it.
+      if (members.startsWith("!") || members.startsWith("^")) return undefined;
       if (members.length === 0) return undefined;
-      tokens.push({ kind: "class", negated, members });
+      tokens.push({ kind: "class", members });
       index = close;
     } else {
       tokens.push({ kind: "literal", value: character });
@@ -2077,7 +2096,7 @@ function initGlobTokenMatches(token: InitGlobToken, character: string): boolean 
       inside = character === from;
     }
   }
-  return inside !== token.negated;
+  return inside;
 }
 
 /** Matches one segment against its tokens in time proportional to the product of their lengths. */
@@ -2280,6 +2299,9 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
       const id = field.split("@")[0] ?? "";
       if (isInitPackageManager(id)) managers.add(id);
       else invalidManagerField = true;
+    } else if (field !== undefined) {
+      // A number, an object, `null`: a field its manager cannot consume is not an absent one.
+      invalidManagerField = true;
     }
     for (const [manager, files] of INIT_MANAGER_LOCKFILES) {
       if (!INIT_WORKSPACE_MANAGERS.includes(manager)) continue;

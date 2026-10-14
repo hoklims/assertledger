@@ -50,7 +50,8 @@ In a pnpm workspace, a package that has a `package.json`, declares no package ma
 no `--package-manager` looks for its workspace. The search starts in the parent directory and stops
 at the nearest `pnpm-workspace.yaml`, as pnpm does: when its `packages` patterns, minus `!`
 exclusions, select the package directory, it reads that directory's `package.json`
-`packageManager` field and JavaScript lockfiles, which must converge on pnpm as in the package
+`packageManager` field (one that is not a string is `PACKAGE_MANAGER_INVALID`) and JavaScript
+lockfiles, which must converge on pnpm as in the package
 itself, and when they do not select it nothing is inherited, even if a workspace further out would.
 The search never reads above the first directory holding a `.git`, and does not run when the
 package is itself a repository top or when no `.git` bounds it; a package the patterns do not
@@ -62,7 +63,8 @@ The `packages` key may be quoted (`'packages':`, `"packages":`). A file that rep
 declares nothing, as pnpm refuses it. `packages` is read as a block list or a flow list (also
 across lines) with the subset of globs the
 managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
-their position. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
+their position. A class that opens with `!` or `^` is not understood, as glob dialects disagree on
+whether it negates. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
 with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
 `packages/.*`) does, as in pnpm. Redundant separators and `.` segments in a pattern
 (`packages//a`, `./packages/a`) are normalized, and a directory below `node_modules` or
@@ -94,9 +96,11 @@ only files under the package, so a later change at the workspace root is not det
 
 A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
 also behind a launcher such as `pnpm exec` or `tsx`; `--test` must come before a program's entry
-point, so `node script` and `node script --test` are not Node's runner, and `bun test` counts
+point and before a `--`, so `node script`, `node script --test` and `node -- --test` are not
+Node's runner, and `bun test` counts
 only when the command is Bun or a launcher that runs it: `pnpm exec`, `npm exec`, `yarn exec` or
-`dlx`, `npx`, `bunx`, `env` and `cross-env` assignments, `dotenv --`, behind `corepack`; so
+`dlx`, `npx` and `bunx` (with their valued options such as `--package`), `env` and `cross-env`
+assignments, `dotenv --`, behind `corepack`; so
 `echo bun test`, `npm run bun test` and `pnpm bun test` are not Bun) and spells no test path (a
 glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
 test`, `pnpm -r test`
