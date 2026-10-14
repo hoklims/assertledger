@@ -5,8 +5,10 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   canonicalize,
+  createAgenticProfile,
   decideEvidence,
   replayEvidenceManifest,
+  sealManifestArtifact,
   selectCandidates,
   sha256Canonical,
   verifyDecisionDigest,
@@ -186,4 +188,25 @@ test("native nesting refusal remains an explicit development limitation", () => 
   let value = {};
   for (let index = 0; index < 1000; index++) value = { child: value };
   assert.throws(() => facade.canonicalize(value), /nesting limit/);
+});
+
+test("native profiles refuse overflow instead of sealing a null duration", () => {
+  const request = JSON.parse(
+    readFileSync(
+      new URL("../conformance/v1/inputs/create-profile-v1-qualified.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const observations = request.manifest.observations.filter(
+    (observation) => observation.candidateId !== null,
+  );
+  observations[0].durationMs = 1e308;
+  observations[1].durationMs = 1e308;
+  request.manifest = sealManifestArtifact({
+    ...request.manifest,
+    ...decideEvidence(request.manifest),
+  });
+  assert.equal(replayEvidenceManifest(request.manifest).valid, true);
+  assert.throws(() => createAgenticProfile(request), /finite numbers/);
+  assert.throws(() => dispatch("createAgenticProfile", [request]), /finite numbers/);
 });
