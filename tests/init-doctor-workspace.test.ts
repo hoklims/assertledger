@@ -163,6 +163,24 @@ describe("doctor accepts the detection overrides of init", () => {
     assert.deepEqual(doctor.result, JSON.parse(init.stdout()));
   });
 
+  it("accepts the same --framework value as init, including a single dash", async () => {
+    const root = await tree({
+      "package.json": JSON.stringify({ name: "api", packageManager: "pnpm@12.11.2" }),
+      "pnpm-lock.yaml": "",
+      "a.spec.ts": BUN_SPEC,
+    });
+    const doctor = await doctorJson([root, "--framework", "-invalid"], root);
+    const init = capture(root);
+    const initCode = await runCli(
+      ["init", root, "--dry-run", "--framework", "-invalid", "--json"],
+      init.io,
+    );
+    assert.equal(initCode, 4);
+    assert.equal(doctor.code, initCode);
+    assert.deepEqual(doctor.result.reasonCodes, ["FRAMEWORK_OVERRIDE_INVALID"]);
+    assert.deepEqual(doctor.result, JSON.parse(init.stdout()));
+  });
+
   it("passes the overrides through the SDK facade", async () => {
     const root = await tree({
       "package.json": JSON.stringify({ name: "api", scripts: { test: MEMBER_SCRIPT } }),
@@ -1225,6 +1243,10 @@ describe("a command that does not run the framework directly is named as such", 
     ["node -- --test", "node:test", "node"],
     // The command must be a runtime or one of its launchers, not a program that prints them.
     ["echo node --test", "node:test", "echo"],
+    // The launcher dispatches `echo`: the `node` after it is one of its arguments.
+    ["npm exec -- echo node --test", "node:test", "npm"],
+    ["pnpm exec echo node --test", "node:test", "pnpm"],
+    ["env CI=1 echo node --test", "node:test", "env"],
     // `corepack` only dispatches to a package manager, and Bun's `-e` takes code, not a command.
     ["corepack bun test", "bun:test", "corepack"],
     ["bun -e test", "bun:test", "bun"],

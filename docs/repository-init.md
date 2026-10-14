@@ -122,12 +122,13 @@ are path filters: the launcher words before it (`exec`, `node`) never are, and t
 itself (`./node`) is never read as a script given to Node. A `--` that precedes the runtime
 belongs to the launcher (`npm exec -- node --test`). From a package script, the program that owns
 `--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`) and the
-command must be that runtime or one of its launchers (`npx`, `bunx`, `npm`/`pnpm`/`yarn` with
-`exec` or `dlx`, `env`, `cross-env`, `dotenv`, `c8`, `nyc`, behind `corepack` when it dispatches
-a package manager), so `echo --test` and `echo node --test` are not Node's runner, and neither is
-`npm run node --test`, which runs the script called `node` (a program only follows `exec`, `dlx`
-or `x`); a command declared with `--test-command-json` is taken for the direct runner whatever
-its executable. A Bun global option other than the known switches and the `--opt=value` forms
+program the command dispatches: the command itself, or what a launcher runs right after its own
+options (`npx`, `bunx`, `npm`/`pnpm`/`yarn` after `exec` or `dlx`, `env` and `cross-env`
+assignments, `dotenv --`, `c8`, `nyc`, behind `corepack` when it dispatches a package manager).
+So `echo --test`, `echo node --test` and `npm exec -- echo node --test` are not Node's runner,
+and neither is `npm run node --test`, which runs the script called `node` (a program only follows
+`exec`, `dlx` or `x`); a command declared with `--test-command-json` is taken for the direct
+runner whatever its executable. A Bun global option other than the known switches and the `--opt=value` forms
 leaves the subcommand unknown (`bun -e test` evaluates `test`), and `corepack bun test` is a
 syntax error of corepack, not Bun. For `bun test`, the values of its options (`--preload
 file`, `--timeout 5000`) are not path filters either.

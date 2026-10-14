@@ -1402,12 +1402,12 @@ function initNodeRunnerFlag(words: readonly string[], declared: boolean): number
   const spelledAsScript = program >= 1 && (name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name));
   const runtimeBefore =
     previous >= 0 && INIT_NODE_RUNTIMES.has(initCommandWordName(words[previous] ?? ""));
-  // `echo node --test` only prints its arguments: unless the operator declared the command, the
-  // program that owns `--test` must be a Node runtime and the command must be that runtime or
-  // one of its launchers.
-  const executable = initEffectiveLauncher(words).launcher;
-  const launched = INIT_NODE_RUNTIMES.has(executable) || INIT_NODE_LAUNCHERS.has(executable);
-  const isRuntime = declared || (INIT_NODE_RUNTIMES.has(initCommandWordName(name)) && launched);
+  // `echo node --test` and `npm exec -- echo node --test` only carry their words: unless the
+  // operator declared the command, the program the command dispatches must be the Node runtime
+  // that owns `--test`.
+  const dispatched = initLaunchedProgram(words);
+  const isRuntime =
+    declared || (dispatched === program && INIT_NODE_RUNTIMES.has(initCommandWordName(name)));
   return !spelledAsScript && !runtimeBefore && isRuntime ? flag : -1;
 }
 
@@ -1458,22 +1458,6 @@ function initEffectiveLauncher(words: readonly string[]): { start: number; launc
     ? { start: 1, launcher: next }
     : { start: 0, launcher: "" };
 }
-
-// Executables that can start Node's runner for the program that follows them: a Node runtime, a
-// package manager's executing subcommand, an environment wrapper or a coverage wrapper. Anything
-// else (`echo node --test`) only carries the words.
-const INIT_NODE_LAUNCHERS = new Set([
-  "npx",
-  "bunx",
-  "pnpm",
-  "npm",
-  "yarn",
-  "env",
-  "cross-env",
-  "dotenv",
-  "c8",
-  "nyc",
-]);
 
 // Options of `npx`, `bunx` and `npm exec` that take a value (`--opt=value` is one word).
 const INIT_LAUNCHER_VALUE_OPTIONS = new Set([
@@ -1543,21 +1527,20 @@ function initBunTestOperands(words: readonly string[], subcommand: number): stri
 }
 
 /**
- * The index of the `test` subcommand of an invocation of `bun` that is Bun's own, or -1: the
- * command is Bun, or a launcher that runs the program right after its options (`pnpm exec bun
- * test`, `npx bun test`, `env A=1 bun test`), and global switches (`bun --smol test`) may come
- * between. A global option with a separate value (`bun --cwd dir test`) is not understood: Bun
- * only takes the `--cwd=dir` form there. `echo bun test` and `npm run bun test` only carry the
- * words, and `node runner bun test` hands them to the script.
+ * The index of the program a command dispatches, or -1 when its launcher is not known: the
+ * command itself when it is Bun or a Node runtime, or the word right after the options of a
+ * launcher that runs the program that follows (`pnpm exec`, `npx`, `env A=1`, `dotenv --`,
+ * `c8`). `echo bun test` and `npm exec -- echo node --test` dispatch `echo`; `npm run x` runs
+ * a script and dispatches no program.
  */
-function initBunTestPair(words: readonly string[]): number {
+function initLaunchedProgram(words: readonly string[]): number {
   // `corepack pnpm exec bun test`: corepack only selects the manager that follows.
   const { start, launcher } = initEffectiveLauncher(words);
   // The index where the program is looked for, before options are skipped.
   let cursor = -1;
   let skipsOptions = true;
   const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher);
-  if (launcher === "bun") {
+  if (launcher === "bun" || INIT_NODE_RUNTIMES.has(launcher)) {
     cursor = start;
     skipsOptions = false;
   } else if (subcommands !== undefined) {
@@ -1566,7 +1549,7 @@ function initBunTestPair(words: readonly string[]): number {
     );
     const runsScript = words.slice(start + 1, index < 0 ? 0 : index).includes("run");
     if (index >= 0 && !runsScript) cursor = index + 1;
-  } else if (launcher === "npx" || launcher === "bunx") {
+  } else if (launcher === "npx" || launcher === "bunx" || launcher === "c8" || launcher === "nyc") {
     cursor = start + 1;
   } else if (launcher === "env" || launcher === "cross-env") {
     cursor = start + 1;
@@ -1590,6 +1573,20 @@ function initBunTestPair(words: readonly string[]): number {
       cursor += INIT_LAUNCHER_VALUE_OPTIONS.has(words[cursor] ?? "") ? 2 : 1;
     }
   }
+  return cursor;
+}
+
+/**
+ * The index of the `test` subcommand of an invocation of `bun` that is Bun's own, or -1: the
+ * command is Bun, or a launcher that runs the program right after its options (`pnpm exec bun
+ * test`, `npx bun test`, `env A=1 bun test`), and global switches (`bun --smol test`) may come
+ * between. A global option with a separate value (`bun --cwd dir test`) is not understood: Bun
+ * only takes the `--cwd=dir` form there. `echo bun test` and `npm run bun test` only carry the
+ * words, and `node runner bun test` hands them to the script.
+ */
+function initBunTestPair(words: readonly string[]): number {
+  const cursor = initLaunchedProgram(words);
+  if (cursor < 0) return -1;
   if (initCommandWordName(words[cursor] ?? "") !== "bun") return -1;
   // Bun's global switches come before its subcommand (`bun --smol test`). Any other option is not
   // known to leave `test` as the subcommand: `bun -e test` evaluates `test` as code.

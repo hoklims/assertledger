@@ -40,7 +40,9 @@
   before writing, like the in-package evidence. Inputs that already detect a manager or take an
   override are unchanged.
 - `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
-  usage text, as `--exclude` already did, instead of exit 4.
+  usage text, as `--exclude` already did, instead of exit 4. `doctor --framework` takes the same
+  values as `init --framework`, a single dash included (`-x` reaches the engine and returns the
+  structured `FRAMEWORK_OVERRIDE_INVALID`, exit 4, instead of a usage error).
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
   also behind a launcher; `--test` must come before a program's entry point and before a `--`, so
   `node script`, `node script --test`, `./node script --test` and `node -- --test` are not Node's
