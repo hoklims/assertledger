@@ -64,8 +64,10 @@ manager that does not own the declaration, including a Python manager, selects n
 1 MiB, or not a regular file) infers nothing, and does not fall back to `workspaces`. Patterns are
 read in the subset the managers share (`*`, `**`, `?`, `{a,b}` and `[a-z]`), also inside a quoted
 item of a single-line or multiline YAML flow list; any other syntax, and any pattern beyond 256
-characters, 4 nested braces or 16 wildcards (or more than 4,096 patterns), is not understood and
-nothing is inferred from it.
+characters or 8 nested braces (or more than 1,024 patterns and alternations in total, or a package
+path over 1,024 characters), is not understood and nothing is inferred from it. Matching is done
+segment by segment without regular expressions built from the repository, so its cost is a product
+of lengths, and the YAML file is read in a single linear pass.
 
 A manager found this way is reported with the informational
 `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. The workspace facts are read again immediately before

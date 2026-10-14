@@ -1378,10 +1378,11 @@ const INIT_MANAGER_LOCKFILES: ReadonlyArray<readonly [InitPackageManager, readon
 ];
 const INIT_WORKSPACE_MANAGERS: readonly InitPackageManager[] = ["pnpm", "npm", "yarn", "bun"];
 const INIT_WORKSPACE_FILE_LIMIT_BYTES = 1_048_576;
-const INIT_WORKSPACE_PATTERN_COUNT = 4_096;
+// Patterns and the alternations they expand to share one budget.
+const INIT_WORKSPACE_PATTERN_COUNT = 1_024;
 const INIT_WORKSPACE_PATTERN_LENGTH = 256;
-const INIT_WORKSPACE_BRACE_DEPTH = 4;
-const INIT_WORKSPACE_WILDCARD_LIMIT = 16;
+const INIT_WORKSPACE_BRACE_DEPTH = 8;
+const INIT_WORKSPACE_PATH_LENGTH = 1_024;
 
 async function initRegularFileStats(file: string): Promise<Stats | undefined> {
   try {
@@ -1447,68 +1448,108 @@ function initFlowListItems(inside: string): string[] {
   return items;
 }
 
+/** Drops a trailing YAML comment: a `#` that follows whitespace. Linear, with no backtracking. */
+function initYamlStripComment(line: string): string {
+  for (let index = 1; index < line.length; index += 1) {
+    if (line[index] === "#" && /\s/u.test(line[index - 1] ?? "")) return line.slice(0, index);
+  }
+  return line;
+}
+
+function initYamlUnquote(value: string): string {
+  const text = value.trim();
+  const first = text[0];
+  return text.length >= 2 && (first === "'" || first === '"') && text.endsWith(first)
+    ? text.slice(1, -1)
+    : text;
+}
+
+/** The scanner state of a YAML flow list that may span lines. */
+interface InitFlowScan {
+  quote: string;
+  depth: number;
+}
+
+/**
+ * Scans one more piece of a flow list whose opening bracket is already consumed and returns the
+ * index of the closing bracket in it, or -1 while the list is still open. The state carries over,
+ * so a list is read once however many lines it spans.
+ */
+function initFlowScan(state: InitFlowScan, text: string): number {
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index] ?? "";
+    if (state.quote !== "") {
+      if (character === state.quote) state.quote = "";
+    } else if (character === "'" || character === '"') {
+      state.quote = character;
+    } else if (character === "{" || character === "[") {
+      state.depth += 1;
+    } else if (character === "}") {
+      state.depth = Math.max(0, state.depth - 1);
+    } else if (character === "]") {
+      if (state.depth === 0) return index;
+      state.depth -= 1;
+    }
+  }
+  return -1;
+}
+
 /**
  * The `packages` patterns of a pnpm-workspace.yaml. Only the block and flow list forms are read;
- * a file in any other shape declares nothing, so a member is never inferred from it.
+ * a file in any other shape declares nothing, so a member is never inferred from it. The text is
+ * repository-controlled and up to 1 MiB: it is read in one linear pass, without regular
+ * expressions that could backtrack.
  */
 function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   if (text === undefined) return [];
-  const unquote = (value: string): string => value.trim().replace(/^(['"])(.*)\1$/u, "$2");
   const flowPatterns = (inside: string): string[] =>
     initFlowListItems(inside)
-      .map(unquote)
+      .map(initYamlUnquote)
       .filter((entry) => entry.length > 0);
   const patterns: string[] = [];
   let inPackages = false;
-  // The text of a flow list still open at the end of a line.
-  let flow: string | undefined;
+  // The pieces of a flow list still open at the end of a line, and its scanner state.
+  let flow: string[] | undefined;
+  const scan: InitFlowScan = { quote: "", depth: 0 };
   for (const raw of text.split(/\r?\n/u)) {
-    const line = raw.replace(/\s+#.*$/u, "");
-    if (line.trim().length === 0 || line.trimStart().startsWith("#")) continue;
+    const line = initYamlStripComment(raw);
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
     if (flow !== undefined) {
-      flow = `${flow} ${line}`;
-      const end = initFlowEnd(flow);
+      const end = initFlowScan(scan, line);
       if (end >= 0) {
-        patterns.push(...flowPatterns(flow.slice(0, end)));
+        flow.push(line.slice(0, end));
+        patterns.push(...flowPatterns(flow.join(" ")));
         flow = undefined;
+      } else {
+        flow.push(line);
       }
     } else if (!/^[\s-]/u.test(line)) {
-      const open = /^packages\s*:\s*\[(.*)$/u.exec(line);
-      inPackages = open === null && /^packages\s*:\s*$/u.test(line);
-      if (open?.[1] !== undefined) {
-        const end = initFlowEnd(open[1]);
-        if (end >= 0) patterns.push(...flowPatterns(open[1].slice(0, end)));
-        else flow = open[1];
+      inPackages = false;
+      const rest = line.startsWith("packages") ? line.slice("packages".length).trimStart() : "";
+      if (!rest.startsWith(":")) continue;
+      const value = rest.slice(1).trim();
+      if (value.length === 0) {
+        inPackages = true;
+      } else if (value.startsWith("[")) {
+        const inside = value.slice(1);
+        scan.quote = "";
+        scan.depth = 0;
+        const end = initFlowScan(scan, inside);
+        if (end >= 0) patterns.push(...flowPatterns(inside.slice(0, end)));
+        else flow = [inside];
       }
-    } else if (inPackages) {
-      const item = /^\s*-\s+(.+?)\s*$/u.exec(line);
-      if (item?.[1] !== undefined) patterns.push(unquote(item[1]));
+    } else if (
+      inPackages &&
+      trimmed.startsWith("-") &&
+      (trimmed[1] === undefined || /\s/u.test(trimmed[1]))
+    ) {
+      const item = trimmed.slice(1).trim();
+      if (item.length > 0) patterns.push(initYamlUnquote(item));
     }
   }
   // A flow list that never closes is not a declaration.
   return flow === undefined ? patterns : [];
-}
-
-/** The index of the bracket closing a YAML flow list whose opening bracket is already consumed. */
-function initFlowEnd(text: string): number {
-  let quote = "";
-  let depth = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index] ?? "";
-    if (quote !== "") {
-      if (character === quote) quote = "";
-    } else if (character === "'" || character === '"') {
-      quote = character;
-    } else if (character === "{" || character === "[") {
-      depth += 1;
-    } else if (character === "}") {
-      depth = Math.max(0, depth - 1);
-    } else if (character === "]") {
-      if (depth === 0) return index;
-      depth -= 1;
-    }
-  }
-  return -1;
 }
 
 /**
@@ -1536,87 +1577,211 @@ function initPackageWorkspacePatterns(document: Record<string, unknown> | undefi
 }
 
 /**
- * The regular expression of a workspace pattern in the subset the workspace managers share:
- * `*`, `**`, `?`, `{a,b}` alternation and `[a-z]` classes. Anything else (extglobs, escapes,
- * brace ranges, POSIX classes, unbalanced groups) is undefined, so a caller never reads those
- * operators as literal path characters.
+ * Expands the `{a,b}` alternations of a workspace pattern into the plain patterns they stand for.
+ * Each pattern produced spends `budget`, so a repository cannot make the expansion grow without
+ * bound. Undefined for anything outside the supported subset: an alternation with one branch
+ * (a range such as `{1..3}` has none), unbalanced braces, nesting past the depth limit, or an
+ * exhausted budget.
  */
-function initWorkspacePatternExpression(pattern: string): RegExp | undefined {
-  // Bounded before compiling: a repository controls the pattern, and nested groups or long runs
-  // of wildcards would otherwise cost the compiler or the matcher without limit.
-  if (pattern.length > INIT_WORKSPACE_PATTERN_LENGTH) return undefined;
-  let expression = "^";
-  let wildcards = 0;
-  const braces: boolean[] = [];
-  for (let index = 0; index < pattern.length; index += 1) {
-    const character = pattern[index] ?? "";
-    if (character === "\\" || character === "(" || character === ")") return undefined;
-    if (character === "." && pattern[index + 1] === "." && braces.length > 0) return undefined;
-    if ("*?[".includes(character)) {
-      wildcards += 1;
-      if (wildcards > INIT_WORKSPACE_WILDCARD_LIMIT) return undefined;
-    }
-    if (character === "*" && pattern[index + 1] === "*") {
-      if (pattern[index + 2] === "/") {
-        expression += "(?:[^/]+/)*";
-        index += 2;
-      } else {
-        expression += ".*";
-        index += 1;
-      }
-    } else if (character === "*") {
-      expression += "[^/]*";
-    } else if (character === "?") {
-      expression += "[^/]";
-    } else if (character === "{") {
-      if (braces.length >= INIT_WORKSPACE_BRACE_DEPTH) return undefined;
-      braces.push(false);
-      expression += "(?:";
-    } else if (character === "," && braces.length > 0) {
-      braces[braces.length - 1] = true;
-      expression += "|";
+function initExpandBraces(
+  pattern: string,
+  budget: { left: number },
+  depth = 0,
+): string[] | undefined {
+  const open = pattern.indexOf("{");
+  if (open < 0) {
+    if (pattern.includes("}")) return undefined;
+    budget.left -= 1;
+    return budget.left < 0 ? undefined : [pattern];
+  }
+  if (depth >= INIT_WORKSPACE_BRACE_DEPTH) return undefined;
+  let level = 0;
+  let close = -1;
+  const cuts: number[] = [open];
+  for (let index = open; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === "{") {
+      level += 1;
     } else if (character === "}") {
-      if (braces.pop() !== true) return undefined;
-      expression += ")";
-    } else if (character === "[") {
-      const close = pattern.indexOf("]", index + 2);
-      const body = close < 0 ? "" : pattern.slice(index + 1, close);
-      if (body.length === 0 || /[[/]/u.test(body)) return undefined;
-      const negated = body.startsWith("!") || body.startsWith("^");
-      const members = (negated ? body.slice(1) : body).replace(/[\\^\]]/gu, "\\$&");
-      if (members.length === 0) return undefined;
-      expression += `(?:(?!/)[${negated ? "^" : ""}${members}])`;
-      index = close;
-    } else {
-      expression += character.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+      level -= 1;
+      if (level === 0) {
+        close = index;
+        break;
+      }
+    } else if (character === "," && level === 1) {
+      cuts.push(index);
     }
   }
-  return braces.length === 0 ? new RegExp(`${expression}$`, "u") : undefined;
+  if (close < 0 || cuts.length < 2) return undefined;
+  cuts.push(close);
+  const prefix = pattern.slice(0, open);
+  const suffix = pattern.slice(close + 1);
+  const results: string[] = [];
+  for (let branch = 0; branch + 1 < cuts.length; branch += 1) {
+    const alternative = pattern.slice((cuts[branch] ?? 0) + 1, cuts[branch + 1]);
+    const expanded = initExpandBraces(`${prefix}${alternative}${suffix}`, budget, depth + 1);
+    if (expanded === undefined) return undefined;
+    results.push(...expanded);
+  }
+  return results;
+}
+
+type InitGlobToken =
+  | { kind: "literal"; value: string }
+  | { kind: "any" }
+  | { kind: "star" }
+  | { kind: "class"; negated: boolean; members: string };
+
+/** The tokens of one path segment: `*`, `?`, `[a-z]` and literal characters; undefined otherwise. */
+function initGlobTokens(segment: string): InitGlobToken[] | undefined {
+  const tokens: InitGlobToken[] = [];
+  for (let index = 0; index < segment.length; index += 1) {
+    const character = segment[index] ?? "";
+    if (character === "*") {
+      if (tokens[tokens.length - 1]?.kind !== "star") tokens.push({ kind: "star" });
+    } else if (character === "?") {
+      tokens.push({ kind: "any" });
+    } else if (character === "[") {
+      const close = segment.indexOf("]", index + 2);
+      if (close < 0) return undefined;
+      let members = segment.slice(index + 1, close);
+      if (members.includes("[")) return undefined;
+      const negated = members.startsWith("!") || members.startsWith("^");
+      if (negated) members = members.slice(1);
+      if (members.length === 0) return undefined;
+      tokens.push({ kind: "class", negated, members });
+      index = close;
+    } else {
+      tokens.push({ kind: "literal", value: character });
+    }
+  }
+  return tokens;
+}
+
+function initGlobTokenMatches(token: InitGlobToken, character: string): boolean {
+  if (token.kind === "literal") return token.value === character;
+  if (token.kind === "any") return true;
+  if (token.kind !== "class") return false;
+  let inside = false;
+  for (let index = 0; index < token.members.length && !inside; index += 1) {
+    const from = token.members[index] ?? "";
+    const range = token.members[index + 1] === "-" && index + 2 < token.members.length;
+    if (range) {
+      const to = token.members[index + 2] ?? "";
+      inside = character >= from && character <= to;
+      index += 2;
+    } else {
+      inside = character === from;
+    }
+  }
+  return inside !== token.negated;
+}
+
+/** Matches one segment against its tokens in time proportional to the product of their lengths. */
+function initGlobSegmentMatches(tokens: readonly InitGlobToken[], text: string): boolean {
+  let token = 0;
+  let position = 0;
+  let starToken = -1;
+  let starPosition = 0;
+  while (position < text.length) {
+    const current = tokens[token];
+    if (current?.kind === "star") {
+      starToken = token;
+      starPosition = position;
+      token += 1;
+    } else if (current !== undefined && initGlobTokenMatches(current, text[position] ?? "")) {
+      token += 1;
+      position += 1;
+    } else if (starToken >= 0) {
+      token = starToken + 1;
+      starPosition += 1;
+      position = starPosition;
+    } else {
+      return false;
+    }
+  }
+  while (tokens[token]?.kind === "star") token += 1;
+  return token === tokens.length;
+}
+
+type InitGlobSegment = "**" | InitGlobToken[];
+
+/** The segments of a plain pattern; a whole `**` segment spans any number of directories. */
+function initGlobSegments(pattern: string): InitGlobSegment[] | undefined {
+  if (pattern.includes("\\") || pattern.includes("(") || pattern.includes(")")) return undefined;
+  const segments: InitGlobSegment[] = [];
+  for (const segment of pattern.split("/")) {
+    if (segment === "**") {
+      if (segments[segments.length - 1] !== "**") segments.push("**");
+      continue;
+    }
+    const tokens = initGlobTokens(segment);
+    if (tokens === undefined) return undefined;
+    segments.push(tokens);
+  }
+  return segments;
+}
+
+/** Whether the pattern selects the whole path, by dynamic programming over its segments. */
+function initGlobMatchesPath(
+  pattern: readonly InitGlobSegment[],
+  path: readonly string[],
+): boolean {
+  let next: boolean[] = [...path.map(() => false), true];
+  for (let index = pattern.length - 1; index >= 0; index -= 1) {
+    const part = pattern[index] as InitGlobSegment;
+    const current: boolean[] = new Array<boolean>(path.length + 1).fill(false);
+    for (let position = path.length; position >= 0; position -= 1) {
+      if (part === "**") {
+        current[position] =
+          next[position] === true || (position < path.length && current[position + 1] === true);
+      } else {
+        current[position] =
+          position < path.length &&
+          next[position + 1] === true &&
+          initGlobSegmentMatches(part, path[position] ?? "");
+      }
+    }
+    next = current;
+  }
+  return next[0] === true;
 }
 
 /**
  * Whether a directory, given relative to the workspace root, is selected by its patterns:
- * undefined when a pattern is outside the supported subset, as the declaration is then not
- * understood and nothing may be inferred from it.
+ * undefined when a pattern is outside the supported subset or past a bound, as the declaration is
+ * then not understood and nothing may be inferred from it. Matching never backtracks beyond a
+ * product of lengths, and patterns, alternations and path length are bounded before any matching.
  */
 function initWorkspaceDeclaresMember(
   patterns: readonly string[],
   relative: string,
 ): boolean | undefined {
   if (patterns.length > INIT_WORKSPACE_PATTERN_COUNT) return undefined;
+  if (relative.length > INIT_WORKSPACE_PATH_LENGTH) return undefined;
+  const path = relative.split("/");
+  const budget = { left: INIT_WORKSPACE_PATTERN_COUNT };
   let included = false;
   let excluded = false;
   for (const raw of patterns) {
+    if (raw.length > INIT_WORKSPACE_PATTERN_LENGTH + 1) return undefined;
     const negated = raw.startsWith("!");
-    const pattern = (negated ? raw.slice(1) : raw).replace(/^\.\//u, "").replace(/\/+$/u, "");
+    let pattern = negated ? raw.slice(1) : raw;
+    if (pattern.startsWith("./")) pattern = pattern.slice(2);
+    while (pattern.endsWith("/")) pattern = pattern.slice(0, -1);
     if (pattern.length === 0 || pattern.startsWith("/") || pattern.split("/").includes("..")) {
       continue;
     }
-    const expression = initWorkspacePatternExpression(pattern);
-    if (expression === undefined) return undefined;
-    if (expression.test(relative)) {
-      if (negated) excluded = true;
-      else included = true;
+    if (pattern.length > INIT_WORKSPACE_PATTERN_LENGTH) return undefined;
+    const expansions = initExpandBraces(pattern, budget);
+    if (expansions === undefined) return undefined;
+    for (const expansion of expansions) {
+      const segments = initGlobSegments(expansion);
+      if (segments === undefined) return undefined;
+      if (initGlobMatchesPath(segments, path)) {
+        if (negated) excluded = true;
+        else included = true;
+      }
     }
   }
   return included && !excluded;

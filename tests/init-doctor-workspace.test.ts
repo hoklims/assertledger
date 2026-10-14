@@ -345,6 +345,11 @@ describe("a workspace member inherits the package manager of its workspace root"
       ["pnpm-workspace.yaml", "packages:\n  - '{domains,tools}/*/api'\n"],
       ["pnpm-workspace.yaml", "packages: ['domains/[a-z]/api']\n"],
       ["pnpm-workspace.yaml", "packages:\n  - 'domains/{x,y}/{api,web}'\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - '**/api'\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/x/ap?'\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/[!a-c]/api'\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/**'\n"],
+      ["pnpm-workspace.yaml", "packages:\n  - 'domains/*/*'\n  - '!domains/*/web'\n"],
     ] as const;
     for (const [file, content] of selecting) {
       const base = await tree({
@@ -362,6 +367,13 @@ describe("a workspace member inherits the package manager of its workspace root"
     }
 
     const refused = [
+      // Understood, and not selecting the member.
+      "packages:\n  - 'domains/[^x]/api'\n",
+      "packages:\n  - 'domains/y/api'\n",
+      "packages:\n  - 'domains/x/ap'\n",
+      "packages:\n  - 'domains/*'\n",
+      "packages:\n  - 'domains/*/*'\n  - '!domains/x/*'\n",
+      // Not understood.
       "packages:\n  - 'domains/+(x|y)/api'\n",
       "packages:\n  - 'domains/{1..3}/api'\n",
       "packages:\n  - 'domains/[[:alpha:]]/api'\n",
@@ -507,17 +519,79 @@ describe("a workspace member inherits the package manager of its workspace root"
       `${"{a,".repeat(5_000)}x${"}".repeat(5_000)}`,
       `${"**/".repeat(200)}api`,
       "*".repeat(300),
-      `{{{{{a,b},c},d},e},f}/*/api`,
+      // Forty alternations of two branches: 2^40 paths for a backtracking matcher.
+      `${"{a,a}".repeat(40)}/api`,
+      // Nested deeper than the limit.
+      `${"{a,".repeat(9)}x${"}".repeat(9)}/*/api`,
     ];
     for (const pattern of hostile) {
+      const started = performance.now();
       const result = await run(["domains/*/api", pattern]);
       assert.equal(result.status, "CONFLICT", pattern.slice(0, 40));
       assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"], pattern.slice(0, 40));
+      // Generous: the point is that it ends, not how fast.
+      assert(performance.now() - started < 10_000, pattern.slice(0, 40));
     }
     // Ordinary nesting and wildcards stay inside the limits.
     const ordinary = await run(["{apps,{domains,tools}}/*/api"]);
     assert.equal(ordinary.status, "WOULD_CREATE");
     assert.equal(ordinary.detections.packageManager, "pnpm");
+  });
+
+  it("matches wildcard runs without backtracking", { timeout: 60_000 }, async () => {
+    // Eight `*a` groups against a directory of one hundred and twenty `a`: polynomial of degree 8
+    // for a backtracking regular expression, which never ends; a product of lengths here.
+    const directory = "a".repeat(120);
+    const base = await tree({
+      ".git/": "",
+      "pnpm-workspace.yaml": `packages:\n  - 'domains/${"*a".repeat(8)}*b/api'\n`,
+      "pnpm-lock.yaml": "",
+      [`domains/${directory}/api/package.json`]: JSON.stringify({ name: "api" }),
+      [`domains/${directory}/api/a.spec.ts`]: BUN_SPEC,
+    });
+    const started = performance.now();
+    const result = await initializeRepository(path.join(base, "domains", directory, "api"), {
+      dryRun: true,
+      testCommand: { executable: "bun", arguments: ["test"] },
+    });
+    assert.equal(result.status, "CONFLICT");
+    assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+    assert(performance.now() - started < 10_000);
+  });
+
+  it("reads a large hostile pnpm-workspace.yaml in linear time", { timeout: 60_000 }, async () => {
+    const run = async (content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        ...member(),
+      });
+      const started = performance.now();
+      const result = await initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+      return { result, elapsed: performance.now() - started };
+    };
+    const cases = [
+      // A flow list of ~60,000 lines that never closes: rescanned per line, it is quadratic.
+      `packages: [\n${"  'x/*',\n".repeat(60_000)}`,
+      // The same list closed, far beyond the pattern budget.
+      `packages: [\n${"  'x/*',\n".repeat(60_000)}]\n`,
+      // Whitespace runs that make comment and item expressions backtrack.
+      `packages:\n  -${" ".repeat(900_000)}\n  - 'domains/*/api' ${" ".repeat(50_000)}\n`,
+      `packages:\n${" ".repeat(900_000)}x\n  - 'domains/*/api'\n`,
+    ];
+    for (const content of cases) {
+      const { result, elapsed } = await run(content);
+      assert.equal(result.status === "WOULD_CREATE" || result.status === "CONFLICT", true);
+      assert(elapsed < 20_000, `${elapsed} ms for ${content.slice(0, 30)}`);
+    }
+    // A flow list that closes after many lines is read once and still selects the member.
+    const closed = await run(`packages: [\n${"  'x/*',\n".repeat(200)}  'domains/*/api'\n]\n`);
+    assert.equal(closed.result.status, "WOULD_CREATE");
+    assert.equal(closed.result.detections.packageManager, "pnpm");
   });
 
   it("does not read package.json workspaces when pnpm-workspace.yaml cannot be read", async () => {

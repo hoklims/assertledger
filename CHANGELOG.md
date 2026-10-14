@@ -13,10 +13,10 @@
   `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. When `pnpm-workspace.yaml` exists it alone declares the
   members, as in pnpm. Patterns are read in the subset the managers share (`*`, `**`, `?`, `{a,b}`,
   `[a-z]`), including inside a single-line or multiline YAML flow list; other syntax infers
-  nothing, as do patterns beyond fixed bounds (256 characters, 4 nested braces, 16 wildcards, 4,096
-  patterns), and so does a
-  `pnpm-workspace.yaml` that exists but cannot be read (oversized, a link). Each manager keeps its
-  own declaration: the array
+  nothing, as do patterns beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and
+  alternations in total, 1,024-character paths), and so does a `pnpm-workspace.yaml` that exists but
+  cannot be read (oversized, a link). Matching and YAML parsing are linear: no regular expression
+  is built from a pattern. Each manager keeps its own declaration: the array
   `workspaces` form is npm, Yarn and Bun's, the object form Yarn and Bun's, and a lone manager that
   does not own it, such as a Python manager, selects nothing. A workspace root `package.json` that
   is not valid JSON returns `PACKAGE_MANIFEST_INVALID`. The inherited facts are read again before
