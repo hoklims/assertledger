@@ -756,6 +756,10 @@ describe("a workspace member inherits the package manager of its workspace root"
       `catalog: [}\n${packages}`,
       `${packages}catalog: {a: [b}]\n`,
       `${packages}catalog: [a, {b: c]}\n`,
+      // A tab in the indentation is not valid YAML.
+      "packages:\n\t- 'domains/*/api'\n",
+      "packages:\n  \t- 'domains/*/api'\n",
+      "\tpackages: ['domains/*/api']\n",
       // Whitespace other than space and tab is content in YAML, not separation: the file is
       // not read rather than trimmed into a different pattern.
       "packages:\n  - 'domains/*/api'\n  - domains/x \n",
@@ -813,6 +817,9 @@ describe("a workspace member inherits the package manager of its workspace root"
     for (const content of [
       "﻿packages: ['domains/*/api']\n",
       "﻿packages:\n  - 'domains/*/api'\n",
+      // A tab separates tokens, it does not indent.
+      "packages:\t['domains/*/api']\n",
+      "packages:\n  - 'domains/*/api'\t# comment\n",
       // YAML lines end with `\r`, `\n` or `\r\n`.
       "packages:\r  - 'domains/*/api'\r",
       "packages: ['domains/*/api']\r",
@@ -867,6 +874,28 @@ describe("a workspace member inherits the package manager of its workspace root"
     // A name that only contains the word is an ordinary directory.
     const result = await run("packages/my_node_modules", "packages:\n  - 'packages/*'\n");
     assert.equal(result.status, "WOULD_CREATE");
+  });
+
+  it("does not let a member with an unusable packageManager inherit its workspace's", async () => {
+    const run = async (field: unknown) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": "packages: ['domains/*/api']\n",
+        "pnpm-lock.yaml": "",
+        ...member({ packageManager: field }),
+      });
+      return initializeRepository(path.join(base, "domains", "x", "api"), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const field of [42, true, null, { name: "pnpm" }, ["pnpm@12"]]) {
+      const result = await run(field);
+      assert.equal(result.status, "CONFLICT", JSON.stringify(field));
+      assert.deepEqual(result.reasonCodes, ["PACKAGE_MANAGER_INVALID"], JSON.stringify(field));
+    }
+    // Absent, the member inherits as before.
+    assert.equal((await run(undefined)).status, "WOULD_CREATE");
   });
 
   it("refuses a workspace root packageManager that is not a string", async () => {
@@ -1237,6 +1266,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["npx bun test tests", "bun:test"],
     ["npx --package bun bun test tests", "bun:test"],
     ["npx -p bun bun test tests", "bun:test"],
+    // The value of a launcher's option is not the program that owns `--test`.
+    ["npx --package tsx tsx --test tests", "node:test"],
+    ["npx -p tsx tsx --test tests", "node:test"],
     ["env -u FOO bun test tests", "bun:test"],
     ["env --unset=FOO CI=1 bun test tests", "bun:test"],
     ["env -C . bun test tests", "bun:test"],

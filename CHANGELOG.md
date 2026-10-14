@@ -7,7 +7,8 @@
   `init` accepts is now reproducible by `doctor`: these flags take the same values as for `init`
   (`-` for stdin, a path such as `-adapter.json`). The MCP `assertledger_doctor` input is unchanged.
 - A package of a pnpm workspace (a directory with a `package.json`) that declares no package
-  manager now inherits it from the nearest `pnpm-workspace.yaml` when it selects the package
+  manager (a `packageManager` field that is not a string is `PACKAGE_MANAGER_INVALID`, not an
+  absent one) now inherits it from the nearest `pnpm-workspace.yaml` when it selects the package
   (the search stops there, as pnpm's does), within the same repository and never above a `.git`.
   Quoted scalars are decoded (`''`), and an escape a pattern cannot hold is refused. This
   previously returned
@@ -21,7 +22,7 @@
   wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does),
   redundant separators and `.` segments are normalized, a directory below `node_modules` or
   `bower_components` is never selected, a leading byte-order mark is skipped, lines may end with
-  `\r`, parent segments are normalized (`packages/../other/a`), a class `[.]` spells a dot, a comma
+  `\r`, a line indented with a tab makes the file unread, parent segments are normalized (`packages/../other/a`), a class `[.]` spells a dot, a comma
   inside a class is not a brace separator, and an equally indented root mapping is read from its
   column; Unicode whitespace other
   than space and tab anywhere in the file, a lone quote

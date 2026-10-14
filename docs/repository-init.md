@@ -47,7 +47,8 @@ assertledger doctor packages/api --framework bun:test --package-manager pnpm \
 ```
 
 In a pnpm workspace, a package that has a `package.json`, declares no package manager and receives
-no `--package-manager` looks for its workspace. The search starts in the parent directory and stops
+no `--package-manager` looks for its workspace (a `packageManager` field of a type no manager
+reads, such as a number, is `PACKAGE_MANAGER_INVALID` instead of an absent one). The search starts in the parent directory and stops
 at the nearest `pnpm-workspace.yaml`, as pnpm does: when its `packages` patterns, minus `!`
 exclusions, select the package directory, it reads that directory's `package.json`
 `packageManager` field (one that is not a string is `PACKAGE_MANAGER_INVALID`) and JavaScript
@@ -74,7 +75,8 @@ alternative separator, and a directory below `node_modules` or
 is skipped, and a document that indents its whole root mapping equally is read from that column;
 content to its left makes the file declare nothing. Lines end with `\r\n`, `\r` or `\n`. YAML
 separates with spaces and tabs only, so a file that holds any other Unicode whitespace (such as a
-non-breaking space) is not read. The value of any other key is not read, but one that opens with a quote or a flow
+non-breaking space) is not read, nor is one whose line is indented with a tab. The value of any
+other key is not read, but one that opens with a quote or a flow
 bracket must be closed by the bracket its opener asks for (`[}` is not), with nothing after it,
 and a `-` at column 0 must continue the block sequence that is the value of the key above it (a
 root mapping cannot turn into a sequence), or the file declares nothing. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and

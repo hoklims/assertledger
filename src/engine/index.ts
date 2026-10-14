@@ -1385,7 +1385,9 @@ function initNodeRunnerFlag(words: readonly string[], declared: boolean): number
     while (
       position >= 1 &&
       ((words[position] ?? "").startsWith("-") ||
-        initNodeOptionTakesValue(words[position - 1] ?? ""))
+        initNodeOptionTakesValue(words[position - 1] ?? "") ||
+        // The value of a launcher's option (`npx --package tsx tsx --test`) is no program.
+        INIT_LAUNCHER_VALUE_OPTIONS.has(words[position - 1] ?? ""))
     ) {
       position -= 1;
     }
@@ -1977,6 +1979,8 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
     let line = initYamlStripComment(raw);
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    // A tab may separate tokens but never indents a line: such a file is not valid YAML.
+    if (/^ *\t/u.test(line)) return [];
     if (!/^(?:---|\.\.\.)(?:\s|$)/u.test(line)) {
       const indent = line.length - line.trimStart().length;
       rootIndent ??= indent;
@@ -2723,6 +2727,13 @@ export async function initializeRepository(
   let managerFromWorkspaceRoot = false;
   let workspaceFactsKey = "";
   if (packageManager === undefined && packageDocument !== undefined) {
+    // A package that has a `packageManager` field of a type no manager reads has stated
+    // something unusable: it does not inherit its workspace's manager instead.
+    if (packageManagerField !== undefined && typeof packageManagerField !== "string") {
+      return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_INVALID"]), [
+        "PACKAGE_MANAGER_INVALID",
+      ]);
+    }
     const workspace = await initWorkspaceRootFacts(root);
     if (workspace?.invalidManifest === true) {
       return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANIFEST_INVALID"]), [
