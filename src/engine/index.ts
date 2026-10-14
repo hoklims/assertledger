@@ -1459,6 +1459,9 @@ function initEffectiveLauncher(words: readonly string[]): { start: number; launc
     : { start: 0, launcher: "" };
 }
 
+// Executables that run, after their own options, the program that follows (`pnpx` is `pnpm dlx`).
+const INIT_DIRECT_LAUNCHERS = new Set(["npx", "bunx", "pnpx", "c8", "nyc"]);
+
 // Options of `npx`, `bunx` and `npm exec` that take a value (`--opt=value` is one word).
 const INIT_LAUNCHER_VALUE_OPTIONS = new Set([
   "--package",
@@ -1549,7 +1552,7 @@ function initLaunchedProgram(words: readonly string[]): number {
     );
     const runsScript = words.slice(start + 1, index < 0 ? 0 : index).includes("run");
     if (index >= 0 && !runsScript) cursor = index + 1;
-  } else if (launcher === "npx" || launcher === "bunx" || launcher === "c8" || launcher === "nyc") {
+  } else if (INIT_DIRECT_LAUNCHERS.has(launcher)) {
     cursor = start + 1;
   } else if (launcher === "env" || launcher === "cross-env") {
     cursor = start + 1;
@@ -1616,6 +1619,16 @@ const INIT_BUN_GLOBAL_SWITCHES = new Set([
   "--prefer-latest",
   "--if-present",
   "--no-clear-screen",
+  "--expose-gc",
+  "--no-deprecation",
+  "--throw-deprecation",
+  "--zero-fill-buffers",
+  "--no-addons",
+  "--no-macros",
+  "--inspect",
+  "--inspect-wait",
+  "--inspect-brk",
+  "-i",
 ]);
 const INIT_BUN_GLOBAL_VALUE_OPTIONS = new Set([
   "--cwd",
@@ -1824,10 +1837,12 @@ function initYamlUnquote(value: string): string | undefined {
   const first = text[0];
   if (text.length < 2 || (first !== "'" && first !== '"') || !text.endsWith(first)) {
     // A plain scalar must be a string: a number, a boolean, null, a mapping entry, a flow
-    // collection, an anchor, an alias, a tag or a block scalar header is not a pattern.
+    // collection, an anchor, an alias, a tag, a block scalar header, a nested sequence item
+    // (`- - x`), a complex key (`? x`) or a reserved indicator is not a pattern.
     if (
       INIT_YAML_NOT_A_STRING.test(text) ||
-      /^[[{&*!|>]/u.test(text) ||
+      /^[[{&*!|>@`]/u.test(text) ||
+      /^[-?:](?:\s|$)/u.test(text) ||
       text.includes(": ") ||
       text.endsWith(":")
     ) {
@@ -2154,6 +2169,22 @@ function initBraceNesting(pattern: string): number {
   return deepest;
 }
 
+/** The first index of `character` that is not inside a `[...]` class, or -1. */
+function initIndexOutsideClasses(pattern: string, character: string): number {
+  for (let index = 0; index < pattern.length; index += 1) {
+    const current = pattern[index];
+    if (current === "[") {
+      const close = pattern.indexOf("]", index + 2);
+      if (close >= 0) {
+        index = close;
+        continue;
+      }
+    }
+    if (current === character) return index;
+  }
+  return -1;
+}
+
 /**
  * Expands the `{a,b}` alternations of a workspace pattern into the plain patterns they stand for.
  * Each pattern produced spends `budget`, so a repository cannot make the expansion grow without
@@ -2162,9 +2193,9 @@ function initBraceNesting(pattern: string): number {
  * is bounded by the caller.
  */
 function initExpandBraces(pattern: string, budget: { left: number }): string[] | undefined {
-  const open = pattern.indexOf("{");
+  const open = initIndexOutsideClasses(pattern, "{");
   if (open < 0) {
-    if (pattern.includes("}")) return undefined;
+    if (initIndexOutsideClasses(pattern, "}") >= 0) return undefined;
     budget.left -= 1;
     return budget.left < 0 ? undefined : [pattern];
   }

@@ -69,7 +69,7 @@ whether it negates. A wildcard (`*`, `**`, `?`, a class) does not select a direc
 with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
 `packages/.*`, `packages/[.]hidden`) does, as in pnpm. Redundant separators, `.` and `..` segments
 in a pattern (`packages//a`, `./packages/a`, `packages/../other/a`) are normalized, a pattern that
-climbs out of the workspace root is ignored, a `,` inside a class (`{[a,b],x}`) is not an
+climbs out of the workspace root is ignored, a `,` or a brace inside a class (`{[a,b],x}`, `[{}]`) is not an
 alternative separator, and a directory below `node_modules` or
 `bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
 is skipped, and a document that indents its whole root mapping equally is read from that column;
@@ -83,7 +83,8 @@ root mapping cannot turn into a sequence), or the file declares nothing. A `#` i
 a double-quoted escape other than `\\`, `\"` and `\/` is refused, as is a lone quote inside a
 quoted scalar. Anything else declares nothing and infers nothing: another syntax, another shape
 under `packages` (a mapping, a nested sequence), an entry that is not a string (a number, a
-boolean, `null`, `~`, an empty item, a mapping or a list), a top-level line that is neither a
+boolean, `null`, `~`, an empty item, a nested sequence item such as `- - x`, a mapping or a
+list), a top-level line that is neither a
 `key: value` entry, a comment nor a document marker, text
 after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
 than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a
@@ -123,7 +124,7 @@ itself (`./node`) is never read as a script given to Node. A `--` that precedes 
 belongs to the launcher (`npm exec -- node --test`). From a package script, the program that owns
 `--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`) and the
 program the command dispatches: the command itself, or what a launcher runs right after its own
-options (`npx`, `bunx`, `npm`/`pnpm`/`yarn` after `exec` or `dlx`, `env` and `cross-env`
+options (`npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn` after `exec` or `dlx`, `env` and `cross-env`
 assignments, `dotenv --`, `c8`, `nyc`, behind `corepack` when it dispatches a package manager).
 So `echo --test`, `echo node --test` and `npm exec -- echo node --test` are not Node's runner,
 and neither is `npm run node --test`, which runs the script called `node` (a program only follows

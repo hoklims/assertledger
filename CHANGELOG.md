@@ -23,7 +23,7 @@
   redundant separators and `.` segments are normalized, a directory below `node_modules` or
   `bower_components` is never selected, a leading byte-order mark is skipped, lines may end with
   `\r`, a line indented with a tab makes the file unread, parent segments are normalized (`packages/../other/a`), a class `[.]` spells a dot, a comma
-  inside a class is not a brace separator, and an equally indented root mapping is read from its
+  or a brace inside a class is not a brace separator, and an equally indented root mapping is read from its
   column; Unicode whitespace other
   than space and tab anywhere in the file, a lone quote
   inside a quoted scalar, a top-level line that is not a `key: value` entry, a comment or a

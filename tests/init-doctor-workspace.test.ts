@@ -387,6 +387,9 @@ describe("a workspace member inherits the package manager of its workspace root"
       // Understood, and not selecting the member.
       "packages:\n  - 'domains/[^x]/api'\n",
       "packages:\n  - 'domains/y/api'\n",
+      // A nested sequence item is an object entry for the manager: not a pattern.
+      "packages:\n  - 'domains/*/api'\n  - - 'other/*'\n",
+      "packages:\n  - 'domains/*/api'\n  - ? x\n",
       // `..` is normalized: this is `domains/y/api`.
       "packages:\n  - 'domains/x/../y/api'\n",
       "packages:\n  - 'domains/x/ap'\n",
@@ -956,6 +959,34 @@ describe("a workspace member inherits the package manager of its workspace root"
     assert.equal((await run("pnpm@12.11.2")).status, "WOULD_CREATE");
   });
 
+  it("reads braces held in a character class as characters", async () => {
+    const run = async (directory: string, content: string) => {
+      const base = await tree({
+        ".git/": "",
+        "pnpm-workspace.yaml": content,
+        "pnpm-lock.yaml": "",
+        [`${directory}/package.json`]: JSON.stringify({ name: "api" }),
+        [`${directory}/a.spec.ts`]: BUN_SPEC,
+      });
+      return initializeRepository(path.join(base, ...directory.split("/")), {
+        dryRun: true,
+        testCommand: { executable: "bun", arguments: ["test"] },
+      });
+    };
+    for (const [directory, content] of [
+      ["domains/{/api", "packages:\n  - 'domains/[{}]/api'\n"],
+      ["domains/}/api", "packages:\n  - 'domains/[{}]/api'\n"],
+      ["domains/{/api", "packages:\n  - 'domains/{[{}],z}/api'\n"],
+      ["domains/z/api", "packages:\n  - 'domains/{[{}],z}/api'\n"],
+    ] as const) {
+      const result = await run(directory, content);
+      assert.equal(result.status, "WOULD_CREATE", `${directory} ${content}`);
+    }
+    const refused = await run("domains/x/api", "packages:\n  - 'domains/[{}]/api'\n");
+    assert.equal(refused.status, "CONFLICT");
+    assert.deepEqual(refused.reasonCodes, ["PACKAGE_MANAGER_UNDETECTED"]);
+  });
+
   it("does not let a wildcard select a dot-prefixed directory", async () => {
     const run = async (directory: string, content: string) => {
       const base = await tree({
@@ -1319,6 +1350,9 @@ describe("a command that does not run the framework directly is named as such", 
     ["corepack pnpm exec node --test tests", "node:test"],
     ["npx --package tsx tsx --test tests", "node:test"],
     ["npx -p tsx tsx --test tests", "node:test"],
+    ["pnpx tsx --test tests", "node:test"],
+    ["pnpx bun test tests", "bun:test"],
+    ["bun --expose-gc test tests", "bun:test"],
     ["env -u FOO bun test tests", "bun:test"],
     ["env --unset=FOO CI=1 bun test tests", "bun:test"],
     ["env -C . bun test tests", "bun:test"],
