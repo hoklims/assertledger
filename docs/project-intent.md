@@ -54,7 +54,7 @@ Le registre contient 45 schémas JSON : les 34 figés par le verrou de conforman
 extensions, verrouillées sans modifier le bundle v1.
 L’ancien décompte de 30 dans la roadmap était périmé.
 
-Les adaptateurs officiels intégrés sont `node:test` et `bun:test`. Ce dernier est limité à Bun 1.4.2
+Les adaptateurs officiels intégrés sont `node:test` et `bun:test`. Ce dernier est limité à Bun 1.4.3
 et aux assertions explicites du helper `assertSame` ; les échecs natifs de `expect` ne deviennent pas
 des preuves d’assertion. Le protocole `testforge-command` permet d’intégrer un autre framework avec
 un adaptateur fourni par l’opérateur. Détecter Vitest, Jest ou pytest pendant `init` ne fournit pas

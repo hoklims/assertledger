@@ -24,13 +24,13 @@ configuration inspection or executable probes. Unknown flags, repeated flags, an
 ## What it checks
 
 Version 1.0 supports the generated official `node:test` adapter. Version 2.0 supports the
-generated official `bun:test` adapter on the qualified Bun 1.4.2 revision. Both fail closed for
+generated official `bun:test` adapter on the qualified Bun 1.4.3 revision. Both fail closed for
 other frameworks and operator-supplied adapters. In order, they check:
 
 1. explicit trusted-local authorization;
 2. a current AssertLedger configuration and evidence lock;
 3. the supported generated adapter;
-4. a stable Node.js executable at version 22.15 or newer, or the exact Bun 1.4.2 revision;
+4. a stable Node.js executable at version 22.15 or newer, or the exact Bun 1.4.3 revision;
 5. availability of the runner's built-in test module;
 6. permission to create, write, and clean up an operating-system temporary workspace;
 7. controlled reporter discovery, liveness, and attribution probes.

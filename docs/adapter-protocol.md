@@ -90,7 +90,7 @@ The official Bun profile accepts a verification request with:
 }
 ```
 
-It is qualified for Bun `1.4.2` revision `744846f844374847c902b5e7fd59b4342a51ef99`
+It is qualified for Bun `1.4.3` revision `c6da4a4d3010e5553438c60f6bd76d981976867c`
 using a controlled `bun:test` preload on explicitly unsandboxed `trusted-local` execution.
 The container backend is refused. The engine resolves and hashes the Bun executable, checks its
 version and revision twice, hashes its bundled driver, preload and assertion helper, and records all of

@@ -86,7 +86,7 @@ function scopedAssertSame(...arguments_) {
 // Only a built-in matcher can issue an owned failure, and only when its message has Bun's matcher
 // form. Usage errors and custom matchers stay ordinary errors. The driver loads this preload before
 // any repository preload, so the functions found here are Bun's own; a matcher is built in only
-// when Bun 1.4.2 ships it under that name and, when called, it is still that function. expect.extend
+// when Bun 1.4.3 ships it under that name and, when called, it is still that function. expect.extend
 // installs a custom matcher, even one reusing a built-in name, as a different native function.
 const BUN_BUILT_IN_MATCHERS = [
   "fail",

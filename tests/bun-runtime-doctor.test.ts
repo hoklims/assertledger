@@ -27,7 +27,7 @@ it("qualifies the generated Bun adapter with controlled callback probes", async 
     assert.equal(result.status, "READY", JSON.stringify(result));
     assert.equal(result.schemaVersion, "2.0.0");
     assert.equal(result.adapter, "bun:test");
-    assert.equal(result.bunVersion, "1.4.2");
+    assert.equal(result.bunVersion, "1.4.3");
     assert.equal(result.reasonCodes.length, 0);
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

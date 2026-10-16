@@ -107,3 +107,14 @@ Recollect earlier qualification receipts under this mechanism. This changes the 
 qualification completion contract without changing frozen verification v1–v4 or digest
 projections. The lifecycle observation improves collection provenance; trusted-local remains
 unsandboxed, and neither a terminal record nor replay authenticates a malicious producer.
+
+## Bun 1.4.3
+
+The `bun-native` collector qualifies Bun 1.4.3 only, and the public profile is generated as
+`public-turbo-orchestration-2.11.7-bun-1.4.3` for Turbo 2.11.7 and pnpm 12.9.1. The collector
+and its driver changed, so the mechanism digest changed: receipts collected on Bun 1.4.2,
+including the `-bun-1.4.2` profile released in 1.5.0, still replay on their own bytes but do not
+validate in the new domain. They are preserved, not resealed; recollect on 1.4.3. No receipt
+for the new profile ships with the package. No schema, adapter contract version or digest
+projection changed. See
+[migration-bun-1.4.3.md](migration-bun-1.4.3.md).

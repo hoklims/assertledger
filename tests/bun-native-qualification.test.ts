@@ -52,7 +52,7 @@ test("rejects", async () => { await expect(Promise.reject(new Error("expected"))
   assert.equal(result.state, "COMPLETED");
   assert.equal(result.facts.testOutcome, "PASS");
   assert.equal(result.facts.testsDiscovered, 4);
-  assert.equal(result.runtime.bunRevision, "1.4.2+744846f84");
+  assert.equal(result.runtime.bunRevision, "1.4.3+c6da4a4d3");
   assert.match(result.runtime.preloadDigest, /^[a-f0-9]{64}$/);
 });
 

@@ -165,14 +165,16 @@ After initialization, [runtime doctor](docs/runtime-doctor.md) can check Node, t
 discovery and assertion attribution with `doctor --runtime --allow-unsafe-execution`.
 For a refusal, use `explain CODE` to get a safe next action.
 
-### Bun 1.4.2
+### Bun 1.4.3
 
 For a `bun:test` repository, run `assertledger doctor . --framework bun:test`. After `init` and
 the runtime doctor, author v3 regression candidates using `assertSame` from `assertledger/bun`.
-The Bun adapter pins version 1.4.2 and attributes failures from this helper. Native Bun `expect`
+The Bun adapter pins version 1.4.3 and attributes failures from this helper. Native Bun `expect`
 failures remain operational failures and cannot count as target detection. See the
 [Bun migration guide](docs/migration-verification-v3.md) for the request, execution and replay
 contract. The execution mode is explicitly unsandboxed and intended for trusted local code.
+The qualified runtime moved from 1.4.2; see the
+[Bun 1.4.3 migration note](docs/migration-bun-1.4.3.md).
 To verify an existing `bun:test` test by name, or to replay a recorded red/green witness, use a v4
 request or `import-witness`, which also run in a container or a declared Windows-native backend; see
 the [v4 migration guide](docs/migration-verification-v4.md). A v5 request or a v2 witness runs the
