@@ -234,12 +234,40 @@ const pascal = (base) =>
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join("");
 const camel = (base) => pascal(base)[0].toLowerCase() + pascal(base).slice(1);
-const refinedQualification = new Set([
-  "qualification-plan",
-  "qualification-execution-request",
-  "qualification-receipt",
-]);
+// A Zod refinement or transform anywhere in the schema tree is lost in the JSON Schema.
+const hasRefinement = (schema, seen = new Set()) => {
+  if (schema === null || typeof schema !== "object" || !schema._zod || seen.has(schema)) {
+    return false;
+  }
+  seen.add(schema);
+  const def = schema._zod.def;
+  if ((def.checks ?? []).some((check) => check._zod.def.check === "custom")) return true;
+  if (def.type === "custom" || def.type === "transform") return true;
+  const children = [
+    def.element,
+    def.innerType,
+    def.in,
+    def.out,
+    def.left,
+    def.right,
+    def.keyType,
+    def.valueType,
+    def.catchall,
+    def.rest,
+    ...(def.options ?? []),
+    ...(def.items ?? []),
+    ...Object.values(def.shape ?? {}),
+  ];
+  if (def.type === "lazy") children.push(def.getter());
+  return children.some((child) => hasRefinement(child, seen));
+};
+// A parser adds checks unless its compiled body is exactly safeParse, throw, return.
+const isPlainParser = (fn) =>
+  /^function \w+\(value\) \{\s*const parsed = \w+\.safeParse\(value\);\s*if \(!parsed\.success\) \{\s*throw new ContractError\([^;]*\);\s*\}\s*return parsed\.data;\s*\}$/.test(
+    Function.prototype.toString.call(fn),
+  );
 const contractRows = [];
+const partialFiles = new Set();
 for (const file of schemaFiles) {
   const match = /^([a-z0-9-]+)\.v(\d+)\.json$/.exec(file);
   if (!match) throw new Error(`unexpected schema file ${file}`);
@@ -255,11 +283,18 @@ for (const file of schemaFiles) {
   const commandName = major === "1" ? base : `${base}-v${major}`;
   const cli = cliSchemaNames.has(commandName) ? "yes" : "—";
   const mcp = mcpSchemaNames.has(commandName) ? "yes" : "—";
-  const refined = refinedQualification.has(base);
-  const status = exports.length === 0 ? "n/a" : refined ? "partial" : "equivalent";
-  const note = refined
-    ? "Zod refinements on relative paths, absolute runtime paths and environment names are not representable in the JSON Schema."
-    : "";
+  const [schemaName, parserName] = candidates;
+  if (!(schemaName in rootModule)) throw new Error(`no Zod schema for ${file}`);
+  const notes = [];
+  if (hasRefinement(rootModule[schemaName])) {
+    notes.push(`${code(schemaName)} has refinements the JSON Schema cannot express.`);
+  }
+  if (parserName in rootModule && !isPlainParser(rootModule[parserName])) {
+    notes.push(`${code(parserName)} enforces invariants beyond the schema.`);
+  }
+  const status = notes.length > 0 ? "partial" : "equivalent";
+  if (status === "partial") partialFiles.add(file);
+  const note = notes.join(" ");
   contractRows.push([`${code(file)}`, exports.map(ref).join(", ") || "—", cli, mcp, status, note]);
 }
 const versionedRows = [];
@@ -273,7 +308,7 @@ for (const name of rootNames.filter((n) => n.startsWith("parseVersioned"))) {
   versionedRows.push([
     ref(name),
     files.map(code).join(", ") || "none published",
-    files.length === 0 ? "partial" : "equivalent",
+    files.length === 0 || files.some((f) => partialFiles.has(f)) ? "partial" : "equivalent",
   ]);
 }
 
@@ -515,13 +550,20 @@ ${methodRows.length} methods: ${count(methodRows, 3, "equivalent")} equivalent, 
 
 ## Document contracts
 
-Each published schema in \`schemas/\` is the equivalent of the Zod schema, parser and JSON Schema
-function exported for that document. \`schema NAME\` prints it from the CLI and the MCP server when
-the name is accepted there; the file ships in the package either way.
+Each published schema in \`schemas/\` is the JSON Schema of the Zod schema exported for that
+document. \`schema NAME\` prints it from the CLI and the MCP server when the name is accepted there;
+the file ships in the package either way.
+
+A row is \`equivalent\` only when validating against the file accepts exactly what the exports
+accept. It is \`partial\` when the Zod schema holds a refinement, or when the parser runs checks
+after the schema (identifier uniqueness, digest bindings, cross-field consistency). Those checks
+reach a CLI or MCP user only through the command that parses the document.
 
 ${table(["Published schema", "Exports", "CLI `schema`", "MCP `schema`", "Status", "Note"], contractRows)}
 
-Versioned parsers dispatch on \`schemaVersion\` across the published versions:
+${contractRows.length} published schemas: ${count(contractRows, 4, "equivalent")} equivalent, ${count(contractRows, 4, "partial")} partial.
+
+Versioned parsers dispatch on \`schemaVersion\` to the parsers above:
 
 ${table(["Export", "Published schemas", "Status"], versionedRows)}
 

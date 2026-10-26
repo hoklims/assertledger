@@ -74,80 +74,87 @@ Statuses:
 
 ## Document contracts
 
-Each published schema in `schemas/` is the equivalent of the Zod schema, parser and JSON Schema
-function exported for that document. `schema NAME` prints it from the CLI and the MCP server when
-the name is accepted there; the file ships in the package either way.
+Each published schema in `schemas/` is the JSON Schema of the Zod schema exported for that
+document. `schema NAME` prints it from the CLI and the MCP server when the name is accepted there;
+the file ships in the package either way.
+
+A row is `equivalent` only when validating against the file accepts exactly what the exports
+accept. It is `partial` when the Zod schema holds a refinement, or when the parser runs checks
+after the schema (identifier uniqueness, digest bindings, cross-field consistency). Those checks
+reach a CLI or MCP user only through the command that parses the document.
 
 | Published schema | Exports | CLI `schema` | MCP `schema` | Status | Note |
 | --- | --- | --- | --- | --- | --- |
-| `agentic-benchmark-acquisition-replay-result.v1.json` | `AgenticBenchmarkAcquisitionReplayResultSchema`, `parseAgenticBenchmarkAcquisitionReplayResult`, `agenticBenchmarkAcquisitionReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-benchmark-acquisition-request.v1.json` | `AgenticBenchmarkAcquisitionRequestSchema`, `parseAgenticBenchmarkAcquisitionRequest`, `agenticBenchmarkAcquisitionRequestJsonSchema` | yes | yes | equivalent |  |
-| `agentic-benchmark-acquisition-result.v1.json` | `AgenticBenchmarkAcquisitionResultSchema`, `parseAgenticBenchmarkAcquisitionResult`, `agenticBenchmarkAcquisitionResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-benchmark-artifact.v1.json` | `AgenticBenchmarkArtifactSchema`, `parseAgenticBenchmarkArtifact`, `agenticBenchmarkArtifactJsonSchema` | yes | yes | equivalent |  |
-| `agentic-benchmark-replay-result.v1.json` | `AgenticBenchmarkReplayResultSchema`, `parseAgenticBenchmarkReplayResult`, `agenticBenchmarkReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-benchmark-request.v1.json` | `AgenticBenchmarkRequestSchema`, `parseAgenticBenchmarkRequest`, `agenticBenchmarkRequestJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-allocation-commitment-replay-result.v1.json` | `AgenticCorpusAllocationCommitmentReplayResultSchema`, `parseAgenticCorpusAllocationCommitmentReplayResult`, `agenticCorpusAllocationCommitmentReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-allocation-commitment.v1.json` | `AgenticCorpusAllocationCommitmentSchema`, `parseAgenticCorpusAllocationCommitment`, `agenticCorpusAllocationCommitmentJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-allocation-replay-result.v1.json` | `AgenticCorpusAllocationReplayResultSchema`, `parseAgenticCorpusAllocationReplayResult`, `agenticCorpusAllocationReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-allocation-request.v1.json` | `AgenticCorpusAllocationRequestSchema`, `parseAgenticCorpusAllocationRequest`, `agenticCorpusAllocationRequestJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-allocation-reveal.v1.json` | `AgenticCorpusAllocationRevealSchema`, `parseAgenticCorpusAllocationReveal`, `agenticCorpusAllocationRevealJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-allocation.v1.json` | `AgenticCorpusAllocationSchema`, `parseAgenticCorpusAllocation`, `agenticCorpusAllocationJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-experiment-artifact.v1.json` | `AgenticCorpusExperimentArtifactSchema`, `parseAgenticCorpusExperimentArtifact`, `agenticCorpusExperimentArtifactJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-experiment-plan-replay-result.v1.json` | `AgenticCorpusExperimentPlanReplayResultSchema`, `parseAgenticCorpusExperimentPlanReplayResult`, `agenticCorpusExperimentPlanReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-experiment-plan.v1.json` | `AgenticCorpusExperimentPlanSchema`, `parseAgenticCorpusExperimentPlan`, `agenticCorpusExperimentPlanJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-experiment-replay-request.v1.json` | `AgenticCorpusExperimentReplayRequestSchema`, `parseAgenticCorpusExperimentReplayRequest`, `agenticCorpusExperimentReplayRequestJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-experiment-replay-result.v1.json` | `AgenticCorpusExperimentReplayResultSchema`, `parseAgenticCorpusExperimentReplayResult`, `agenticCorpusExperimentReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-experiment-request.v1.json` | `AgenticCorpusExperimentRequestSchema`, `parseAgenticCorpusExperimentRequest`, `agenticCorpusExperimentRequestJsonSchema` | yes | yes | equivalent |  |
-| `agentic-corpus-provenance.v1.json` | `AgenticCorpusProvenanceSchema`, `parseAgenticCorpusProvenance`, `agenticCorpusProvenanceJsonSchema` | — | — | equivalent |  |
-| `agentic-corpus-trust-policy.v1.json` | `AgenticCorpusTrustPolicySchema`, `parseAgenticCorpusTrustPolicy`, `agenticCorpusTrustPolicyJsonSchema` | — | — | equivalent |  |
-| `agentic-profile-replay-result.v1.json` | `AgenticProfileReplayResultSchema`, `parseAgenticProfileReplayResult`, `agenticProfileReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `agentic-profile-replay-result.v2.json` | `AgenticProfileReplayResultV2Schema`, `parseAgenticProfileReplayResultV2`, `agenticProfileReplayResultV2JsonSchema` | yes | yes | equivalent |  |
-| `agentic-profile-report.v1.json` | `AgenticProfileReportSchema`, `parseAgenticProfileReport`, `agenticProfileReportJsonSchema` | yes | yes | equivalent |  |
-| `agentic-profile-report.v2.json` | `AgenticProfileReportV2Schema`, `parseAgenticProfileReportV2`, `agenticProfileReportV2JsonSchema` | yes | yes | equivalent |  |
-| `agentic-profile-request.v1.json` | `AgenticProfileRequestSchema`, `parseAgenticProfileRequest`, `agenticProfileRequestJsonSchema` | yes | yes | equivalent |  |
-| `agentic-profile-request.v2.json` | `AgenticProfileRequestV2Schema`, `parseAgenticProfileRequestV2`, `agenticProfileRequestV2JsonSchema` | yes | yes | equivalent |  |
-| `evidence-export-replay-result.v1.json` | `EvidenceExportReplayResultSchema`, `parseEvidenceExportReplayResult`, `evidenceExportReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `evidence-export-request.v1.json` | `EvidenceExportRequestSchema`, `parseEvidenceExportRequest`, `evidenceExportRequestJsonSchema` | yes | yes | equivalent |  |
-| `evidence-export.v1.json` | `EvidenceExportSchema`, `parseEvidenceExport`, `evidenceExportJsonSchema` | yes | yes | equivalent |  |
-| `evidence-manifest.v1.json` | `EvidenceManifestSchema`, `parseEvidenceManifest`, `evidenceManifestJsonSchema` | yes | yes | equivalent |  |
-| `evidence-manifest.v2.json` | `EvidenceManifestV2Schema`, `parseEvidenceManifestV2`, `evidenceManifestV2JsonSchema` | yes | — | equivalent |  |
-| `evidence-manifest.v3.json` | `EvidenceManifestV3Schema`, `parseEvidenceManifestV3`, `evidenceManifestV3JsonSchema` | yes | — | equivalent |  |
-| `evidence-manifest.v4.json` | `EvidenceManifestV4Schema`, `parseEvidenceManifestV4`, `evidenceManifestV4JsonSchema` | — | — | equivalent |  |
-| `evidence-manifest.v5.json` | `EvidenceManifestV5Schema`, `parseEvidenceManifestV5`, `evidenceManifestV5JsonSchema` | — | — | equivalent |  |
-| `evidence-provider-manifest.v1.json` | `EvidenceProviderManifestSchema`, `parseEvidenceProviderManifest`, `evidenceProviderManifestJsonSchema` | yes | yes | equivalent |  |
-| `qualification-execution-request.v1.json` | `QualificationExecutionRequestSchema`, `qualificationExecutionRequestJsonSchema` | yes | yes | partial | Zod refinements on relative paths, absolute runtime paths and environment names are not representable in the JSON Schema. |
-| `qualification-plan.v1.json` | `QualificationPlanSchema`, `parseQualificationPlan`, `qualificationPlanJsonSchema` | yes | yes | partial | Zod refinements on relative paths, absolute runtime paths and environment names are not representable in the JSON Schema. |
-| `qualification-receipt.v1.json` | `QualificationReceiptSchema`, `qualificationReceiptJsonSchema` | yes | yes | partial | Zod refinements on relative paths, absolute runtime paths and environment names are not representable in the JSON Schema. |
+| `agentic-benchmark-acquisition-replay-result.v1.json` | `AgenticBenchmarkAcquisitionReplayResultSchema`, `parseAgenticBenchmarkAcquisitionReplayResult`, `agenticBenchmarkAcquisitionReplayResultJsonSchema` | yes | yes | partial | `parseAgenticBenchmarkAcquisitionReplayResult` enforces invariants beyond the schema. |
+| `agentic-benchmark-acquisition-request.v1.json` | `AgenticBenchmarkAcquisitionRequestSchema`, `parseAgenticBenchmarkAcquisitionRequest`, `agenticBenchmarkAcquisitionRequestJsonSchema` | yes | yes | partial | `parseAgenticBenchmarkAcquisitionRequest` enforces invariants beyond the schema. |
+| `agentic-benchmark-acquisition-result.v1.json` | `AgenticBenchmarkAcquisitionResultSchema`, `parseAgenticBenchmarkAcquisitionResult`, `agenticBenchmarkAcquisitionResultJsonSchema` | yes | yes | partial | `parseAgenticBenchmarkAcquisitionResult` enforces invariants beyond the schema. |
+| `agentic-benchmark-artifact.v1.json` | `AgenticBenchmarkArtifactSchema`, `parseAgenticBenchmarkArtifact`, `agenticBenchmarkArtifactJsonSchema` | yes | yes | partial | `parseAgenticBenchmarkArtifact` enforces invariants beyond the schema. |
+| `agentic-benchmark-replay-result.v1.json` | `AgenticBenchmarkReplayResultSchema`, `parseAgenticBenchmarkReplayResult`, `agenticBenchmarkReplayResultJsonSchema` | yes | yes | partial | `parseAgenticBenchmarkReplayResult` enforces invariants beyond the schema. |
+| `agentic-benchmark-request.v1.json` | `AgenticBenchmarkRequestSchema`, `parseAgenticBenchmarkRequest`, `agenticBenchmarkRequestJsonSchema` | yes | yes | partial | `parseAgenticBenchmarkRequest` enforces invariants beyond the schema. |
+| `agentic-corpus-allocation-commitment-replay-result.v1.json` | `AgenticCorpusAllocationCommitmentReplayResultSchema`, `parseAgenticCorpusAllocationCommitmentReplayResult`, `agenticCorpusAllocationCommitmentReplayResultJsonSchema` | yes | yes | partial | `parseAgenticCorpusAllocationCommitmentReplayResult` enforces invariants beyond the schema. |
+| `agentic-corpus-allocation-commitment.v1.json` | `AgenticCorpusAllocationCommitmentSchema`, `parseAgenticCorpusAllocationCommitment`, `agenticCorpusAllocationCommitmentJsonSchema` | yes | yes | partial | `parseAgenticCorpusAllocationCommitment` enforces invariants beyond the schema. |
+| `agentic-corpus-allocation-replay-result.v1.json` | `AgenticCorpusAllocationReplayResultSchema`, `parseAgenticCorpusAllocationReplayResult`, `agenticCorpusAllocationReplayResultJsonSchema` | yes | yes | partial | `parseAgenticCorpusAllocationReplayResult` enforces invariants beyond the schema. |
+| `agentic-corpus-allocation-request.v1.json` | `AgenticCorpusAllocationRequestSchema`, `parseAgenticCorpusAllocationRequest`, `agenticCorpusAllocationRequestJsonSchema` | yes | yes | partial | `parseAgenticCorpusAllocationRequest` enforces invariants beyond the schema. |
+| `agentic-corpus-allocation-reveal.v1.json` | `AgenticCorpusAllocationRevealSchema`, `parseAgenticCorpusAllocationReveal`, `agenticCorpusAllocationRevealJsonSchema` | yes | yes | partial | `parseAgenticCorpusAllocationReveal` enforces invariants beyond the schema. |
+| `agentic-corpus-allocation.v1.json` | `AgenticCorpusAllocationSchema`, `parseAgenticCorpusAllocation`, `agenticCorpusAllocationJsonSchema` | yes | yes | partial | `parseAgenticCorpusAllocation` enforces invariants beyond the schema. |
+| `agentic-corpus-experiment-artifact.v1.json` | `AgenticCorpusExperimentArtifactSchema`, `parseAgenticCorpusExperimentArtifact`, `agenticCorpusExperimentArtifactJsonSchema` | yes | yes | partial | `parseAgenticCorpusExperimentArtifact` enforces invariants beyond the schema. |
+| `agentic-corpus-experiment-plan-replay-result.v1.json` | `AgenticCorpusExperimentPlanReplayResultSchema`, `parseAgenticCorpusExperimentPlanReplayResult`, `agenticCorpusExperimentPlanReplayResultJsonSchema` | yes | yes | partial | `parseAgenticCorpusExperimentPlanReplayResult` enforces invariants beyond the schema. |
+| `agentic-corpus-experiment-plan.v1.json` | `AgenticCorpusExperimentPlanSchema`, `parseAgenticCorpusExperimentPlan`, `agenticCorpusExperimentPlanJsonSchema` | yes | yes | partial | `parseAgenticCorpusExperimentPlan` enforces invariants beyond the schema. |
+| `agentic-corpus-experiment-replay-request.v1.json` | `AgenticCorpusExperimentReplayRequestSchema`, `parseAgenticCorpusExperimentReplayRequest`, `agenticCorpusExperimentReplayRequestJsonSchema` | yes | yes | partial | `parseAgenticCorpusExperimentReplayRequest` enforces invariants beyond the schema. |
+| `agentic-corpus-experiment-replay-result.v1.json` | `AgenticCorpusExperimentReplayResultSchema`, `parseAgenticCorpusExperimentReplayResult`, `agenticCorpusExperimentReplayResultJsonSchema` | yes | yes | partial | `parseAgenticCorpusExperimentReplayResult` enforces invariants beyond the schema. |
+| `agentic-corpus-experiment-request.v1.json` | `AgenticCorpusExperimentRequestSchema`, `parseAgenticCorpusExperimentRequest`, `agenticCorpusExperimentRequestJsonSchema` | yes | yes | partial | `parseAgenticCorpusExperimentRequest` enforces invariants beyond the schema. |
+| `agentic-corpus-provenance.v1.json` | `AgenticCorpusProvenanceSchema`, `parseAgenticCorpusProvenance`, `agenticCorpusProvenanceJsonSchema` | — | — | partial | `parseAgenticCorpusProvenance` enforces invariants beyond the schema. |
+| `agentic-corpus-trust-policy.v1.json` | `AgenticCorpusTrustPolicySchema`, `parseAgenticCorpusTrustPolicy`, `agenticCorpusTrustPolicyJsonSchema` | — | — | partial | `parseAgenticCorpusTrustPolicy` enforces invariants beyond the schema. |
+| `agentic-profile-replay-result.v1.json` | `AgenticProfileReplayResultSchema`, `parseAgenticProfileReplayResult`, `agenticProfileReplayResultJsonSchema` | yes | yes | partial | `parseAgenticProfileReplayResult` enforces invariants beyond the schema. |
+| `agentic-profile-replay-result.v2.json` | `AgenticProfileReplayResultV2Schema`, `parseAgenticProfileReplayResultV2`, `agenticProfileReplayResultV2JsonSchema` | yes | yes | partial | `parseAgenticProfileReplayResultV2` enforces invariants beyond the schema. |
+| `agentic-profile-report.v1.json` | `AgenticProfileReportSchema`, `parseAgenticProfileReport`, `agenticProfileReportJsonSchema` | yes | yes | partial | `parseAgenticProfileReport` enforces invariants beyond the schema. |
+| `agentic-profile-report.v2.json` | `AgenticProfileReportV2Schema`, `parseAgenticProfileReportV2`, `agenticProfileReportV2JsonSchema` | yes | yes | partial | `parseAgenticProfileReportV2` enforces invariants beyond the schema. |
+| `agentic-profile-request.v1.json` | `AgenticProfileRequestSchema`, `parseAgenticProfileRequest`, `agenticProfileRequestJsonSchema` | yes | yes | partial | `parseAgenticProfileRequest` enforces invariants beyond the schema. |
+| `agentic-profile-request.v2.json` | `AgenticProfileRequestV2Schema`, `parseAgenticProfileRequestV2`, `agenticProfileRequestV2JsonSchema` | yes | yes | partial | `parseAgenticProfileRequestV2` enforces invariants beyond the schema. |
+| `evidence-export-replay-result.v1.json` | `EvidenceExportReplayResultSchema`, `parseEvidenceExportReplayResult`, `evidenceExportReplayResultJsonSchema` | yes | yes | partial | `parseEvidenceExportReplayResult` enforces invariants beyond the schema. |
+| `evidence-export-request.v1.json` | `EvidenceExportRequestSchema`, `parseEvidenceExportRequest`, `evidenceExportRequestJsonSchema` | yes | yes | partial | `parseEvidenceExportRequest` enforces invariants beyond the schema. |
+| `evidence-export.v1.json` | `EvidenceExportSchema`, `parseEvidenceExport`, `evidenceExportJsonSchema` | yes | yes | partial | `parseEvidenceExport` enforces invariants beyond the schema. |
+| `evidence-manifest.v1.json` | `EvidenceManifestSchema`, `parseEvidenceManifest`, `evidenceManifestJsonSchema` | yes | yes | partial | `parseEvidenceManifest` enforces invariants beyond the schema. |
+| `evidence-manifest.v2.json` | `EvidenceManifestV2Schema`, `parseEvidenceManifestV2`, `evidenceManifestV2JsonSchema` | yes | — | partial | `parseEvidenceManifestV2` enforces invariants beyond the schema. |
+| `evidence-manifest.v3.json` | `EvidenceManifestV3Schema`, `parseEvidenceManifestV3`, `evidenceManifestV3JsonSchema` | yes | — | partial | `parseEvidenceManifestV3` enforces invariants beyond the schema. |
+| `evidence-manifest.v4.json` | `EvidenceManifestV4Schema`, `parseEvidenceManifestV4`, `evidenceManifestV4JsonSchema` | — | — | partial | `parseEvidenceManifestV4` enforces invariants beyond the schema. |
+| `evidence-manifest.v5.json` | `EvidenceManifestV5Schema`, `parseEvidenceManifestV5`, `evidenceManifestV5JsonSchema` | — | — | partial | `parseEvidenceManifestV5` enforces invariants beyond the schema. |
+| `evidence-provider-manifest.v1.json` | `EvidenceProviderManifestSchema`, `parseEvidenceProviderManifest`, `evidenceProviderManifestJsonSchema` | yes | yes | partial | `parseEvidenceProviderManifest` enforces invariants beyond the schema. |
+| `qualification-execution-request.v1.json` | `QualificationExecutionRequestSchema`, `qualificationExecutionRequestJsonSchema` | yes | yes | partial | `QualificationExecutionRequestSchema` has refinements the JSON Schema cannot express. |
+| `qualification-plan.v1.json` | `QualificationPlanSchema`, `parseQualificationPlan`, `qualificationPlanJsonSchema` | yes | yes | partial | `QualificationPlanSchema` has refinements the JSON Schema cannot express. `parseQualificationPlan` enforces invariants beyond the schema. |
+| `qualification-receipt.v1.json` | `QualificationReceiptSchema`, `qualificationReceiptJsonSchema` | yes | yes | partial | `QualificationReceiptSchema` has refinements the JSON Schema cannot express. |
 | `qualification-replay-result.v1.json` | `QualificationReplayResultSchema`, `qualificationReplayResultJsonSchema` | yes | yes | equivalent |  |
-| `replay-result.v1.json` | `ReplayResultSchema`, `parseReplayResult`, `replayResultJsonSchema` | yes | yes | equivalent |  |
-| `repository-analysis.v1.json` | `RepositoryAnalysisSchema`, `parseRepositoryAnalysis`, `repositoryAnalysisJsonSchema` | yes | yes | equivalent |  |
-| `repository-audit.v1.json` | `RepositoryAuditSchema`, `parseRepositoryAudit`, `repositoryAuditJsonSchema` | yes | — | equivalent |  |
-| `repository-audit.v2.json` | `RepositoryAuditV2Schema`, `parseRepositoryAuditV2`, `repositoryAuditV2JsonSchema` | yes | — | equivalent |  |
-| `repository-init-config.v1.json` | `RepositoryInitConfigSchema`, `parseRepositoryInitConfig`, `repositoryInitConfigJsonSchema` | yes | — | equivalent |  |
-| `repository-init-config.v2.json` | `RepositoryInitConfigV2Schema`, `parseRepositoryInitConfigV2`, `repositoryInitConfigV2JsonSchema` | yes | — | equivalent |  |
-| `repository-init-lock.v1.json` | `RepositoryInitLockSchema`, `parseRepositoryInitLock`, `repositoryInitLockJsonSchema` | yes | — | equivalent |  |
-| `repository-init-lock.v2.json` | `RepositoryInitLockV2Schema`, `parseRepositoryInitLockV2`, `repositoryInitLockV2JsonSchema` | yes | — | equivalent |  |
-| `repository-init-result.v1.json` | `RepositoryInitResultSchema`, `parseRepositoryInitResult`, `repositoryInitResultJsonSchema` | yes | — | equivalent |  |
-| `repository-init-result.v2.json` | `RepositoryInitResultV2Schema`, `parseRepositoryInitResultV2`, `repositoryInitResultV2JsonSchema` | yes | — | equivalent |  |
-| `verification-request.v1.json` | `VerificationRequestSchema`, `parseVerificationRequest`, `verificationRequestJsonSchema` | yes | yes | equivalent |  |
-| `verification-request.v2.json` | `VerificationRequestV2Schema`, `parseVerificationRequestV2`, `verificationRequestV2JsonSchema` | yes | — | equivalent |  |
-| `verification-request.v3.json` | `VerificationRequestV3Schema`, `parseVerificationRequestV3`, `verificationRequestV3JsonSchema` | yes | — | equivalent |  |
-| `verification-request.v4.json` | `VerificationRequestV4Schema`, `parseVerificationRequestV4`, `verificationRequestV4JsonSchema` | — | — | equivalent |  |
-| `verification-request.v5.json` | `VerificationRequestV5Schema`, `parseVerificationRequestV5`, `verificationRequestV5JsonSchema` | — | — | equivalent |  |
-| `witness-import-request.v1.json` | `WitnessImportRequestSchema`, `parseWitnessImportRequest`, `witnessImportRequestJsonSchema` | — | — | equivalent |  |
-| `witness-import-request.v2.json` | `WitnessImportRequestV2Schema`, `parseWitnessImportRequestV2`, `witnessImportRequestV2JsonSchema` | — | — | equivalent |  |
+| `replay-result.v1.json` | `ReplayResultSchema`, `parseReplayResult`, `replayResultJsonSchema` | yes | yes | partial | `parseReplayResult` enforces invariants beyond the schema. |
+| `repository-analysis.v1.json` | `RepositoryAnalysisSchema`, `parseRepositoryAnalysis`, `repositoryAnalysisJsonSchema` | yes | yes | partial | `parseRepositoryAnalysis` enforces invariants beyond the schema. |
+| `repository-audit.v1.json` | `RepositoryAuditSchema`, `parseRepositoryAudit`, `repositoryAuditJsonSchema` | yes | — | partial | `parseRepositoryAudit` enforces invariants beyond the schema. |
+| `repository-audit.v2.json` | `RepositoryAuditV2Schema`, `parseRepositoryAuditV2`, `repositoryAuditV2JsonSchema` | yes | — | partial | `parseRepositoryAuditV2` enforces invariants beyond the schema. |
+| `repository-init-config.v1.json` | `RepositoryInitConfigSchema`, `parseRepositoryInitConfig`, `repositoryInitConfigJsonSchema` | yes | — | partial | `parseRepositoryInitConfig` enforces invariants beyond the schema. |
+| `repository-init-config.v2.json` | `RepositoryInitConfigV2Schema`, `parseRepositoryInitConfigV2`, `repositoryInitConfigV2JsonSchema` | yes | — | partial | `parseRepositoryInitConfigV2` enforces invariants beyond the schema. |
+| `repository-init-lock.v1.json` | `RepositoryInitLockSchema`, `parseRepositoryInitLock`, `repositoryInitLockJsonSchema` | yes | — | partial | `parseRepositoryInitLock` enforces invariants beyond the schema. |
+| `repository-init-lock.v2.json` | `RepositoryInitLockV2Schema`, `parseRepositoryInitLockV2`, `repositoryInitLockV2JsonSchema` | yes | — | partial | `parseRepositoryInitLockV2` enforces invariants beyond the schema. |
+| `repository-init-result.v1.json` | `RepositoryInitResultSchema`, `parseRepositoryInitResult`, `repositoryInitResultJsonSchema` | yes | — | partial | `parseRepositoryInitResult` enforces invariants beyond the schema. |
+| `repository-init-result.v2.json` | `RepositoryInitResultV2Schema`, `parseRepositoryInitResultV2`, `repositoryInitResultV2JsonSchema` | yes | — | partial | `parseRepositoryInitResultV2` enforces invariants beyond the schema. |
+| `verification-request.v1.json` | `VerificationRequestSchema`, `parseVerificationRequest`, `verificationRequestJsonSchema` | yes | yes | partial | `parseVerificationRequest` enforces invariants beyond the schema. |
+| `verification-request.v2.json` | `VerificationRequestV2Schema`, `parseVerificationRequestV2`, `verificationRequestV2JsonSchema` | yes | — | partial | `parseVerificationRequestV2` enforces invariants beyond the schema. |
+| `verification-request.v3.json` | `VerificationRequestV3Schema`, `parseVerificationRequestV3`, `verificationRequestV3JsonSchema` | yes | — | partial | `parseVerificationRequestV3` enforces invariants beyond the schema. |
+| `verification-request.v4.json` | `VerificationRequestV4Schema`, `parseVerificationRequestV4`, `verificationRequestV4JsonSchema` | — | — | partial | `parseVerificationRequestV4` enforces invariants beyond the schema. |
+| `verification-request.v5.json` | `VerificationRequestV5Schema`, `parseVerificationRequestV5`, `verificationRequestV5JsonSchema` | — | — | partial | `parseVerificationRequestV5` enforces invariants beyond the schema. |
+| `witness-import-request.v1.json` | `WitnessImportRequestSchema`, `parseWitnessImportRequest`, `witnessImportRequestJsonSchema` | — | — | partial | `parseWitnessImportRequest` enforces invariants beyond the schema. |
+| `witness-import-request.v2.json` | `WitnessImportRequestV2Schema`, `parseWitnessImportRequestV2`, `witnessImportRequestV2JsonSchema` | — | — | partial | `parseWitnessImportRequestV2` enforces invariants beyond the schema. |
 
-Versioned parsers dispatch on `schemaVersion` across the published versions:
+56 published schemas: 1 equivalent, 55 partial.
+
+Versioned parsers dispatch on `schemaVersion` to the parsers above:
 
 | Export | Published schemas | Status |
 | --- | --- | --- |
-| `parseVersionedEvidenceManifest` | `evidence-manifest.v1.json`, `evidence-manifest.v2.json`, `evidence-manifest.v3.json`, `evidence-manifest.v4.json`, `evidence-manifest.v5.json` | equivalent |
-| `parseVersionedRepositoryInitConfig` | `repository-init-config.v1.json`, `repository-init-config.v2.json` | equivalent |
-| `parseVersionedRepositoryInitLock` | `repository-init-lock.v1.json`, `repository-init-lock.v2.json` | equivalent |
-| `parseVersionedRepositoryInitResult` | `repository-init-result.v1.json`, `repository-init-result.v2.json` | equivalent |
+| `parseVersionedEvidenceManifest` | `evidence-manifest.v1.json`, `evidence-manifest.v2.json`, `evidence-manifest.v3.json`, `evidence-manifest.v4.json`, `evidence-manifest.v5.json` | partial |
+| `parseVersionedRepositoryInitConfig` | `repository-init-config.v1.json`, `repository-init-config.v2.json` | partial |
+| `parseVersionedRepositoryInitLock` | `repository-init-lock.v1.json`, `repository-init-lock.v2.json` | partial |
+| `parseVersionedRepositoryInitResult` | `repository-init-result.v1.json`, `repository-init-result.v2.json` | partial |
 | `parseVersionedRuntimeDoctorResult` | none published | partial |
-| `parseVersionedVerificationRequest` | `verification-request.v1.json`, `verification-request.v2.json`, `verification-request.v3.json`, `verification-request.v4.json`, `verification-request.v5.json` | equivalent |
-| `parseVersionedWitnessImportRequest` | `witness-import-request.v1.json`, `witness-import-request.v2.json` | equivalent |
+| `parseVersionedVerificationRequest` | `verification-request.v1.json`, `verification-request.v2.json`, `verification-request.v3.json`, `verification-request.v4.json`, `verification-request.v5.json` | partial |
+| `parseVersionedWitnessImportRequest` | `witness-import-request.v1.json`, `witness-import-request.v2.json` | partial |
 
 Document contracts that have a parser but no published schema. A command or tool produces or
 reads the document; no file in `schemas/` describes it:
