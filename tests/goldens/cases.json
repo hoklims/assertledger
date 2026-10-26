@@ -1,0 +1,441 @@
+{
+  "cli": [
+    {
+      "id": "help",
+      "argv": ["--help"]
+    },
+    {
+      "id": "help-word",
+      "argv": ["help"]
+    },
+    {
+      "id": "help-extra-argument",
+      "argv": ["--help", "extra"]
+    },
+    {
+      "id": "version",
+      "argv": ["--version"]
+    },
+    {
+      "id": "no-command",
+      "argv": []
+    },
+    {
+      "id": "unknown-command",
+      "argv": ["unknown-command"]
+    },
+    {
+      "id": "explain-text",
+      "argv": ["explain", "PACKAGE_MANAGER_UNDETECTED", "GIT_DISABLED", "NO_SUCH_CODE"]
+    },
+    {
+      "id": "explain-json",
+      "argv": ["explain", "PACKAGE_MANAGER_UNDETECTED", "GIT_DISABLED", "NO_SUCH_CODE", "--json"]
+    },
+    {
+      "id": "explain-missing-code",
+      "argv": ["explain"]
+    },
+    {
+      "id": "schema-unknown",
+      "argv": ["schema", "unknown-schema"]
+    },
+    {
+      "id": "provider",
+      "argv": ["provider"]
+    },
+    {
+      "id": "connect-mcp",
+      "fixture": "examples/node-test/repository",
+      "argv": ["connect", ".", "--client", "mcp"]
+    },
+    {
+      "id": "connect-codex-preview",
+      "fixture": "examples/node-test/repository",
+      "argv": ["connect", ".", "--client", "codex"]
+    },
+    {
+      "id": "connect-claude-code-preview",
+      "fixture": "examples/node-test/repository",
+      "argv": ["connect", ".", "--client", "claude-code"]
+    },
+    {
+      "id": "connect-unknown-client",
+      "fixture": "examples/node-test/repository",
+      "argv": ["connect", ".", "--client", "unknown"]
+    },
+    {
+      "id": "disconnect-codex-preview",
+      "fixture": "examples/node-test/repository",
+      "argv": ["disconnect", ".", "--client", "codex"]
+    },
+    {
+      "id": "setup-codex-dry-run",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["setup", ".", "--client", "codex", "--dry-run", "--json"]
+    },
+    {
+      "id": "analyze-node-test",
+      "fixture": "examples/node-test/repository",
+      "argv": ["analyze", "."]
+    },
+    {
+      "id": "analyze-orchestration",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["analyze", "."]
+    },
+    {
+      "id": "doctor-node-test-json",
+      "fixture": "examples/node-test/repository",
+      "argv": ["doctor", ".", "--json"]
+    },
+    {
+      "id": "doctor-orchestration-json",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["doctor", ".", "--json"]
+    },
+    {
+      "id": "doctor-orchestration-text",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["doctor", "."]
+    },
+    {
+      "id": "audit-node-test-no-git",
+      "fixture": "examples/node-test/repository",
+      "argv": ["audit", ".", "--no-git"]
+    },
+    {
+      "id": "audit-orchestration-no-git",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["audit", ".", "--no-git"]
+    },
+    {
+      "id": "init-node-test-dry-run",
+      "fixture": "examples/node-test/repository",
+      "argv": ["init", ".", "--dry-run"]
+    },
+    {
+      "id": "init-orchestration-dry-run",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["init", ".", "--dry-run"]
+    },
+    {
+      "id": "replay-invalid-json",
+      "argv": ["replay", "-"],
+      "stdin": "{"
+    },
+    {
+      "id": "replay-contract-violation",
+      "argv": ["replay", "-"],
+      "stdin": "{}"
+    },
+    {
+      "id": "export-replay-contract-violation",
+      "argv": ["export-replay", "-"],
+      "stdin": "{}"
+    },
+    {
+      "id": "profile-replay-contract-violation",
+      "argv": ["profile-replay", "-"],
+      "stdin": "{}"
+    },
+    {
+      "id": "qualification-replay-contract-violation",
+      "argv": ["qualification-replay", "-"],
+      "stdin": "{}"
+    },
+    {
+      "id": "mcp-unknown-flag",
+      "argv": ["mcp", "--unknown"]
+    },
+    {
+      "id": "schema-verification-request",
+      "argv": ["schema", "verification-request"]
+    },
+    {
+      "id": "schema-verification-request-v2",
+      "argv": ["schema", "verification-request-v2"]
+    },
+    {
+      "id": "schema-verification-request-v3",
+      "argv": ["schema", "verification-request-v3"]
+    },
+    {
+      "id": "schema-repository-analysis",
+      "argv": ["schema", "repository-analysis"]
+    },
+    {
+      "id": "schema-repository-audit",
+      "argv": ["schema", "repository-audit"]
+    },
+    {
+      "id": "schema-repository-audit-v2",
+      "argv": ["schema", "repository-audit-v2"]
+    },
+    {
+      "id": "schema-repository-init-config",
+      "argv": ["schema", "repository-init-config"]
+    },
+    {
+      "id": "schema-repository-init-config-v2",
+      "argv": ["schema", "repository-init-config-v2"]
+    },
+    {
+      "id": "schema-repository-init-lock",
+      "argv": ["schema", "repository-init-lock"]
+    },
+    {
+      "id": "schema-repository-init-lock-v2",
+      "argv": ["schema", "repository-init-lock-v2"]
+    },
+    {
+      "id": "schema-repository-init-result",
+      "argv": ["schema", "repository-init-result"]
+    },
+    {
+      "id": "schema-repository-init-result-v2",
+      "argv": ["schema", "repository-init-result-v2"]
+    },
+    {
+      "id": "schema-evidence-manifest",
+      "argv": ["schema", "evidence-manifest"]
+    },
+    {
+      "id": "schema-evidence-manifest-v2",
+      "argv": ["schema", "evidence-manifest-v2"]
+    },
+    {
+      "id": "schema-evidence-manifest-v3",
+      "argv": ["schema", "evidence-manifest-v3"]
+    },
+    {
+      "id": "schema-replay-result",
+      "argv": ["schema", "replay-result"]
+    },
+    {
+      "id": "schema-agentic-benchmark-request",
+      "argv": ["schema", "agentic-benchmark-request"]
+    },
+    {
+      "id": "schema-agentic-benchmark-artifact",
+      "argv": ["schema", "agentic-benchmark-artifact"]
+    },
+    {
+      "id": "schema-qualification-plan",
+      "argv": ["schema", "qualification-plan"]
+    },
+    {
+      "id": "schema-qualification-execution-request",
+      "argv": ["schema", "qualification-execution-request"]
+    },
+    {
+      "id": "schema-qualification-receipt",
+      "argv": ["schema", "qualification-receipt"]
+    },
+    {
+      "id": "schema-qualification-replay-result",
+      "argv": ["schema", "qualification-replay-result"]
+    },
+    {
+      "id": "schema-agentic-benchmark-replay-result",
+      "argv": ["schema", "agentic-benchmark-replay-result"]
+    },
+    {
+      "id": "schema-agentic-benchmark-acquisition-request",
+      "argv": ["schema", "agentic-benchmark-acquisition-request"]
+    },
+    {
+      "id": "schema-agentic-benchmark-acquisition-result",
+      "argv": ["schema", "agentic-benchmark-acquisition-result"]
+    },
+    {
+      "id": "schema-agentic-benchmark-acquisition-replay-result",
+      "argv": ["schema", "agentic-benchmark-acquisition-replay-result"]
+    },
+    {
+      "id": "schema-agentic-profile-request",
+      "argv": ["schema", "agentic-profile-request"]
+    },
+    {
+      "id": "schema-agentic-profile-report",
+      "argv": ["schema", "agentic-profile-report"]
+    },
+    {
+      "id": "schema-agentic-profile-replay-result",
+      "argv": ["schema", "agentic-profile-replay-result"]
+    },
+    {
+      "id": "schema-agentic-profile-request-v2",
+      "argv": ["schema", "agentic-profile-request-v2"]
+    },
+    {
+      "id": "schema-agentic-profile-report-v2",
+      "argv": ["schema", "agentic-profile-report-v2"]
+    },
+    {
+      "id": "schema-agentic-profile-replay-result-v2",
+      "argv": ["schema", "agentic-profile-replay-result-v2"]
+    },
+    {
+      "id": "schema-agentic-corpus-allocation-request",
+      "argv": ["schema", "agentic-corpus-allocation-request"]
+    },
+    {
+      "id": "schema-agentic-corpus-allocation",
+      "argv": ["schema", "agentic-corpus-allocation"]
+    },
+    {
+      "id": "schema-agentic-corpus-allocation-replay-result",
+      "argv": ["schema", "agentic-corpus-allocation-replay-result"]
+    },
+    {
+      "id": "schema-agentic-corpus-allocation-commitment",
+      "argv": ["schema", "agentic-corpus-allocation-commitment"]
+    },
+    {
+      "id": "schema-agentic-corpus-allocation-reveal",
+      "argv": ["schema", "agentic-corpus-allocation-reveal"]
+    },
+    {
+      "id": "schema-agentic-corpus-allocation-commitment-replay-result",
+      "argv": ["schema", "agentic-corpus-allocation-commitment-replay-result"]
+    },
+    {
+      "id": "schema-agentic-corpus-experiment-plan",
+      "argv": ["schema", "agentic-corpus-experiment-plan"]
+    },
+    {
+      "id": "schema-agentic-corpus-experiment-plan-replay-result",
+      "argv": ["schema", "agentic-corpus-experiment-plan-replay-result"]
+    },
+    {
+      "id": "schema-agentic-corpus-experiment-request",
+      "argv": ["schema", "agentic-corpus-experiment-request"]
+    },
+    {
+      "id": "schema-agentic-corpus-experiment-artifact",
+      "argv": ["schema", "agentic-corpus-experiment-artifact"]
+    },
+    {
+      "id": "schema-agentic-corpus-experiment-replay-request",
+      "argv": ["schema", "agentic-corpus-experiment-replay-request"]
+    },
+    {
+      "id": "schema-agentic-corpus-experiment-replay-result",
+      "argv": ["schema", "agentic-corpus-experiment-replay-result"]
+    },
+    {
+      "id": "schema-evidence-provider-manifest",
+      "argv": ["schema", "evidence-provider-manifest"]
+    },
+    {
+      "id": "schema-evidence-export-request",
+      "argv": ["schema", "evidence-export-request"]
+    },
+    {
+      "id": "schema-evidence-export",
+      "argv": ["schema", "evidence-export"]
+    },
+    {
+      "id": "schema-evidence-export-replay-result",
+      "argv": ["schema", "evidence-export-replay-result"]
+    }
+  ],
+  "mcp": [
+    {
+      "id": "read-only",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["--root", "."],
+      "calls": [
+        {
+          "method": "tools/list"
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_explain",
+            "arguments": {
+              "codes": ["PACKAGE_MANAGER_UNDETECTED", "NO_SUCH_CODE"]
+            }
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_provider",
+            "arguments": {}
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_schema",
+            "arguments": {
+              "name": "evidence-manifest"
+            }
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_analyze",
+            "arguments": {
+              "root": "."
+            }
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_doctor",
+            "arguments": {
+              "root": "."
+            }
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_analyze",
+            "arguments": {
+              "root": ".."
+            }
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_explain",
+            "arguments": {}
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "assertledger_unknown_tool",
+            "arguments": {}
+          }
+        },
+        {
+          "method": "tools/call",
+          "params": {
+            "name": "testforge_explain",
+            "arguments": {
+              "codes": ["GIT_DISABLED"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "unsafe-tool-list",
+      "fixture": "examples/orchestration/workspace",
+      "argv": ["--root", ".", "--allow-unsafe-execution"],
+      "calls": [
+        {
+          "method": "tools/list"
+        }
+      ]
+    }
+  ]
+}
