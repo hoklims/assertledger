@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdout": "GIT_DISABLED: This code has no explanation in the installed catalogue.\nNext action: Keep the original result and consult the matching package version's reference; do not infer a pass.\nNO_SUCH_CODE: This code has no explanation in the installed catalogue.\nNext action: Keep the original result and consult the matching package version's reference; do not infer a pass.\nPACKAGE_MANAGER_UNDETECTED: No supported package manager was detected.\nNext action: Declare the intended package manager with --package-manager or add its package metadata or lockfile.\n",
+  "stderr": ""
+}
