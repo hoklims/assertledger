@@ -1,0 +1,5 @@
+{
+  "exitCode": 4,
+  "stdout": "{\"valid\":false,\"schemaValid\":false,\"decisionDigestValid\":false,\"artifactDigestValid\":false,\"decisionSemanticsValid\":false}\n",
+  "stderr": ""
+}

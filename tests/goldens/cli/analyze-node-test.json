@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdout": "{\"root\":\"<FIXTURE>\",\"fileCount\":3,\"files\":[\"package.json\",\"src/is-even.js\",\"tests/base.test.js\"],\"languages\":[{\"name\":\"JavaScript\",\"files\":2}],\"detectedTestFrameworks\":[\"node:test\"],\"repositoryDigest\":\"sha256:c2bc0c14f30b015305d49ec47cf02c89fe7d9f679829ee34ce66d6ae1789b9db\",\"capabilities\":{\"canExecuteCandidates\":true,\"supportedAdapters\":[\"node-test\",\"testforge-command\"],\"isolationLevels\":[\"UNSANDBOXED\"]}}\n",
+  "stderr": ""
+}

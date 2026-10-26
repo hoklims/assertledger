@@ -1,0 +1,5 @@
+{
+  "exitCode": 4,
+  "stdout": "Status: CONFLICT\nReason codes: FRAMEWORK_AMBIGUOUS\nRequired operator inputs: worlds, candidates\nFRAMEWORK_AMBIGUOUS: Multiple test frameworks were detected, or the explicit choice disagrees with the detected frameworks.\nNext action: Inspect test imports, dependencies and test scripts, then choose a detected framework with --framework (node:test, bun:test, vitest, jest or pytest). The current init result schema cannot list all detected frameworks.\nNext safe action: assertledger audit . --json\nExecution limit: verification remains UNSANDBOXED trusted-local and requires explicit operator authorization.\nThis static diagnostic does not prove campaign evidence or MCP connectivity.\n",
+  "stderr": ""
+}

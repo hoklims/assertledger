@@ -1,0 +1,5 @@
+{
+  "exitCode": 4,
+  "stdout": "{\"valid\":false,\"integrityValid\":false,\"semanticsValid\":false,\"domainValid\":false,\"reexecuted\":false,\"producerAuthenticated\":false}\n",
+  "stderr": ""
+}

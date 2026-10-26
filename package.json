@@ -60,6 +60,7 @@
     "check:conformance": "tsx scripts/check-conformance-v1.ts",
     "witness:conformance": "tsx scripts/run-conformance-negative-witnesses.ts",
     "check:schemas": "tsx scripts/check-schemas.ts",
+    "goldens:update": "pnpm run build && tsx scripts/update-goldens.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "generate:schemas": "tsx scripts/generate-schemas.ts",
