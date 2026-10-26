@@ -12,6 +12,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const GOLDEN_ROOT = path.join(PACKAGE_ROOT, "tests", "goldens");
 const CLI_ENTRY = path.join(PACKAGE_ROOT, "dist", "cli.js");
+/** Below the per-case test timeout, so a hung command fails the case and never keeps the runner alive. */
+const CLI_DEADLINE_MS = 20_000;
 
 export interface CliGoldenCase {
   id: string;
@@ -165,8 +167,31 @@ export async function runCliCase(testCase: CliGoldenCase): Promise<CliGolden> {
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.stdin.end(testCase.stdin ?? "");
     const exitCode = await new Promise<number>((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", (code) => resolve(code ?? -1));
+      const deadline = setTimeout(() => {
+        // Wait for the exit, not the pipes: a grandchild may still hold them open.
+        child.removeAllListeners("close");
+        const fail = () => {
+          child.stdout.destroy();
+          child.stderr.destroy();
+          reject(
+            new Error(`CLI case ${testCase.id} exceeded ${CLI_DEADLINE_MS} ms and was killed`),
+          );
+        };
+        if (child.exitCode !== null || child.signalCode !== null) {
+          fail();
+        } else {
+          child.once("exit", fail);
+          child.kill();
+        }
+      }, CLI_DEADLINE_MS);
+      child.on("error", (error) => {
+        clearTimeout(deadline);
+        reject(error);
+      });
+      child.on("close", (code) => {
+        clearTimeout(deadline);
+        resolve(code ?? -1);
+      });
     });
     return {
       exitCode,
