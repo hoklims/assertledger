@@ -1,7 +1,6 @@
 // Generates docs/sdk-surface-map.md from the built package and refuses any unclassified export.
 // Usage: node scripts/sdk-surface-map.mjs <repository-root> <output.md>, after `pnpm build`.
 
-import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,9 +11,6 @@ const rootModule = await load("dist/index.js");
 const coreModule = await load("dist/core/index.js");
 const bunModule = await load("integrations/bun/assertions.mjs");
 const version = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version;
-const commit = execFileSync("git", ["-C", root, "rev-parse", "--short", "HEAD"], {
-  encoding: "utf8",
-}).trim();
 
 const kindOf = (value) =>
   typeof value === "function"
@@ -481,8 +477,8 @@ const doc = `# SDK surface map
 
 [ADR 0003](decisions/0003-retire-public-javascript-api.md) retires the JavaScript API in 3.0.0 and
 requires, before the last 2.x release, a mapping from every public SDK method to a CLI command or an
-MCP tool. This page is that mapping, measured on version ${version} at commit \`${commit}\`. A row with
-status \`none\` has no equivalent today.
+MCP tool. This page is that mapping, measured on version ${version}. A row with status \`none\` has
+no equivalent today.
 
 ## Scope
 

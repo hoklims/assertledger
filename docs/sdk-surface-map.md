@@ -2,8 +2,8 @@
 
 [ADR 0003](decisions/0003-retire-public-javascript-api.md) retires the JavaScript API in 3.0.0 and
 requires, before the last 2.x release, a mapping from every public SDK method to a CLI command or an
-MCP tool. This page is that mapping, measured on version 2.1.0 at commit `ecdffee`. A row with
-status `none` has no equivalent today.
+MCP tool. This page is that mapping, measured on version 2.1.0. A row with status `none` has
+no equivalent today.
 
 ## Scope
 
