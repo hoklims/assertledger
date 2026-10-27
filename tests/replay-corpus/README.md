@@ -24,6 +24,7 @@ and the same output.
 | `qualification-1.5.0-*` | receipt 1.0.0, `node-test` and `command` adapters | `assertledger@1.5.0` |
 | `qualification-2.1.0-*` | receipt 1.0.0, same plans | `assertledger@2.1.0` |
 | `evidence-v4-container-*` | manifest 4.0.0, container backend | the 12 runs of `benchmarks/container-runtime/2026-10-11`, read in place |
+| `candidates-v3-tobe` | manifest 5.0.0, `bun-test-designated`, rewrite of `evidence-v3` | `assertledger@2.1.0` |
 
 The documents in `documents/` were produced on Windows x64 with Node 22.23.2 and Bun 1.4.2, in
 trusted-local mode (`verify` or `qualify` with `--allow-unsafe-execution`), from the inputs kept in
@@ -35,6 +36,17 @@ the resolved Bun executable path, a machine path, because it is part of the prod
 result when the corpus was frozen, plus `recorded` for the replay stored with a benchmark run. That
 cross-version check ran once, with the packages installed from npm; CI replays only the current
 build.
+
+## Rewritten v3 candidates
+
+ADR 0004 replaces `assertSame` with Bun's native `expect` matchers. An entry with `rewriteOf`
+holds the candidates of a v3 entry with each `assertSame(a, b)` rewritten to `expect(a).toBe(b)`,
+as designated tests over the same worlds and policy. E11 (#111) measured that `toBe` accepts
+exactly the pairs `Object.is`, and so `assertSame`, accepts on Bun 1.4.2.
+
+The test re-derives each rewrite from the frozen v3 request, and requires the rewritten manifest
+to reach the same decision, the same per-candidate gates and the same observation outcomes as the
+v3 manifest. A later native-matcher profile must reach them too.
 
 ## Changing the corpus
 
