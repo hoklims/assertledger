@@ -11,7 +11,6 @@ import {
   classifyBunDesignatedRun,
   designatedBunConfig,
 } from "../integrations/bun/driver.mjs";
-import { runCli } from "../src/cli.js";
 import { parseEvidenceManifestV4 } from "../src/contracts/index.js";
 import { replayEvidenceManifest } from "../src/core/index.js";
 import { verifyCampaign } from "../src/engine/index.js";
@@ -25,6 +24,7 @@ import {
   TEST_SOURCE,
   writeTree,
 } from "./support/designated-campaign.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const driver = path.join(repositoryRoot, "integrations", "bun", "driver.mjs");
@@ -667,7 +667,7 @@ describe("v4 designated campaigns", () => {
       },
     };
     assert.equal(
-      await runCli(
+      await runPublicCli(
         ["verify", requestFile, "--allow-unsafe-execution", "--allow-windows-native-execution"],
         io,
       ),
