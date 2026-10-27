@@ -511,6 +511,30 @@
         "2.1.0",
         "recorded"
       ]
+    },
+    {
+      "id": "candidates-v3-tobe",
+      "kind": "evidence",
+      "schemaVersion": "5.0.0",
+      "producer": "assertledger@2.1.0",
+      "document": "tests/replay-corpus/documents/candidates-v3-tobe.manifest.json",
+      "sha256": "sha256:3ce4ab17c1fa6427363a855a46adf9ca53bf7dbd16f9f12e86f79579c4ac93d2",
+      "input": "tests/replay-corpus/inputs/candidates-v3-tobe",
+      "rewriteOf": "evidence-v3",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:c030f10ac6e914a0fe9284287a8f07d2a72cbe6e35bc4aba0f0e0f4dc63cf739",
+      "artifactDigest": "sha256:7e9a6b3aa08835c88471e580b63b82d0c988cd9083756890b0f8082fd6dbf921",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "2.1.0"
+      ]
     }
   ]
 }
