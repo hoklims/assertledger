@@ -3,9 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { createAssertLedgerServer, createTestForgeServer } from "../src/mcp/index.js";
 import { AssertLedger, TestForge } from "../src/sdk/index.js";
+import { connectPublicMcp, listedInputSchemas } from "./support/public-surface.js";
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -75,8 +76,10 @@ describe("MCP naming compatibility", () => {
     assert.equal(createTestForgeServer, createAssertLedgerServer);
   });
 
-  it("registers every read-only tool under assertledger_* and testforge_* bound to the identical config", () => {
-    const server = createAssertLedgerServer();
+  it("registers every read-only tool under assertledger_* and testforge_* bound to the identical config", async () => {
+    const client = await connectPublicMcp();
+    const listed = await listedInputSchemas(client);
+    await client.close();
     const pairs = [
       "analyze",
       "benchmark",
@@ -96,8 +99,8 @@ describe("MCP naming compatibility", () => {
     ];
 
     for (const suffix of pairs) {
-      const preferred = server.toolInputSchemaJson(`assertledger_${suffix}`);
-      const legacy = server.toolInputSchemaJson(`testforge_${suffix}`);
+      const preferred = listed.get(`assertledger_${suffix}`);
+      const legacy = listed.get(`testforge_${suffix}`);
       assert.ok(preferred, `missing assertledger_${suffix}`);
       assert.deepEqual(
         preferred,
@@ -107,23 +110,24 @@ describe("MCP naming compatibility", () => {
     }
   });
 
-  it("registers assertledger_verify only when the operator grants unsafe execution", () => {
-    const readOnly = createAssertLedgerServer();
-    assert.equal(readOnly.toolInputSchemaJson("assertledger_verify"), undefined);
+  it("registers assertledger_verify only when the operator grants unsafe execution", async () => {
+    const readOnly = await connectPublicMcp();
+    const readOnlyTools = await listedInputSchemas(readOnly);
+    await readOnly.close();
+    assert.ok(readOnlyTools.has("assertledger_analyze"));
+    assert.equal(readOnlyTools.has("assertledger_verify"), false);
 
-    const unsafe = createAssertLedgerServer({ allowUnsafeExecution: true });
-    const preferred = unsafe.toolInputSchemaJson("assertledger_verify");
-    const legacy = unsafe.toolInputSchemaJson("testforge_verify");
+    const unsafe = await connectPublicMcp({ allowUnsafeExecution: true });
+    const unsafeTools = await listedInputSchemas(unsafe);
+    await unsafe.close();
+    const preferred = unsafeTools.get("assertledger_verify");
+    const legacy = unsafeTools.get("testforge_verify");
     assert.ok(preferred);
     assert.deepEqual(preferred, legacy);
   });
 
   it("returns byte-identical output when the preferred and legacy tool names are called", async () => {
-    const server = createAssertLedgerServer();
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "naming-migration-test", version: "1.0.0" });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
+    const client = await connectPublicMcp({ name: "naming-migration-test" });
 
     try {
       const preferred = await client.callTool({
@@ -146,11 +150,7 @@ describe("MCP naming compatibility", () => {
   it("confines both the preferred and legacy analyze tool to the identical allowed repository root", async () => {
     const allowed = await fixtureRepository();
     const forbidden = await fixtureRepository();
-    const server = createAssertLedgerServer({ allowedRepositoryRoots: [allowed] });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "naming-migration-test", version: "1.0.0" });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
+    const client = await connectPublicMcp({ root: allowed, name: "naming-migration-test" });
 
     try {
       const preferredAccepted = await client.callTool({
@@ -173,7 +173,6 @@ describe("MCP naming compatibility", () => {
       assert.match(JSON.stringify(preferredRejected.content), /MCP_REPOSITORY_ROOT_FORBIDDEN/);
     } finally {
       await client.close();
-      await server.close();
     }
   });
 });

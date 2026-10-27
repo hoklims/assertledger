@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { runCli } from "../src/cli.js";
 import {
   DiagnosticReportSchema,
   explainReasonCodes,
   quoteRepositoryEntry,
   renderRepositoryLinkRefusal,
 } from "../src/diagnostics.js";
-import { createAssertLedgerServer } from "../src/mcp/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { connectPublicMcp, runPublicCli } from "./support/public-surface.js";
 
 describe("versioned diagnostic guidance", () => {
   it("explains refusal without turning operational failures into evidence", () => {
@@ -63,7 +61,7 @@ describe("versioned diagnostic guidance", () => {
     const codes = ["NO_ELIGIBLE_CANDIDATE", "REFERENCE_NOT_GREEN"];
     const expected = new AssertLedger().explain(codes);
     let stdout = "";
-    const code = await runCli(["explain", ...codes, "--json"], {
+    const code = await runPublicCli(["explain", ...codes, "--json"], {
       cwd: process.cwd(),
       readStdin: async () => "",
       writeStdout: (text) => {
@@ -75,18 +73,13 @@ describe("versioned diagnostic guidance", () => {
     });
     assert.equal(code, 0);
     assert.deepEqual(JSON.parse(stdout), expected);
-    const server = createAssertLedgerServer();
-    const [ct, st] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "diagnostics-client", version: "1.0.0" });
-    await server.connect(st);
-    await client.connect(ct);
+    const client = await connectPublicMcp({ name: "diagnostics-client" });
     try {
       const result = await client.callTool({ name: "assertledger_explain", arguments: { codes } });
       assert.notEqual(result.isError, true);
       assert.deepEqual(result.structuredContent, expected);
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -131,7 +124,7 @@ describe("versioned diagnostic guidance", () => {
       [["explain", "not-a-code"], 4],
     ] as const) {
       let stdout = "";
-      const exitCode = await runCli([...argv], {
+      const exitCode = await runPublicCli([...argv], {
         cwd: process.cwd(),
         readStdin: async () => "",
         writeStdout: (value) => {
