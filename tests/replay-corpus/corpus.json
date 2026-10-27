@@ -1,0 +1,516 @@
+{
+  "schemaVersion": "1.0.0",
+  "entries": [
+    {
+      "id": "evidence-v1",
+      "kind": "evidence",
+      "schemaVersion": "1.0.0",
+      "producer": "assertledger@1.0.0",
+      "document": "tests/replay-corpus/documents/evidence-v1.manifest.json",
+      "sha256": "sha256:2020a9371a2c8b07cb0af1f8c344a94a3bce8975bc753a2f4b6b9e6de6a4c935",
+      "input": "tests/replay-corpus/inputs/evidence-v1",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:55cbeb05e93f1ab4aeb25aa665424e9d9649d3a9e16929bb9217ca8326ab5945",
+      "artifactDigest": "sha256:c8dcd35f527478978a71fab22640e4752b945896bfe8429c1ddeb31627550abd",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.0.0",
+        "1.1.0",
+        "1.2.0",
+        "1.5.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "evidence-v2",
+      "kind": "evidence",
+      "schemaVersion": "2.0.0",
+      "producer": "assertledger@1.1.0",
+      "document": "tests/replay-corpus/documents/evidence-v2.manifest.json",
+      "sha256": "sha256:41b037c363e7b5ffa174428ffa2cc32f76a35f7602c8b89ceead58924e3d2ed0",
+      "input": "tests/replay-corpus/inputs/evidence-v2",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:45ede1c32965769529cedba0c100ec01d9f3dc3f33c0edbcfbbc05689515d687",
+      "artifactDigest": "sha256:c47a80ec7fcdc3a42326ef33d6a0e8f8cf46f24ff7804b3ca24ead90fcf1a6fb",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.1.0",
+        "1.2.0",
+        "1.5.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "evidence-v3",
+      "kind": "evidence",
+      "schemaVersion": "3.0.0",
+      "producer": "assertledger@1.2.0",
+      "document": "tests/replay-corpus/documents/evidence-v3.manifest.json",
+      "sha256": "sha256:86163df9c7bb0660118af1bf0a15821fa224459a42919a519125f5b1ba825a54",
+      "input": "tests/replay-corpus/inputs/evidence-v3",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:28395039370d3d217191bae9ad37071da44932aab01c1f49a41aef52f311dcc5",
+      "artifactDigest": "sha256:754cbd939d6d696971f60894b2380f62e78a209531ca91e6b91585c135e49b5f",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.2.0",
+        "1.5.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "evidence-v4",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@1.5.0",
+      "document": "tests/replay-corpus/documents/evidence-v4.manifest.json",
+      "sha256": "sha256:f8716b74cfcffd00ef751e436d39a1974d947d221a9e16fb69714a4cc07da48c",
+      "input": "tests/replay-corpus/inputs/evidence-v4",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:67f1f61e2c942377b1ba444294a7c1da0e6a1c17c436b78f31dc6a698e289d6f",
+      "artifactDigest": "sha256:a1bfd2732f29c6b07b050dd80fc374890d562ed1ea68474d9e196574d252b944",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "evidence-v5",
+      "kind": "evidence",
+      "schemaVersion": "5.0.0",
+      "producer": "assertledger@2.1.0",
+      "document": "tests/replay-corpus/documents/evidence-v5.manifest.json",
+      "sha256": "sha256:9360e2c8441f86be7a464eb6a74087d00c587939074ad3fb1a15332334f14d66",
+      "input": "tests/replay-corpus/inputs/evidence-v5",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:a7a0f658f161bd507e3209d49c6f23249a09c8d8425cbbd4cdfb4fc6fb1c6330",
+      "artifactDigest": "sha256:f4694b7c59a97b37982366bf068f8949c5c2f1b714515a643db1e0b23cd65b23",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "qualification-1.5.0-node-test",
+      "kind": "qualification",
+      "schemaVersion": "1.0.0",
+      "producer": "assertledger@1.5.0",
+      "document": "tests/replay-corpus/documents/qualification-1.5.0-node-test.receipt.json",
+      "sha256": "sha256:e763fc107693f24f386eb2e6300976420c3bf13e0f8e766eae6fbe76e4f91acd",
+      "input": "tests/replay-corpus/inputs/qualification-1.5.0-node-test",
+      "decision": "QUALIFIED",
+      "decisionDigest": "sha256:f78849ed84082ec4da7086ed0e7a852c86eb64a6f250e2a9a302afd41c57490b",
+      "artifactDigest": "sha256:e336a92c28fe78831e501b40d521822410f7038fbfeb26740561fc43726e4ea9",
+      "command": "qualification-replay",
+      "replay": {
+        "valid": true,
+        "integrityValid": true,
+        "semanticsValid": true,
+        "domainValid": true,
+        "reexecuted": false,
+        "producerAuthenticated": false
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "qualification-1.5.0-propagation",
+      "kind": "qualification",
+      "schemaVersion": "1.0.0",
+      "producer": "assertledger@1.5.0",
+      "document": "tests/replay-corpus/documents/qualification-1.5.0-propagation.receipt.json",
+      "sha256": "sha256:5d815004a1df63df192b731349753701ff49d4f26e1e10993801d2e2a8291a57",
+      "input": "tests/replay-corpus/inputs/qualification-1.5.0-propagation",
+      "decision": "QUALIFIED",
+      "decisionDigest": "sha256:75e0fff422b61aed00775d2b2dfa7b33752e7e84a30b4ca8fb94619d592f5935",
+      "artifactDigest": "sha256:7d72a9ea6443ba3a9b809d6fe4628f225dc8b61850dc423bbdf09dd601bbaf02",
+      "command": "qualification-replay",
+      "replay": {
+        "valid": true,
+        "integrityValid": true,
+        "semanticsValid": true,
+        "domainValid": true,
+        "reexecuted": false,
+        "producerAuthenticated": false
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "qualification-2.1.0-node-test",
+      "kind": "qualification",
+      "schemaVersion": "1.0.0",
+      "producer": "assertledger@2.1.0",
+      "document": "tests/replay-corpus/documents/qualification-2.1.0-node-test.receipt.json",
+      "sha256": "sha256:87968cac0ab7c6d50b61311fd8a4d877c192c8ef7af7bf237ddde8e75bebf5a2",
+      "input": "tests/replay-corpus/inputs/qualification-2.1.0-node-test",
+      "decision": "QUALIFIED",
+      "decisionDigest": "sha256:f78849ed84082ec4da7086ed0e7a852c86eb64a6f250e2a9a302afd41c57490b",
+      "artifactDigest": "sha256:fce88cdbdd2a97e19ec81f8774d928adfe6e9592cb5ccdf8fcb3906834afdb26",
+      "command": "qualification-replay",
+      "replay": {
+        "valid": true,
+        "integrityValid": true,
+        "semanticsValid": true,
+        "domainValid": true,
+        "reexecuted": false,
+        "producerAuthenticated": false
+      },
+      "replayedBy": [
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "qualification-2.1.0-propagation",
+      "kind": "qualification",
+      "schemaVersion": "1.0.0",
+      "producer": "assertledger@2.1.0",
+      "document": "tests/replay-corpus/documents/qualification-2.1.0-propagation.receipt.json",
+      "sha256": "sha256:e78ea5eff0fe3f65788b5ff8191649359551e43a12dae33f0d03f998bbffbdef",
+      "input": "tests/replay-corpus/inputs/qualification-2.1.0-propagation",
+      "decision": "QUALIFIED",
+      "decisionDigest": "sha256:75e0fff422b61aed00775d2b2dfa7b33752e7e84a30b4ca8fb94619d592f5935",
+      "artifactDigest": "sha256:277cb7080167b892fecb68501c1bcd8e22af62482dca71d525e52f509bd669bb",
+      "command": "qualification-replay",
+      "replay": {
+        "valid": true,
+        "integrityValid": true,
+        "semanticsValid": true,
+        "domainValid": true,
+        "reexecuted": false,
+        "producerAuthenticated": false
+      },
+      "replayedBy": [
+        "2.1.0"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-matched-before-1",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@2.0.2 with the trace-only patch of baseline-producer.json",
+      "document": "benchmarks/container-runtime/2026-10-11/matched-before-1.manifest.json.gz",
+      "sha256": "sha256:b33cae2cfe0759968136342871deb7d1bb4d3af1167aa2dff76216e0865b7b5d",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:0720ec06e5fda010bbaa24a824935f72089af30a2e6fed8ccf69b86f4e5b0037",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-matched-before-2",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@2.0.2 with the trace-only patch of baseline-producer.json",
+      "document": "benchmarks/container-runtime/2026-10-11/matched-before-2.manifest.json.gz",
+      "sha256": "sha256:9217fb31e0668374112405ea5f8ca03fe1c6639557f360ac8df729d479e445a8",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:896eea182aa327ce4913cf1f35b922b775ac007406fa15ad35f54d8f40e0130d",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-matched-before-3",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@2.0.2 with the trace-only patch of baseline-producer.json",
+      "document": "benchmarks/container-runtime/2026-10-11/matched-before-3.manifest.json.gz",
+      "sha256": "sha256:759d8c54e3939a4bd7ad4864acfba04d2660e8eb1a943207cbec41c57c28fcbe",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:5a1f4b9c9a15fdc44a472f5cca1c8872fa3fe8aaaa6a70881958f3f7a2e67f88",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-matched-after-1",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "the candidate build measured in benchmarks/container-runtime/2026-10-11",
+      "document": "benchmarks/container-runtime/2026-10-11/matched-after-1.manifest.json.gz",
+      "sha256": "sha256:fd7c291a5f6ef089f444ed5f26b13f9c2abe90cc8bb46a457e25422e6cb79c61",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:fed2fbb5df0f131428afee69ca3e005292bc244e2f04bc78cc6201c33d1611c1",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-matched-after-2",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "the candidate build measured in benchmarks/container-runtime/2026-10-11",
+      "document": "benchmarks/container-runtime/2026-10-11/matched-after-2.manifest.json.gz",
+      "sha256": "sha256:e2c299c55788c90b2b092013a165ffeb5ec2b6d28b907bc2ac917a5d3d6f45f0",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:3ea1672197dc9db9927c8507bf49d5f4e1483e1fb4d0165f22585d248301e5e9",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-matched-after-3",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "the candidate build measured in benchmarks/container-runtime/2026-10-11",
+      "document": "benchmarks/container-runtime/2026-10-11/matched-after-3.manifest.json.gz",
+      "sha256": "sha256:977ca542aad5cd04cd052a064952eb19308c6274a6906aede08273f6a6f14670",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:c94329171a87bf61fb65c692d3553075b5f0fdcc66fa905f4fe1fae5ac1d73f2",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-rigorous-before-1",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@2.0.2 with the trace-only patch of baseline-producer.json",
+      "document": "benchmarks/container-runtime/2026-10-11/rigorous-before-1.manifest.json.gz",
+      "sha256": "sha256:aa4f5290bea19731a166f631c3ef60564faf53e1b618ff858ed1749970c77d1f",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:74e497d1455d20ec8b2bbfc1e780426b3845163f44e885980e7553933c51982c",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-rigorous-before-2",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@2.0.2 with the trace-only patch of baseline-producer.json",
+      "document": "benchmarks/container-runtime/2026-10-11/rigorous-before-2.manifest.json.gz",
+      "sha256": "sha256:1e8b6884c789d9eb6bf2e0b1ef0c8c0dd079b690c01bda3f7da9b24f3eded085",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:648cd1555fb718bd96797524f02de4e6daf9f906fe7efbaf2dc1bf862a0ae3fe",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-rigorous-before-3",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "assertledger@2.0.2 with the trace-only patch of baseline-producer.json",
+      "document": "benchmarks/container-runtime/2026-10-11/rigorous-before-3.manifest.json.gz",
+      "sha256": "sha256:1dc7b6c34c7a02c439fcde923a7fcfc89bb40958aee1e7af23577d46c7df1aa7",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:3f00cc27f2af6bc9212ce5e661375eab38ae821e4881b4b40524b7160a3042f9",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-rigorous-after-1",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "the candidate build measured in benchmarks/container-runtime/2026-10-11",
+      "document": "benchmarks/container-runtime/2026-10-11/rigorous-after-1.manifest.json.gz",
+      "sha256": "sha256:195b0f653ad95c3d9ac3552a9563bba6d698a59a805c46114233904d53c9bf2a",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:a5852c85a663ebee6455dd4594fc1a408b862b0fd91c2028814f837bc02688ca",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-rigorous-after-2",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "the candidate build measured in benchmarks/container-runtime/2026-10-11",
+      "document": "benchmarks/container-runtime/2026-10-11/rigorous-after-2.manifest.json.gz",
+      "sha256": "sha256:ceb5a8e508abaf2cf1f56eb878f2b518aedc13b0c76ea6e08ee02c3fdee68e54",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:f7e88d5a8b94da7b70b50879a7165baae9b9101f2a63524a77ed0c7b8180ee52",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    },
+    {
+      "id": "evidence-v4-container-rigorous-after-3",
+      "kind": "evidence",
+      "schemaVersion": "4.0.0",
+      "producer": "the candidate build measured in benchmarks/container-runtime/2026-10-11",
+      "document": "benchmarks/container-runtime/2026-10-11/rigorous-after-3.manifest.json.gz",
+      "sha256": "sha256:7e44534d3f12c77028be9a26d6fc7d6d5ae9de4be4d6e0a2f1c47d1b92ddddbe",
+      "decision": "VERIFIED",
+      "decisionDigest": "sha256:cced6d46aeb465e69494a67cb422bebdfe09fd6485af9796143705dd2ae8a482",
+      "artifactDigest": "sha256:bd59ff3925a37c271e03200cab4adad559dbd18b78e94f8e184b750ed40feccd",
+      "command": "replay",
+      "replay": {
+        "valid": true,
+        "schemaValid": true,
+        "decisionDigestValid": true,
+        "artifactDigestValid": true,
+        "decisionSemanticsValid": true
+      },
+      "replayedBy": [
+        "1.5.0",
+        "2.1.0",
+        "recorded"
+      ]
+    }
+  ]
+}
