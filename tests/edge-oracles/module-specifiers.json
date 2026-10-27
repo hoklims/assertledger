@@ -1,0 +1,116 @@
+{
+  "cases": [
+    {
+      "id": "static-forms",
+      "description": "Every static import and re-export form",
+      "source": "import a from \"a\";\nimport { b } from 'b';\nimport * as c from \"c\";\nimport \"d\";\nexport * from \"e\";\nexport { f } from \"f\";\nexport * as g from \"g\";\nimport type { H } from \"h\";\n",
+      "specifiers": ["a", "b", "c", "d", "e", "f", "g", "h"],
+      "nonLiteral": false
+    },
+    {
+      "id": "dynamic-literal",
+      "description": "Literal dynamic imports, with a template and with import attributes",
+      "source": "import(\"a\"); import(`b`); import(\"c\", { with: { type: \"json\" } });",
+      "specifiers": ["a", "b", "c"],
+      "nonLiteral": false
+    },
+    {
+      "id": "dynamic-computed",
+      "description": "A computed dynamic import makes the file unbounded",
+      "source": "import(x);",
+      "specifiers": [],
+      "nonLiteral": true
+    },
+    {
+      "id": "dynamic-template-substitution",
+      "description": "A template with a substitution is computed",
+      "source": "import(`./${x}.js`);",
+      "specifiers": [],
+      "nonLiteral": true
+    },
+    {
+      "id": "dynamic-concatenation",
+      "description": "A literal followed by an operator is computed, and the literal is not kept",
+      "source": "import(\"a\" + x);",
+      "specifiers": [],
+      "nonLiteral": true
+    },
+    {
+      "id": "require-forms",
+      "description": "require with a string, a template, an extra argument; a member call is not require",
+      "source": "require(\"a\"); require(`b`); const c = require('c', 1); obj.require(\"d\");",
+      "specifiers": ["a", "b", "c"],
+      "nonLiteral": false
+    },
+    {
+      "id": "require-computed",
+      "description": "A computed require makes the file unbounded",
+      "source": "const m = require(name);",
+      "specifiers": [],
+      "nonLiteral": true
+    },
+    {
+      "id": "mock-module",
+      "description": "Only Bun's mock.module resolves its argument like an import",
+      "source": "mock.module(\"a\", () => ({})); jest.mock(\"b\"); vi.mock(\"c\"); other.module(\"d\");",
+      "specifiers": ["a"],
+      "nonLiteral": false
+    },
+    {
+      "id": "comments-and-strings",
+      "description": "Import text in comments and strings is not an edge",
+      "source": "// import \"a\"\n/* require(\"b\") */\nconst s = \"import 'c'\";\n",
+      "specifiers": [],
+      "nonLiteral": false
+    },
+    {
+      "id": "template-expression",
+      "description": "A require inside a template expression is an edge",
+      "source": "const t = `${require(\"a\")}`;",
+      "specifiers": ["a"],
+      "nonLiteral": false
+    },
+    {
+      "id": "escaped-specifiers",
+      "description": "Specifier escapes are decoded",
+      "source": "import \"\\u0061b\"; import './\\u{1F600}.js';",
+      "specifiers": ["./😀.js", "ab"],
+      "nonLiteral": false
+    },
+    {
+      "id": "import-meta-and-local-exports",
+      "description": "import.meta and local exports are not edges",
+      "source": "import.meta.url; export default x; export const y = 1;",
+      "specifiers": [],
+      "nonLiteral": false
+    },
+    {
+      "id": "from-across-lines",
+      "description": "from may follow on another line",
+      "source": "import {\n  a,\n  b\n} from\n\"a\"",
+      "specifiers": ["a"],
+      "nonLiteral": false
+    },
+    {
+      "id": "semicolon-stops-from",
+      "description": "A semicolon ends the search for from",
+      "source": "export { x }; from \"b\"",
+      "specifiers": [],
+      "nonLiteral": false
+    },
+    {
+      "id": "regex-hides-import",
+      "description": "A quote inside a regex hides a following import (frozen limitation)",
+      "source": "const r = /\"/; import \"s\"",
+      "specifiers": [],
+      "nonLiteral": false
+    },
+    {
+      "id": "empty-specifier-dropped",
+      "description": "An empty specifier is not an edge",
+      "source": "import \"\"; require(\"\");",
+      "specifiers": [],
+      "nonLiteral": false
+    }
+  ]
+}
