@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { runCli } from "../src/cli.js";
 import type {
   EvidenceManifestContract,
   EvidenceManifestV2Contract,
@@ -17,6 +16,7 @@ import {
   type GitRegressionOptions,
   type GitRegressionV2Options,
 } from "../src/sdk/index.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 const FAKE_RUNTIME = fileURLToPath(
   new URL("./support/fake-container-runtime.mjs", import.meta.url),
@@ -43,7 +43,7 @@ async function temporaryDirectory(prefix: string): Promise<string> {
 async function cli(argv: string[], cwd = process.cwd()) {
   let stdout = "";
   let stderr = "";
-  const code = await runCli(argv, {
+  const code = await runPublicCli(argv, {
     cwd,
     readStdin: async () => "",
     writeStdout: (text) => {
