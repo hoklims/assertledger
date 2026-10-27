@@ -3,10 +3,9 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import {
-  parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionReplayResult,
+  parseAgenticBenchmarkAcquisitionRequest,
   parseAgenticBenchmarkAcquisitionResult,
 } from "../src/contracts/index.js";
 import {
@@ -18,9 +17,8 @@ import {
   sha256Canonical,
 } from "../src/core/index.js";
 import { acquireAgenticBenchmark, benchmarkCacheDirectoryKey } from "../src/engine/index.js";
-import { runCli } from "../src/cli.js";
-import { createTestForgeServer } from "../src/mcp/index.js";
 import { TestForge } from "../src/sdk/index.js";
+import { connectPublicMcp, runPublicCli } from "./support/public-surface.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -436,12 +434,12 @@ describe("benchmark acquisition", () => {
         stderr += text;
       },
     };
-    assert.equal(await runCli(["benchmark-acquire", "-", "--json"], io), 4);
+    assert.equal(await runPublicCli(["benchmark-acquire", "-", "--json"], io), 4);
     assert.match(stderr, /--allow-unsafe-execution/);
     stdout = "";
     stderr = "";
     assert.equal(
-      await runCli(["benchmark-acquire", "-", "--allow-unsafe-execution", "--json"], io),
+      await runPublicCli(["benchmark-acquire", "-", "--allow-unsafe-execution", "--json"], io),
       0,
       stderr,
     );
@@ -449,14 +447,10 @@ describe("benchmark acquisition", () => {
     assert.equal(cliResult.status, "COMPLETE");
     stdout = "";
     stdin = JSON.stringify(cliResult);
-    assert.equal(await runCli(["benchmark-acquire-replay", "-", "--json"], io), 0);
+    assert.equal(await runPublicCli(["benchmark-acquire-replay", "-", "--json"], io), 0);
     assert.equal(JSON.parse(stdout).valid, true);
 
-    const disabledServer = createTestForgeServer({ allowedRepositoryRoots: [root] });
-    const disabledPair = InMemoryTransport.createLinkedPair();
-    await disabledServer.connect(disabledPair[1]);
-    const disabledClient = new Client({ name: "test", version: "1.0.0" });
-    await disabledClient.connect(disabledPair[0]);
+    const disabledClient = await connectPublicMcp({ root });
     assert.ok(
       !(await disabledClient.listTools()).tools.some(
         (tool) => tool.name === "testforge_benchmark_acquire",
@@ -468,16 +462,8 @@ describe("benchmark acquisition", () => {
     });
     assert.equal((replayed.structuredContent as Record<string, unknown>).valid, true);
     await disabledClient.close();
-    await disabledServer.close();
 
-    const server = createTestForgeServer({
-      allowUnsafeExecution: true,
-      allowedRepositoryRoots: [root],
-    });
-    const pair = InMemoryTransport.createLinkedPair();
-    await server.connect(pair[1]);
-    const client = new Client({ name: "test", version: "1.0.0" });
-    await client.connect(pair[0]);
+    const client = await connectPublicMcp({ root, allowUnsafeExecution: true });
     const acquired = await client.callTool({
       name: "testforge_benchmark_acquire",
       arguments: { request: request(root) },
@@ -485,6 +471,5 @@ describe("benchmark acquisition", () => {
     assert.equal(acquired.isError, undefined);
     assert.equal((acquired.structuredContent as Record<string, unknown>).status, "COMPLETE");
     await client.close();
-    await server.close();
   });
 });

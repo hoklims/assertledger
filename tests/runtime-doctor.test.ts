@@ -3,8 +3,6 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { type CliIo, runCli } from "../src/cli.js";
 import type { RepositoryInitResult } from "../src/contracts/index.js";
 import { parseRuntimeDoctorResult } from "../src/contracts/runtime-doctor.js";
 import { runNodeTestRuntimePreflight } from "../src/engine/adapters/node-test-runtime.js";
@@ -13,8 +11,13 @@ import {
   type RuntimeDoctorDependencies,
   runRuntimeDoctorChecks,
 } from "../src/engine/runtime-doctor.js";
-import { createAssertLedgerServer } from "../src/mcp/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import {
+  type PublicCliIo as CliIo,
+  connectPublicMcp,
+  listedInputSchemas,
+  runPublicCli,
+} from "./support/public-surface.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -113,23 +116,25 @@ describe("runtime doctor", () => {
   it("keeps runtime MCP opt-in and matches SDK diagnostics within the allowed root", async () => {
     const root = await realpath(await fixtureRepository());
     const outside = await fixtureRepository();
-    assert.equal(
-      createAssertLedgerServer().toolInputSchemaJson("assertledger_doctor_runtime"),
-      undefined,
-    );
-    const server = createAssertLedgerServer({
-      allowUnsafeExecution: true,
-      allowedRepositoryRoots: [root],
-    });
-    const schema = server.toolInputSchemaJson("assertledger_doctor_runtime");
-    assert.ok(schema);
-    assert.equal(schema.additionalProperties, false);
-    assert.deepEqual(server.toolInputSchemaJson("testforge_doctor_runtime"), schema);
-    const [ct, st] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "runtime-doctor-client", version: "1.0.0" });
-    await server.connect(st);
-    await client.connect(ct);
+    const readOnly = await connectPublicMcp({ root });
     try {
+      const listed = await listedInputSchemas(readOnly);
+      assert.ok(listed.has("assertledger_doctor"));
+      assert.equal(listed.has("assertledger_doctor_runtime"), false);
+    } finally {
+      await readOnly.close();
+    }
+    const client = await connectPublicMcp({
+      root,
+      allowUnsafeExecution: true,
+      name: "runtime-doctor-client",
+    });
+    try {
+      const listed = await listedInputSchemas(client);
+      const schema = listed.get("assertledger_doctor_runtime");
+      assert.ok(schema);
+      assert.equal(schema.additionalProperties, false);
+      assert.deepEqual(listed.get("testforge_doctor_runtime"), schema);
       const refused = await client.callTool({
         name: "assertledger_doctor_runtime",
         arguments: { root: outside },
@@ -145,7 +150,6 @@ describe("runtime doctor", () => {
       assert.deepEqual(observed.structuredContent, expected);
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -354,13 +358,13 @@ describe("runtime doctor", () => {
   it("exposes strict CLI flags and a stable denied result", async () => {
     const root = await fixtureRepository();
     const denied = captureIo(root);
-    assert.equal(await runCli(["doctor", ".", "--runtime", "--json"], denied.io), 3);
+    assert.equal(await runPublicCli(["doctor", ".", "--runtime", "--json"], denied.io), 3);
     assert.equal(parseRuntimeDoctorResult(JSON.parse(denied.stdout())).status, "BLOCKED");
     assert.equal(denied.stderr(), "");
 
     const authorized = captureIo(root);
     assert.equal(
-      await runCli(
+      await runPublicCli(
         ["doctor", ".", "--runtime", "--allow-unsafe-execution", "--json"],
         authorized.io,
       ),
@@ -387,7 +391,7 @@ describe("runtime doctor", () => {
       ["doctor", ".", "--runtime", "--unknown"],
     ]) {
       const capture = captureIo(root);
-      assert.equal(await runCli(argv, capture.io), 64);
+      assert.equal(await runPublicCli(argv, capture.io), 64);
       assert.equal(capture.stdout(), "");
       assert.match(capture.stderr(), /Usage: assertledger/u);
     }

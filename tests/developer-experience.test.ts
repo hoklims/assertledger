@@ -31,6 +31,7 @@ import { runFixtureDemo } from "../src/engine/demo.js";
 import { verifyCampaign as executeCampaign, initializeRepository } from "../src/engine/index.js";
 import { type RepositorySetupResult, setupRepository } from "../src/engine/setup.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 const packageMetadata = JSON.parse(
   await readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -904,9 +905,10 @@ describe("developer entry points", () => {
     );
     const capture = captureIo(root);
 
-    const exitCode = await runCli(["setup", root, "--client", "codex", "--dry-run"], capture.io, {
-      setupEntry: path.resolve("dist", "cli.js"),
-    });
+    const exitCode = await runPublicCli(
+      ["setup", root, "--client", "codex", "--dry-run"],
+      capture.io,
+    );
 
     assert.equal(exitCode, 4);
     assert.equal(capture.stderr(), "");
@@ -971,7 +973,7 @@ describe("developer entry points", () => {
 
   it("prints typed diagnostics for invalid plain setup arguments", async () => {
     const capture = captureIo(process.cwd());
-    const exitCode = await runCli(
+    const exitCode = await runPublicCli(
       ["setup", ".", "--client", "codex", "--dry-run", "--write"],
       capture.io,
     );
@@ -1072,7 +1074,7 @@ describe("developer entry points", () => {
 
   it("keeps invalid and unexpected demo JSON failures typed and opaque", async () => {
     const invalidCapture = captureIo(process.cwd());
-    assert.equal(await runCli(["demo", "--json", "--unknown"], invalidCapture.io), 64);
+    assert.equal(await runPublicCli(["demo", "--json", "--unknown"], invalidCapture.io), 64);
     assert.equal(invalidCapture.stderr(), "");
     const invalid = JSON.parse(invalidCapture.stdout()) as {
       status: string;
@@ -1273,7 +1275,7 @@ describe("developer entry points", () => {
     const before = await readFile(path.join(root, "package.json"), "utf8");
     const capture = captureIo(root);
 
-    assert.equal(await runCli(["doctor", ".", "--json"], capture.io), 0);
+    assert.equal(await runPublicCli(["doctor", ".", "--json"], capture.io), 0);
     const result = parseRepositoryInitResult(JSON.parse(capture.stdout()));
     assert.equal(result.status, "WOULD_CREATE");
     assert.deepEqual(result.requiredOperatorInputs, ["worlds", "candidates"]);
@@ -1292,7 +1294,7 @@ describe("developer entry points", () => {
     const root = await fixtureRepository();
     const capture = captureIo(root);
 
-    assert.equal(await runCli(["doctor", "."], capture.io), 0);
+    assert.equal(await runPublicCli(["doctor", "."], capture.io), 0);
     assert.match(capture.stdout(), /Status: WOULD_CREATE/u);
     assert.match(capture.stdout(), /Required operator inputs: worlds, candidates/u);
     assert.match(capture.stdout(), /UNSANDBOXED trusted-local/u);
@@ -1303,19 +1305,19 @@ describe("developer entry points", () => {
   it("supports help and version aliases while preserving empty and unknown usage errors", async () => {
     for (const argv of [["help"], ["--help"], ["-h"]]) {
       const capture = captureIo(process.cwd());
-      assert.equal(await runCli(argv, capture.io), 0);
+      assert.equal(await runPublicCli(argv, capture.io), 0);
       assert.match(capture.stdout(), /Usage: assertledger/u);
       assert.equal(capture.stderr(), "");
     }
     for (const argv of [["version"], ["--version"], ["-v"]]) {
       const capture = captureIo(process.cwd());
-      assert.equal(await runCli(argv, capture.io), 0);
+      assert.equal(await runPublicCli(argv, capture.io), 0);
       assert.equal(capture.stdout(), `assertledger ${packageMetadata.version}\n`);
       assert.equal(capture.stderr(), "");
     }
     for (const argv of [[], ["unknown"]]) {
       const capture = captureIo(process.cwd());
-      assert.equal(await runCli(argv, capture.io), 64);
+      assert.equal(await runPublicCli(argv, capture.io), 64);
       assert.equal(capture.stdout(), "");
       assert.match(capture.stderr(), /Usage: assertledger/u);
     }
@@ -1610,7 +1612,7 @@ describe("developer entry points", () => {
       ["disconnect", ".", "--client", "claude"],
     ]) {
       const capture = captureIo(root);
-      assert.equal(await runCli(argv, capture.io), 64);
+      assert.equal(await runPublicCli(argv, capture.io), 64);
       assert.match(capture.stderr(), /Usage: assertledger/u);
       assert.equal(capture.stdout(), "");
     }
@@ -1623,7 +1625,7 @@ describe("developer entry points", () => {
       ["mcp", "--root", "-x"],
     ]) {
       const capture = captureIo(process.cwd());
-      assert.equal(await runCli(argv, capture.io), 64);
+      assert.equal(await runPublicCli(argv, capture.io), 64);
       assert.equal(capture.stdout(), "");
       assert.match(capture.stderr(), /Usage: assertledger/u);
     }
