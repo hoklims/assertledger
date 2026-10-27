@@ -1,0 +1,231 @@
+{
+  "cases": [
+    {
+      "id": "utf16-astral-positions",
+      "description": "An astral character counts two UTF-16 code units, in a string and in a comment",
+      "source": "\"😀\"+x /*😀*/a",
+      "tokens": [
+        ["StringLiteral", 0, 4, "\"😀\"", "😀"],
+        ["PlusToken", 4, 5, "+"],
+        ["Identifier", 5, 6, "x", "x"],
+        ["Identifier", 13, 14, "a", "a"]
+      ]
+    },
+    {
+      "id": "bom-skipped-shebang-not",
+      "description": "A leading BOM is skipped, but a shebang after it is scanned as tokens",
+      "source": "﻿#!/usr/bin/env node\nx",
+      "tokens": [
+        ["Unknown", 1, 2, "#"],
+        ["ExclamationToken", 2, 3, "!"],
+        ["SlashToken", 3, 4, "/"],
+        ["Identifier", 4, 7, "usr", "usr"],
+        ["SlashToken", 7, 8, "/"],
+        ["Identifier", 8, 11, "bin", "bin"],
+        ["SlashToken", 11, 12, "/"],
+        ["Identifier", 12, 15, "env", "env"],
+        ["Identifier", 16, 20, "node", "node"],
+        ["Identifier", 21, 22, "x", "x"]
+      ]
+    },
+    {
+      "id": "shebang-at-start",
+      "description": "A shebang at offset 0 is trivia",
+      "source": "#!/usr/bin/env node\nx",
+      "tokens": [["Identifier", 20, 21, "x", "x"]]
+    },
+    {
+      "id": "line-terminators-and-unicode-spaces",
+      "description": "CRLF, NBSP, ideographic space, LS and PS are trivia, one code unit each",
+      "source": "a\r\nb c　d e f",
+      "tokens": [
+        ["Identifier", 0, 1, "a", "a"],
+        ["Identifier", 3, 4, "b", "b"],
+        ["Identifier", 5, 6, "c", "c"],
+        ["Identifier", 7, 8, "d", "d"],
+        ["Identifier", 9, 10, "e", "e"],
+        ["Identifier", 11, 12, "f", "f"]
+      ]
+    },
+    {
+      "id": "numeric-literal-values",
+      "description": "Numeric values are normalized, BigInt values keep their radix in lowercase",
+      "source": "0x1F 1_000 0b101 0o17 1e3 .5 1n 0xFFn 017 08 1.50",
+      "tokens": [
+        ["NumericLiteral", 0, 4, "0x1F", "31"],
+        ["NumericLiteral", 5, 10, "1_000", "1000"],
+        ["NumericLiteral", 11, 16, "0b101", "5"],
+        ["NumericLiteral", 17, 21, "0o17", "15"],
+        ["NumericLiteral", 22, 25, "1e3", "1000"],
+        ["NumericLiteral", 26, 28, ".5", "0.5"],
+        ["BigIntLiteral", 29, 31, "1n", "1n"],
+        ["BigIntLiteral", 32, 37, "0xFFn", "0xffn"],
+        ["NumericLiteral", 38, 41, "017", "15"],
+        ["NumericLiteral", 42, 44, "08", "8"],
+        ["NumericLiteral", 45, 49, "1.50", "1.5"]
+      ]
+    },
+    {
+      "id": "string-escape-values",
+      "description": "Escapes are decoded in the value, a line continuation disappears",
+      "source": "'\\x41\\u{1F600}\\n' \"a\\\nb\"",
+      "tokens": [
+        ["StringLiteral", 0, 17, "'\\x41\\u{1F600}\\n'", "A😀\n"],
+        ["StringLiteral", 18, 24, "\"a\\\nb\"", "ab"]
+      ]
+    },
+    {
+      "id": "invalid-escapes-kept-raw",
+      "description": "An invalid escape stays raw in the value",
+      "source": "'\\u{110000}' '\\xZZ'",
+      "tokens": [
+        ["StringLiteral", 0, 12, "'\\u{110000}'", "\\u{110000}"],
+        ["StringLiteral", 13, 19, "'\\xZZ'", "\\xZZ"]
+      ]
+    },
+    {
+      "id": "identifier-escapes-and-astral",
+      "description": "An identifier escape is decoded in the value; astral identifiers and private names",
+      "source": "\\u0061bc 𝑥y #p",
+      "tokens": [
+        ["Identifier", 0, 8, "\\u0061bc", "abc"],
+        ["Identifier", 9, 12, "𝑥y", "𝑥y"],
+        ["PrivateIdentifier", 13, 15, "#p", "#p"]
+      ]
+    },
+    {
+      "id": "unterminated-literals",
+      "description": "An unterminated string stops at the line end; an unterminated template head stays a head",
+      "source": "\"abc\nx `t${y",
+      "tokens": [
+        ["StringLiteral", 0, 4, "\"abc", "abc"],
+        ["Identifier", 5, 6, "x", "x"],
+        ["TemplateHead", 7, 11, "`t${", "t"],
+        ["Identifier", 11, 12, "y", "y"]
+      ]
+    },
+    {
+      "id": "template-nesting",
+      "description": "Nested templates rescan their closing braces as template tails",
+      "source": "`a${`b${c}d`}e`",
+      "tokens": [
+        ["TemplateHead", 0, 4, "`a${", "a"],
+        ["TemplateHead", 4, 8, "`b${", "b"],
+        ["Identifier", 8, 9, "c", "c"],
+        ["TemplateTail", 9, 12, "}d`", "d"],
+        ["TemplateTail", 12, 15, "}e`", "e"]
+      ]
+    },
+    {
+      "id": "template-object-braces",
+      "description": "Braces of an object inside a template expression do not close it",
+      "source": "`${ {a:1}.a }`",
+      "tokens": [
+        ["TemplateHead", 0, 3, "`${", ""],
+        ["OpenBraceToken", 4, 5, "{"],
+        ["Identifier", 5, 6, "a", "a"],
+        ["ColonToken", 6, 7, ":"],
+        ["NumericLiteral", 7, 8, "1", "1"],
+        ["CloseBraceToken", 8, 9, "}"],
+        ["DotToken", 9, 10, "."],
+        ["Identifier", 10, 11, "a", "a"],
+        ["TemplateTail", 12, 14, "}`", ""]
+      ]
+    },
+    {
+      "id": "keyword-kinds",
+      "description": "Keyword kinds that module discovery relies on",
+      "source": "import export require module from of mock type",
+      "tokens": [
+        ["ImportKeyword", 0, 6, "import"],
+        ["ExportKeyword", 7, 13, "export"],
+        ["RequireKeyword", 14, 21, "require"],
+        ["ModuleKeyword", 22, 28, "module"],
+        ["FromKeyword", 29, 33, "from"],
+        ["OfKeyword", 34, 36, "of"],
+        ["Identifier", 37, 41, "mock", "mock"],
+        ["TypeKeyword", 42, 46, "type"]
+      ]
+    },
+    {
+      "id": "regex-not-recognized",
+      "description": "The context-free scanner reads a regex slash as division: a quote inside it opens a string",
+      "source": "const r = /\"/; import \"s\"",
+      "tokens": [
+        ["ConstKeyword", 0, 5, "const"],
+        ["Identifier", 6, 7, "r", "r"],
+        ["EqualsToken", 8, 9, "="],
+        ["SlashToken", 10, 11, "/"],
+        ["StringLiteral", 11, 23, "\"/; import \"", "/; import "],
+        ["Identifier", 23, 24, "s", "s"],
+        ["StringLiteral", 24, 25, "\"", ""]
+      ]
+    },
+    {
+      "id": "empty-private-identifier-skipped",
+      "description": "A lone '#' yields no token and scanning resumes after it",
+      "source": "/#/.test(x)",
+      "tokens": [
+        ["SlashToken", 0, 1, "/"],
+        ["SlashToken", 2, 3, "/"],
+        ["DotToken", 3, 4, "."],
+        ["Identifier", 4, 8, "test", "test"],
+        ["OpenParenToken", 8, 9, "("],
+        ["Identifier", 9, 10, "x", "x"],
+        ["CloseParenToken", 10, 11, ")"]
+      ]
+    },
+    {
+      "id": "conflict-markers-skipped",
+      "description": "Merge conflict markers and the second side are trivia",
+      "source": "<<<<<<< HEAD\na\n=======\nb\n>>>>>>> x",
+      "tokens": [["Identifier", 13, 14, "a", "a"]]
+    },
+    {
+      "id": "html-comments-not-comments",
+      "description": "HTML-like comments are scanned as operators",
+      "source": "a <!-- b\n--> c",
+      "tokens": [
+        ["Identifier", 0, 1, "a", "a"],
+        ["LessThanToken", 2, 3, "<"],
+        ["ExclamationToken", 3, 4, "!"],
+        ["MinusMinusToken", 4, 6, "--"],
+        ["Identifier", 7, 8, "b", "b"],
+        ["MinusMinusToken", 9, 11, "--"],
+        ["GreaterThanToken", 11, 12, ">"],
+        ["Identifier", 13, 14, "c", "c"]
+      ]
+    },
+    {
+      "id": "jsx-scanned-as-operators",
+      "description": "JSX is not recognized: it scans as operators and identifiers",
+      "source": "<div a=\"b\">{c}</div>",
+      "tokens": [
+        ["LessThanToken", 0, 1, "<"],
+        ["Identifier", 1, 4, "div", "div"],
+        ["Identifier", 5, 6, "a", "a"],
+        ["EqualsToken", 6, 7, "="],
+        ["StringLiteral", 7, 10, "\"b\"", "b"],
+        ["GreaterThanToken", 10, 11, ">"],
+        ["OpenBraceToken", 11, 12, "{"],
+        ["Identifier", 12, 13, "c", "c"],
+        ["CloseBraceToken", 13, 14, "}"],
+        ["LessThanToken", 14, 15, "<"],
+        ["SlashToken", 15, 16, "/"],
+        ["Identifier", 16, 19, "div", "div"],
+        ["GreaterThanToken", 19, 20, ">"]
+      ]
+    },
+    {
+      "id": "unknown-characters",
+      "description": "NUL and a lone surrogate are unknown tokens",
+      "source": "\u0000@\ud800x",
+      "tokens": [
+        ["Unknown", 0, 1, "\u0000"],
+        ["AtToken", 1, 2, "@"],
+        ["Unknown", 2, 3, "\ud800"],
+        ["Identifier", 3, 4, "x", "x"]
+      ]
+    }
+  ]
+}
