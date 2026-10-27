@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+- `doctor` accepts the detection overrides of `init`: `--package-manager`, `--test-command-json`
+  (`-` reads stdin) and `--adapter-config`, also in `AssertLedger.doctor` options. A dry run that
+  `init` accepts is now reproducible by `doctor`: these flags take the same values as for `init`
+  (`-` for stdin, a path such as `-adapter.json`). The MCP `assertledger_doctor` input is unchanged.
+- A package of a pnpm workspace (a directory with a `package.json`) that declares no package
+  manager (a `packageManager` field that is not a string is `PACKAGE_MANAGER_INVALID`, not an
+  absent one) now inherits it from the nearest `pnpm-workspace.yaml` when it selects the package
+  (the search stops there, as pnpm's does), within the same repository and never above a `.git`.
+  Quoted scalars are decoded (`''`), and an escape a pattern cannot hold is refused. This
+  previously returned
+  `PACKAGE_MANAGER_UNDETECTED`; it now succeeds and reports the informational
+  `PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`. Only `pnpm-workspace.yaml` declares members: the npm,
+  Yarn and Bun `workspaces` field is not read. Its `packages` list is read as a block or flow
+  list (also across lines), under a plain or quoted `packages` key (a file that repeats a
+  top-level key declares nothing, as pnpm refuses it), with `!` exclusions, `*`, `**`, `?`,
+  `{a,b}` and `[a-z]` (a class opening with `!` or `^` is not understood, as dialects disagree on
+  negation), where a
+  wildcard does not select a dot-prefixed directory (only a pattern that spells the dot does),
+  redundant separators and `.` segments are normalized, a directory below `node_modules` or
+  `bower_components` is never selected, a leading byte-order mark is skipped, a line break
+  inside a flow-list scalar makes the file unread (between items it is fine), `-foo: bar` is an
+  ordinary key, lines may end with
+  `\r`, a line indented with a tab makes the file unread, parent segments are normalized (`packages/../other/a`), a leading class that can match a dot (`[.]`, `[.a]`) spells it, a comma
+  or a brace inside a class is not a brace separator, and an equally indented root mapping is read from its
+  column; Unicode whitespace other
+  than space and tab anywhere in the file, a lone quote
+  inside a quoted scalar, a top-level line that is not a `key: value` entry, a comment or a
+  document marker, a `-` item at column 0 that does not continue a block sequence, an unclosed
+  or mismatched (`[}`) quoted scalar or flow collection under any key, a manager
+  lockfile at the workspace root that is not a regular file, and any other syntax, any other shape under `packages`, an entry that is not a string (`42`, `true`,
+  `null`, an empty item), anything but whitespace after a flow list, a pattern
+  beyond fixed bounds (256 characters, 8 nested braces, 1,024 patterns and alternations in total,
+  1,024-character paths) or a file that exists but cannot be read (over 1 MiB, a link) declares
+  nothing. Matching and parsing are linear: no regular expression is built from a pattern. The
+  root `package.json` must be valid JSON (`PACKAGE_MANIFEST_INVALID`) and within 16 MiB, and its
+  `packageManager` field (a value that is not a string is `PACKAGE_MANAGER_INVALID`) and lockfiles
+  must converge on pnpm. The inherited facts are read again
+  before writing, like the in-package evidence. Inputs that already detect a manager or take an
+  override are unchanged.
+- `doctor` with a value flag given no value (`--framework`, and the new ones) now exits 64 with the
+  usage text, as `--exclude` already did, instead of exit 4. `doctor --framework` takes the same
+  values as `init --framework`, a single dash included (`-x` reaches the engine and returns the
+  structured `FRAMEWORK_OVERRIDE_INVALID`, exit 4, instead of a usage error).
+- A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
+  also behind a launcher; `--test` must come before a program's entry point and before a `--`, so
+  `node script`, `node script --test`, `./node script --test` and `node -- --test` are not Node's
+  runner, and `bun test` (global switches such as `--smol` allowed before `test`) counts only when
+  the command is Bun or a launcher that runs it, so `echo bun test`, `npm run bun test` and
+  `pnpm bun test` are not Bun; from a package script, the program that owns `--test` must be a
+  Node runtime and the command a runtime or one of its launchers, so `echo --test`, `echo node
+  --test`, `npm run node --test`, `corepack bun test` and `bun -e test` are not a runner, while a
+  command declared with
+  `--test-command-json` is taken for the direct runner) and spells no test path (a glob, a nested
+  path or a test file name) now returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. For a command that
+  does invoke Node's runner, only the words after `--test` are path filters (`pnpm exec node
+  --test` no longer filters on a `node` directory; a `--` before the runtime belongs to its
+  launcher), the values of `bun test` options are not filters, and an executable such as `./node`
+  is never read as a script. Its operands were read as path filters:
+  `turbo test` selected the tests under `test/`, or none and `BASE_TEST_FILES_UNAVAILABLE`, and
+  `npm run test:unit` selected every test. A command like that is no longer accepted with a
+  guessed inventory: declare the direct runner with `--test-command-json`. Commands that invoke
+  the runner, or spell a path, are unchanged, as are init schemas and digests. Closes
+  [#72](https://github.com/hoklims/assertledger/issues/72).
+
 ## 2.1.0 — 2026-10-13
 
 - Add verification request and evidence manifest v5 and witness import request v2. A designated

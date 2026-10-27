@@ -36,6 +36,108 @@ plausible test frameworks, composite shell scripts, contradictory overrides, and
 adapter configurations return `CONFLICT`. Multiple CI providers are only sorted evidence and do not
 block initialization.
 
+`doctor` is `init --dry-run` and takes the same detection overrides, so a dry run that `init`
+accepts can be reproduced by `doctor`: `--framework`, `--package-manager`,
+`--test-command-json PATH` (`-` reads stdin) and `--adapter-config PATH`, each at most once and
+with the values `init` accepts (a value is refused only when it starts with `--`).
+
+```sh
+assertledger doctor packages/api --framework bun:test --package-manager pnpm \
+  --test-command-json bun-test.json --json
+```
+
+In a pnpm workspace, a package that has a `package.json`, declares no package manager and receives
+no `--package-manager` looks for its workspace (a `packageManager` field of a type no manager
+reads, such as a number, is `PACKAGE_MANAGER_INVALID` instead of an absent one). The search starts in the parent directory and stops
+at the nearest `pnpm-workspace.yaml`, as pnpm does: when its `packages` patterns, minus `!`
+exclusions, select the package directory, it reads that directory's `package.json`
+`packageManager` field (one that is not a string is `PACKAGE_MANAGER_INVALID`) and JavaScript
+lockfiles, which must converge on pnpm as in the package
+itself, and when they do not select it nothing is inherited, even if a workspace further out would.
+The search never reads above the first directory holding a `.git`, and does not run when the
+package is itself a repository top or when no `.git` bounds it; a package the patterns do not
+select stays `PACKAGE_MANAGER_UNDETECTED`. Only `pnpm-workspace.yaml` declares members: the
+`workspaces` field of npm, Yarn and Bun is not read, and pass `--package-manager` for those
+workspaces.
+
+The `packages` key may be quoted (`'packages':`, `"packages":`). A file that repeats a top-level key
+declares nothing, as pnpm refuses it. `packages` is read as a block list or a flow list (also
+across lines) with the subset of globs the
+managers share: `*`, `**`, `?`, `{a,b}` and `[a-z]`, and `!` exclusions, which apply whatever
+their position. A class that opens with `!` or `^` is not understood, as glob dialects disagree on
+whether it negates. A wildcard (`*`, `**`, `?`, a class) does not select a directory whose name starts
+with a dot (`packages/.hidden`); only a pattern that spells the dot (`packages/.hidden`,
+`packages/.*`, `packages/[.]hidden`, or any leading class that can match a dot such as `[.a]`) does,
+as in pnpm. Redundant separators, `.` and `..` segments
+in a pattern (`packages//a`, `./packages/a`, `packages/../other/a`) are normalized, a pattern that
+climbs out of the workspace root is ignored, a `,` or a brace inside a class (`{[a,b],x}`, `[{}]`, also in the nesting bound) is not an
+alternative separator, and a directory below `node_modules` or
+`bower_components` is never selected, even by a pattern that names it. A leading byte-order mark
+is skipped, and a document that indents its whole root mapping equally is read from that column;
+content to its left makes the file declare nothing. Lines end with `\r\n`, `\r` or `\n`. In a
+flow list a line break is read between two items; one inside a quoted or plain scalar (which YAML
+folds to a space) makes the file declare nothing. Only a `-` followed by white space is a sequence
+marker: `-foo: bar` is an ordinary key. YAML
+separates with spaces and tabs only, so a file that holds any other Unicode whitespace (such as a
+non-breaking space) is not read, nor is one whose line is indented with a tab. The value of any
+other key is not read, but one that opens with a quote or a flow
+bracket must be closed by the bracket its opener asks for (`[}` is not), with nothing after it,
+and a `-` at column 0 must continue the block sequence that is the value of the key above it (a
+root mapping cannot turn into a sequence), or the file declares nothing. A `#` inside a quoted pattern is kept, a doubled single quote decodes to one quote, and
+a double-quoted escape other than `\\`, `\"` and `\/` is refused, as is a lone quote inside a
+quoted scalar. Anything else declares nothing and infers nothing: another syntax, another shape
+under `packages` (a mapping, a nested sequence), an entry that is not a string (a number, a
+boolean, `null`, `~`, an empty item, a nested sequence item such as `- - x`, a mapping or a
+list), a top-level line that is neither a
+`key: value` entry, a comment nor a document marker, text
+after the closing bracket of a flow list, a pattern beyond 256 characters or 8 nested braces, more
+than 1,024 patterns and alternations in total, a package path over 1,024 characters, or a
+`pnpm-workspace.yaml` that exists but cannot be read (larger than 1 MiB, not a regular file), or
+a manager lockfile at the workspace root that exists but is not a regular file (a link, a
+directory), as the manager would still read it.
+Matching is done segment by segment, without regular expressions built from the repository, so
+its cost is a product of lengths, and the YAML file is read in a single linear pass. A workspace
+root `package.json` that is not valid JSON returns `CONFLICT` with `PACKAGE_MANIFEST_INVALID`;
+one that cannot be read (larger than 16 MiB, or not a regular file) infers nothing.
+
+A manager found this way is reported with the informational
+`PACKAGE_MANAGER_FROM_WORKSPACE_ROOT`, also on the results that stop early afterwards (no
+framework detected, an unsafe command). The workspace facts are read again immediately before
+writing, and a change returns `CONFLICT` with `REPOSITORY_CHANGED_DURING_INIT`. The lock records
+only files under the package, so a later change at the workspace root is not detected by it: rerun
+`init` after changing the workspace's package manager.
+
+A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
+also behind a launcher such as `pnpm exec` or `tsx`; `--test` must come before a program's entry
+point and before a `--`, so `node script`, `node script --test`, `./node script --test` and
+`node -- --test` are not Node's runner, and `bun test` counts
+only when the command is Bun or a launcher that runs it: `pnpm exec`, `npm exec`, `yarn exec` or
+`dlx`, `npx` and `bunx` (with their valued options such as `--package`), `env` and `cross-env`
+assignments and valued options (`env -u NAME`), `dotenv --`, behind `corepack`, with Bun's global
+switches allowed before `test` (`bun --smol test`; `--cwd=dir` is one word, and a separate value
+such as `--cwd dir` is not understood); so `echo bun test`, `npm run bun test` and `pnpm bun test`
+are not Bun) and spells no test path (a
+glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
+test`, `pnpm -r test`
+and `npm run test:unit` are such commands: their operands are task names, not path filters, even
+when a directory of that name exists, so no inventory can be derived. `detections.testCommand`
+names the command. Run `doctor` on one workspace package, or declare the direct runner with
+`--test-command-json`. For a command that does invoke Node's runner, only the words after `--test`
+are path filters: the launcher words before it (`exec`, `node`) never are, and the executable
+itself (`./node`) is never read as a script given to Node. A `--` that precedes the runtime
+belongs to the launcher (`npm exec -- node --test`). From a package script, the program that owns
+`--test` must be a Node runtime (`node`, `tsx`, `ts-node`, `babel-node`, `nodemon`) and the
+program the command dispatches: the command itself, or what a launcher runs right after its own
+options (`npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn` after `exec` or `dlx`, `env` and `cross-env`
+assignments, `dotenv --`, `c8`, `nyc`, behind `corepack` when it dispatches a package manager).
+So `echo --test`, `echo node --test` and `npm exec -- echo node --test` are not Node's runner,
+and neither is `npm run node --test`, which runs the script called `node` (a program only follows
+`exec`, `dlx` or `x`); a command declared with `--test-command-json` is taken for the direct
+runner whatever its executable. A Bun global option other than the known switches and the `--opt=value` forms
+leaves the subcommand unknown (`bun -e test` evaluates `test`), and `corepack bun test` is a
+syntax error of corepack, not Bun. For `bun test`, the values of its options (`--preload
+file`, `--timeout 5000`) are not path filters either.
+
 The static inventory walks the filesystem, not the Git index, and never follows or copies a
 symbolic link: a link inside it returns `CONFLICT` with `UNSUPPORTED_REPOSITORY_SYMLINK` and writes
 nothing. It always skips entries named `.git`, `.testforge`, and `node_modules`, at any depth.
