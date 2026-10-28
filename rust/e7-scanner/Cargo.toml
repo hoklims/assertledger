@@ -1,0 +1,13 @@
+[package]
+name = "assertledger-e7-scanner"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99.1"
+publish = false
+description = "E7 experiment: a std-only Rust port of AssertLedger's JavaScript token and module specifier scan."
+license = "MIT"
+
+[dependencies]
+
+[profile.release]
+debug = false
