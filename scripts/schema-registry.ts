@@ -44,6 +44,7 @@ import {
   repositoryInitLockV2JsonSchema,
   repositoryInitResultJsonSchema,
   repositoryInitResultV2JsonSchema,
+  repositoryInitResultV3JsonSchema,
   verificationRequestJsonSchema,
   verificationRequestV2JsonSchema,
   verificationRequestV3JsonSchema,
@@ -82,6 +83,7 @@ export const POST_CONFORMANCE_V1_SCHEMA_NAMES: ReadonlySet<string> = new Set([
   "repository-init-config.v2.json",
   "repository-init-lock.v2.json",
   "repository-init-result.v2.json",
+  "repository-init-result.v3.json",
   "repository-audit.v2.json",
 ]);
 
@@ -131,6 +133,7 @@ export function publishedSchemas(): ReadonlyArray<readonly [string, Record<strin
     ["repository-init-lock.v2.json", repositoryInitLockV2JsonSchema()],
     ["repository-init-result.v1.json", repositoryInitResultJsonSchema()],
     ["repository-init-result.v2.json", repositoryInitResultV2JsonSchema()],
+    ["repository-init-result.v3.json", repositoryInitResultV3JsonSchema()],
     ["evidence-manifest.v1.json", evidenceManifestJsonSchema()],
     ["evidence-manifest.v2.json", evidenceManifestV2JsonSchema()],
     ["evidence-manifest.v3.json", evidenceManifestV3JsonSchema()],

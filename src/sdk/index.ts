@@ -97,6 +97,7 @@ import {
   type RepositoryAuditV2,
   type RepositoryInitResult,
   type RepositoryInitResultV2,
+  type RepositoryInitResultV3,
   replayResultJsonSchema,
   repositoryAnalysisJsonSchema,
   repositoryAuditJsonSchema,
@@ -107,6 +108,7 @@ import {
   repositoryInitLockV2JsonSchema,
   repositoryInitResultJsonSchema,
   repositoryInitResultV2JsonSchema,
+  repositoryInitResultV3JsonSchema,
   verificationRequestJsonSchema,
   verificationRequestV2JsonSchema,
   verificationRequestV3JsonSchema,
@@ -218,6 +220,7 @@ export type SchemaName =
   | "repository-init-lock-v2"
   | "repository-init-result"
   | "repository-init-result-v2"
+  | "repository-init-result-v3"
   | "evidence-manifest"
   | "evidence-manifest-v2"
   | "evidence-manifest-v3"
@@ -265,7 +268,7 @@ export class AssertLedger {
   async init(
     root: string,
     options: RepositoryInitOptions = {},
-  ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
+  ): Promise<RepositoryInitResult | RepositoryInitResultV2 | RepositoryInitResultV3> {
     return parseVersionedRepositoryInitResult(await initializeRepository(root, options));
   }
 
@@ -280,7 +283,7 @@ export class AssertLedger {
       | "adapterConfigPath"
       | "onLinkAssessment"
     > = {},
-  ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
+  ): Promise<RepositoryInitResult | RepositoryInitResultV2 | RepositoryInitResultV3> {
     return this.init(root, { ...options, dryRun: true });
   }
 
@@ -655,6 +658,8 @@ export class AssertLedger {
         return repositoryInitResultJsonSchema();
       case "repository-init-result-v2":
         return repositoryInitResultV2JsonSchema();
+      case "repository-init-result-v3":
+        return repositoryInitResultV3JsonSchema();
       case "evidence-manifest":
         return evidenceManifestJsonSchema();
       case "evidence-manifest-v2":

@@ -82,6 +82,9 @@
   `public-turbo-orchestration-2.11.7-bun-1.4.4`; receipts collected on 1.4.2 must be recollected
   and no 1.4.4 receipt ships with the package.
   See [the migration note](docs/migration-bun-1.4.4.md).
+- Explain audit Git limitations, missing verification requests and Bun runtime doctor refusals.
+  Ambiguous framework detection now returns init result v3 with the evidence files; see the
+  [migration guide](docs/migration-init-result-v3.md).
 
 ## 2.1.0 — 2026-10-13
 
@@ -150,7 +153,7 @@
 - Return structured `CONFLICT` results for doctor/init inventory limits instead of validation
   exceptions: base-test count, evidence path length and generated plan content. The 1,000-test
   limit remains unchanged, and conflicts install no managed files.
-- Explain all static doctor/init reason codes with actionable guidance, including explicit
+- Explain listed static doctor/init reason codes with actionable guidance, including explicit
   framework selection for ambiguous repositories. Campaign outcome and digest policies are unchanged.
 
 ## 1.5.0 — 2026-10-10

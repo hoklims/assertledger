@@ -44,6 +44,7 @@ import {
   parseRepositoryInitLockV2,
   parseRepositoryInitResult,
   parseRepositoryInitResultV2,
+  parseVersionedRepositoryInitResult,
   parseVerificationRequest,
   parseVersionedRepositoryInitConfig,
   parseVersionedRepositoryInitLock,
@@ -57,6 +58,7 @@ import {
   type RepositoryInitLockV2,
   type RepositoryInitResult,
   type RepositoryInitResultV2,
+  type RepositoryInitResultV3,
   repositoryInitConfigDigest,
   repositoryInitConfigV2Digest,
   repositoryInitLockDigest,
@@ -2820,7 +2822,7 @@ export async function initializeRepository(
   requestedRoot: string,
   options: RepositoryInitOptions = {},
   writeDependencies: RepositoryInitWriteDependencies = {},
-): Promise<RepositoryInitResult | RepositoryInitResultV2> {
+): Promise<RepositoryInitResult | RepositoryInitResultV2 | RepositoryInitResultV3> {
   let root: string;
   try {
     root = await realpath(requestedRoot);
@@ -2986,10 +2988,18 @@ export async function initializeRepository(
     );
 
   const frameworkFacts = new Set<InitFramework>();
+  const frameworkEvidence = new Map<InitFramework, Set<string>>();
+  const recordFramework = (framework: InitFramework, file: string) => {
+    frameworkFacts.add(framework);
+    const files = frameworkEvidence.get(framework) ?? new Set<string>();
+    files.add(file);
+    frameworkEvidence.set(framework, files);
+  };
   const dependencies = initDependencies(packageDocument);
-  if (dependencies.has("vitest")) frameworkFacts.add("vitest");
-  if (dependencies.has("jest") || dependencies.has("@jest/globals")) frameworkFacts.add("jest");
-  if (dependencies.has("pytest")) frameworkFacts.add("pytest");
+  if (dependencies.has("vitest")) recordFramework("vitest", "package.json");
+  if (dependencies.has("jest") || dependencies.has("@jest/globals"))
+    recordFramework("jest", "package.json");
+  if (dependencies.has("pytest")) recordFramework("pytest", "package.json");
   for (const [file, content] of contents) {
     if (
       initEvidenceKind(file) !== "TEST_SOURCE" &&
@@ -2999,16 +3009,16 @@ export async function initializeRepository(
       continue;
     if (/\.[cm]?[jt]sx?$/u.test(file)) {
       const specifiers = initJavaScriptModuleSpecifiers(content, file);
-      if (specifiers.has("node:test")) frameworkFacts.add("node:test");
+      if (specifiers.has("node:test")) recordFramework("node:test", file);
       if ([...specifiers].some((name) => name === "vitest" || name.startsWith("@vitest/"))) {
-        frameworkFacts.add("vitest");
+        recordFramework("vitest", file);
       }
       if ([...specifiers].some((name) => name === "jest" || name.startsWith("@jest/"))) {
-        frameworkFacts.add("jest");
+        recordFramework("jest", file);
       }
-      if (specifiers.has("bun:test")) frameworkFacts.add("bun:test");
+      if (specifiers.has("bun:test")) recordFramework("bun:test", file);
     } else if (file.endsWith(".py") && /(^|\/)test[^/]*\.py$/u.test(file)) {
-      frameworkFacts.add("pytest");
+      recordFramework("pytest", file);
     }
   }
   const scripts = packageDocument?.scripts;
@@ -3017,18 +3027,18 @@ export async function initializeRepository(
       ? (scripts as Record<string, unknown>).test
       : undefined;
   if (typeof testScript === "string") {
-    if (/\bnode\s+--test\b/u.test(testScript)) frameworkFacts.add("node:test");
-    if (/\bvitest\b/u.test(testScript)) frameworkFacts.add("vitest");
-    if (/\bjest\b/u.test(testScript)) frameworkFacts.add("jest");
-    if (/\bbun\s+test\b/u.test(testScript)) frameworkFacts.add("bun:test");
-    if (/\bpytest\b/u.test(testScript)) frameworkFacts.add("pytest");
+    if (/\bnode\s+--test\b/u.test(testScript)) recordFramework("node:test", "package.json");
+    if (/\bvitest\b/u.test(testScript)) recordFramework("vitest", "package.json");
+    if (/\bjest\b/u.test(testScript)) recordFramework("jest", "package.json");
+    if (/\bbun\s+test\b/u.test(testScript)) recordFramework("bun:test", "package.json");
+    if (/\bpytest\b/u.test(testScript)) recordFramework("pytest", "package.json");
   }
+  if (/\[tool\.pytest(?:\.|\])/u.test(pyproject)) recordFramework("pytest", "pyproject.toml");
   if (
-    /\[tool\.pytest(?:\.|\])/u.test(pyproject) ||
-    (contents.has("requirements.txt") &&
-      /(^|\n)pytest(?:[=<>!~]|$)/u.test(contents.get("requirements.txt") ?? ""))
+    contents.has("requirements.txt") &&
+    /(^|\n)pytest(?:[=<>!~]|$)/u.test(contents.get("requirements.txt") ?? "")
   )
-    frameworkFacts.add("pytest");
+    recordFramework("pytest", "requirements.txt");
 
   const frameworkOverride = options.framework ?? (await configuredRepositoryFramework(root));
   if (frameworkOverride !== undefined && !isInitFramework(frameworkOverride)) {
@@ -3044,7 +3054,14 @@ export async function initializeRepository(
   ) {
     const detections = initEmptyDetections(["FRAMEWORK_AMBIGUOUS"]);
     detections.packageManager = packageManager;
-    return terminal("CONFLICT", detections, ["FRAMEWORK_AMBIGUOUS"]);
+    const result = terminal("CONFLICT", detections, ["FRAMEWORK_AMBIGUOUS"]);
+    return parseVersionedRepositoryInitResult({
+      ...result,
+      schemaVersion: "3.0.0",
+      detectedFrameworks: [...frameworkEvidence.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([framework, files]) => ({ framework, files: [...files].sort() })),
+    });
   }
   const framework = frameworkOverride ?? [...frameworkFacts][0];
   if (framework === undefined) {

@@ -9,6 +9,79 @@ export { DiagnosticCodesSchema, DiagnosticReportSchema };
 
 type Entry = readonly [explanation: string, nextAction: string, severity?: "info" | "limitation"];
 const CATALOGUE: Readonly<Record<string, Entry>> = {
+  INVALID_REPOSITORY_ROOT: [
+    "The repository root does not resolve to an accessible directory.",
+    "Pass an existing accessible repository directory to analyze or audit.",
+  ],
+  VERIFICATION_REQUEST_REPOSITORY_MISMATCH: [
+    "The verification request names a different repository root.",
+    "Supply a request bound to the audited repository and rerun audit.",
+  ],
+  REPOSITORY_CHANGED_DURING_AUDIT: [
+    "The repository inventory changed while the audit was running.",
+    "Stop concurrent changes and rerun audit on a stable repository.",
+  ],
+  RUNTIME_BUN_VERSION_UNSUPPORTED: [
+    "The configured Bun version is unsupported by the official adapter.",
+    "Install the Bun version supported by this AssertLedger release and rerun runtime doctor.",
+  ],
+  RUNTIME_BUN_EXECUTABLE_UNAVAILABLE: [
+    "The configured Bun executable could not be resolved or run.",
+    "Check the configured executable and its availability, then rerun runtime doctor.",
+  ],
+  RUNTIME_BUN_DEPENDENCY_UNAVAILABLE: [
+    "The bun:test dependency could not be loaded.",
+    "Check the Bun installation and rerun runtime doctor.",
+  ],
+  RUNTIME_BUN_PREFLIGHT_FAILED: [
+    "The synthetic Bun preflight did not pass.",
+    "Inspect runtime doctor checks and repair the Bun environment before running verification.",
+  ],
+  GIT_DISABLED: [
+    "Git history was disabled for this audit.",
+    "Rerun audit without --no-git to include available Git history.",
+    "limitation",
+  ],
+  GIT_UNAVAILABLE: [
+    "Git could not identify a worktree at the audited root.",
+    "Check Git availability and audit a Git worktree to include history.",
+    "limitation",
+  ],
+  GIT_HEAD_UNAVAILABLE: [
+    "Git HEAD or the shallow-repository state could not be read.",
+    "Check the repository and its HEAD, then rerun audit.",
+    "limitation",
+  ],
+  GIT_HISTORY_SHALLOW: [
+    "The repository has shallow Git history.",
+    "Fetch complete history and rerun audit if history measurements are needed.",
+    "limitation",
+  ],
+  GIT_HISTORY_TRUNCATED: [
+    "Git history exceeds the audit's 1,000-commit limit.",
+    "Treat history measurements as unavailable; consult Git directly for the full history.",
+    "limitation",
+  ],
+  GIT_HISTORY_UNAVAILABLE: [
+    "Git history for the audit window could not be read.",
+    "Check repository access and Git history, then rerun audit.",
+    "limitation",
+  ],
+  GIT_INDEX_UNAVAILABLE: [
+    "The Git index could not be read.",
+    "Check repository access and the Git index, then rerun audit.",
+    "limitation",
+  ],
+  GIT_LATEST_HISTORY_UNAVAILABLE: [
+    "The latest Git history could not be read.",
+    "Check repository access and Git history, then rerun audit.",
+    "limitation",
+  ],
+  VERIFICATION_REQUEST_UNAVAILABLE: [
+    "No verification request is available; worlds and candidates require operator or harness input.",
+    "Describe worlds and candidates using assertledger schema verification-request, then supply a valid request to audit with --verification-request.",
+    "limitation",
+  ],
   JAVASCRIPT_TOKENIZATION_FAILED: [
     "JavaScript/TypeScript lexical scanning could not make bounded progress; the refusal names the file and offset.",
     "Inspect the named source file and report the lexical failure with a minimal reproduction. Audit does not return partial facts for that file.",
@@ -44,7 +117,7 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
   ],
   FRAMEWORK_AMBIGUOUS: [
     "Multiple test frameworks were detected, or the explicit choice disagrees with the detected frameworks.",
-    "Inspect test imports, dependencies and test scripts, then choose a detected framework with --framework (node:test, bun:test, vitest, jest or pytest). The current init result schema cannot list all detected frameworks.",
+    "Inspect the detected frameworks and their files, then choose a detected framework with --framework (node:test, bun:test, vitest, jest or pytest).",
   ],
   FRAMEWORK_UNDETECTED: [
     "No supported test framework was detected.",

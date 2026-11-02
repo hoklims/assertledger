@@ -15,10 +15,11 @@ escaped as config, lock or result validation exceptions, leaving CLI stdout empt
 config and lock schemas, their digest projections, and the adapter limits remain unchanged.
 The valid 1,000-file boundary still produces a complete initialization plan.
 
-`explain` now covers every static initialization reason and its named contract errors. For
+`explain` provides guidance for the listed static initialization reasons and contract errors. For
 `FRAMEWORK_AMBIGUOUS`, inspect test imports, dependencies and scripts, then select a detected runner
 with `--framework`. The existing strict result schemas have no field for a list of detected
 frameworks or limit/count metadata; this change does not add those fields to frozen versions.
+Later releases add framework evidence in [result v3](migration-init-result-v3.md).
 
 Regression tests exercise all three CLI entry points on synthetic 1,001-test Bun and Node
 repositories, the valid 1,000-test boundary, an oversized evidence path, and a canonical lock above
@@ -26,8 +27,8 @@ the planned-file limit. macOS cannot construct a repository path above 1,024 cha
 an explicit skip for that single fixture after `ENAMETOOLONG`; Windows/Linux execute it. The lock-size
 fixture uses shorter paths and more entries so it runs on all three systems. The same behavioral
 tests fail with attributed assertions on the 1.5.0 source baseline.
-Catalogue coverage tests enumerate the initialization codes, require `known: true` and actionable
-guidance, and detect newly introduced codes in the static initialization source.
+Catalogue tests require `known: true` and actionable guidance for a named set of initialization
+codes. They do not establish coverage of every code emitted by initialization or its helpers.
 
 The correction preserves campaign outcome taxonomy, symbolic-link policy, `.gitignore` handling
 and release authority. Its initialization schemas remain unchanged; the audit producer migration

@@ -10,6 +10,25 @@ import { AssertLedger } from "../src/sdk/index.js";
 import { connectPublicMcp, runPublicCli } from "./support/public-surface.js";
 
 describe("versioned diagnostic guidance", () => {
+  it("explains why an audit cannot produce a verification request", async () => {
+    let stdout = "";
+    const exitCode = await runPublicCli(["explain", "VERIFICATION_REQUEST_UNAVAILABLE", "--json"], {
+      cwd: process.cwd(),
+      readStdin: async () => "",
+      writeStdout: (text) => {
+        stdout += text;
+      },
+      writeStderr: (text) => {
+        assert.fail(text);
+      },
+    });
+    assert.equal(exitCode, 0);
+    const diagnostic = JSON.parse(stdout).diagnostics[0];
+    assert.equal(diagnostic.known, true);
+    assert.match(diagnostic.explanation, /worlds/u);
+    assert.match(diagnostic.explanation, /candidates/u);
+    assert.match(diagnostic.nextAction, /assertledger schema verification-request/u);
+  });
   it("explains refusal without turning operational failures into evidence", () => {
     const report = explainReasonCodes([
       "TARGET_STRENGTH_INSUFFICIENT",

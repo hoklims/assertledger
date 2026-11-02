@@ -902,6 +902,12 @@ export async function runCli(
             [
               `Status: ${result.status}`,
               `Reason codes: ${reasons}`,
+              ...(result.schemaVersion === "3.0.0"
+                ? result.detectedFrameworks.map(
+                    (entry) =>
+                      `Detected ${entry.framework}: ${entry.files.map(quoteRepositoryEntry).join(", ")}`,
+                  )
+                : []),
               `Required operator inputs: ${result.requiredOperatorInputs.join(", ")}`,
               renderDiagnostics(result.reasonCodes),
               `Next safe action: ${result.nextCommands[0]?.executable ?? "assertledger"} ${(result.nextCommands[0]?.arguments ?? []).join(" ")}`,
@@ -1366,6 +1372,7 @@ export async function runCli(
           name !== "repository-init-lock-v2" &&
           name !== "repository-init-result" &&
           name !== "repository-init-result-v2" &&
+          name !== "repository-init-result-v3" &&
           name !== "evidence-manifest" &&
           name !== "evidence-manifest-v2" &&
           name !== "evidence-manifest-v3" &&

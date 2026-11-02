@@ -684,6 +684,24 @@ export const RepositoryInitResultV2Schema = z
     description: "Deterministic initialization plan for the Bun test adapter.",
   });
 
+export const RepositoryInitResultV3Schema = z
+  .strictObject({
+    ...RepositoryInitResultSchema.shape,
+    schemaVersion: z.literal("3.0.0"),
+    status: z.literal("CONFLICT"),
+    detectedFrameworks: z.array(
+      z.strictObject({
+        framework: z.enum(["node:test", "bun:test", "vitest", "jest", "pytest"]),
+        files: z.array(z.string().min(1)),
+      }),
+    ),
+  })
+  .meta({
+    id: "https://testforge.dev/schemas/repository-init-result.v3.json",
+    title: "AssertLedger repository init result v3",
+    description: "Ambiguous framework detection and its repository evidence.",
+  });
+
 const EvidenceWorldSchema = z.strictObject({
   id: IdentifierSchema,
   kind: z.enum(["REFERENCE", "TARGET", "NEUTRAL"]),
@@ -2368,6 +2386,7 @@ export type RepositoryInitLock = z.infer<typeof RepositoryInitLockSchema>;
 export type RepositoryInitLockV2 = z.infer<typeof RepositoryInitLockV2Schema>;
 export type RepositoryInitResult = z.infer<typeof RepositoryInitResultSchema>;
 export type RepositoryInitResultV2 = z.infer<typeof RepositoryInitResultV2Schema>;
+export type RepositoryInitResultV3 = z.infer<typeof RepositoryInitResultV3Schema>;
 export type RepositoryInitDetections = z.infer<typeof RepositoryInitDetectionsSchema>;
 export type RepositoryInitDetectionsV2 = z.infer<typeof RepositoryInitDetectionsV2Schema>;
 export type EvidenceManifestContract = z.infer<typeof EvidenceManifestSchema>;
@@ -3424,14 +3443,31 @@ export function parseRepositoryInitResultV2(value: unknown): RepositoryInitResul
 
 export function parseVersionedRepositoryInitResult(
   value: unknown,
-): RepositoryInitResult | RepositoryInitResultV2 {
+): RepositoryInitResult | RepositoryInitResultV2 | RepositoryInitResultV3 {
+  if (isJsonObject(value) && value.schemaVersion === "3.0.0") {
+    const parsed = RepositoryInitResultV3Schema.safeParse(value);
+    if (!parsed.success)
+      throw new ContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
+    assertRepositoryInitResultConsistent(parsed.data);
+    if (
+      !parsed.data.reasonCodes.includes("FRAMEWORK_AMBIGUOUS") ||
+      parsed.data.detectedFrameworks.length === 0 ||
+      !sortedUnique(parsed.data.detectedFrameworks.map((entry) => entry.framework)) ||
+      parsed.data.detectedFrameworks.some(
+        (entry) => entry.files.length === 0 || !sortedUnique(entry.files),
+      )
+    ) {
+      throw new ContractError("REPOSITORY_INIT_RESULT_INCONSISTENT");
+    }
+    return parsed.data;
+  }
   return isJsonObject(value) && value.schemaVersion === REPOSITORY_INIT_SCHEMA_VERSION_V2
     ? parseRepositoryInitResultV2(value)
     : parseRepositoryInitResult(value);
 }
 
 function assertRepositoryInitResultConsistent(
-  result: RepositoryInitResult | RepositoryInitResultV2,
+  result: RepositoryInitResult | RepositoryInitResultV2 | RepositoryInitResultV3,
 ): void {
   validateInitDetections(result.detections, "REPOSITORY_INIT_RESULT_INCONSISTENT");
   const paths = result.files.map((file) => file.path);
@@ -4637,6 +4673,13 @@ export function repositoryInitResultV2JsonSchema(): Record<string, unknown> {
   return jsonSchemaFor(
     RepositoryInitResultV2Schema,
     "https://testforge.dev/schemas/repository-init-result.v2.json",
+  );
+}
+
+export function repositoryInitResultV3JsonSchema(): Record<string, unknown> {
+  return jsonSchemaFor(
+    RepositoryInitResultV3Schema,
+    "https://testforge.dev/schemas/repository-init-result.v3.json",
   );
 }
 
