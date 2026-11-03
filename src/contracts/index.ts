@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import * as z from "zod";
+import { knownDiagnosticCode, type KnownDiagnosticCode } from "./diagnostic-catalogue.js";
 
 export * from "./runtime-doctor.js";
 
@@ -516,7 +517,7 @@ export type RepositoryAuditV2 = z.infer<typeof RepositoryAuditV2Schema>;
 export function parseRepositoryAuditV2(value: unknown): RepositoryAuditV2 {
   const parsed = RepositoryAuditV2Schema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_AUDIT_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_AUDIT_INVALID", z.prettifyError(parsed.error));
   }
   const { appliedExcludes, ...facts } = parsed.data;
   parseRepositoryAudit({ ...facts, schemaVersion: "1.0.0" });
@@ -542,7 +543,7 @@ export function parseRepositoryAuditV2(value: unknown): RepositoryAuditV2 {
     ((appliedExcludes.source === "request" || appliedExcludes.source === "defaults") &&
       JSON.stringify(entries) !== JSON.stringify(expected))
   ) {
-    throw new ContractError("REPOSITORY_AUDIT_EXCLUSIONS_INCONSISTENT");
+    throw knownContractError("REPOSITORY_AUDIT_EXCLUSIONS_INCONSISTENT");
   }
   return parsed.data;
 }
@@ -2466,11 +2467,18 @@ export class ContractError extends Error {
   }
 }
 
-function assertUniqueIdentifiers(items: ReadonlyArray<{ id: string }>, code: string): void {
+function knownContractError(code: KnownDiagnosticCode, detail?: string): ContractError {
+  return new ContractError(knownDiagnosticCode(code), detail);
+}
+
+function assertUniqueIdentifiers(
+  items: ReadonlyArray<{ id: string }>,
+  code: KnownDiagnosticCode,
+): void {
   const seen = new Set<string>();
   for (const item of items) {
     if (seen.has(item.id)) {
-      throw new ContractError(code, item.id);
+      throw knownContractError(code, item.id);
     }
     seen.add(item.id);
   }
@@ -2486,37 +2494,37 @@ interface CampaignShape {
 
 function assertWorldKinds(request: CampaignShape): void {
   if (!request.worlds.some((world) => world.kind === "REFERENCE" && world.required)) {
-    throw new ContractError("REFERENCE_WORLD_REQUIRED");
+    throw knownContractError("REFERENCE_WORLD_REQUIRED");
   }
   if (!request.worlds.some((world) => world.kind === "TARGET" && world.required)) {
-    throw new ContractError("TARGET_WORLD_REQUIRED");
+    throw knownContractError("TARGET_WORLD_REQUIRED");
   }
   if (!request.worlds.some((world) => world.kind === "NEUTRAL" && world.required)) {
-    throw new ContractError("NEUTRAL_WORLD_REQUIRED");
+    throw knownContractError("NEUTRAL_WORLD_REQUIRED");
   }
 
   for (const world of request.worlds) {
     if (world.kind === "TARGET" && world.weight < 1) {
-      throw new ContractError("TARGET_WEIGHT_REQUIRED", world.id);
+      throw knownContractError("TARGET_WEIGHT_REQUIRED", world.id);
     }
     if (world.kind !== "TARGET" && world.weight !== 0) {
-      throw new ContractError("NON_TARGET_WEIGHT_FORBIDDEN", world.id);
+      throw knownContractError("NON_TARGET_WEIGHT_FORBIDDEN", world.id);
     }
   }
 }
 
 function assertBudgets(request: CampaignShape): void {
   if (request.candidates.length > request.budgets.maximumCandidates) {
-    throw new ContractError("CANDIDATE_BUDGET_EXCEEDED");
+    throw knownContractError("CANDIDATE_BUDGET_EXCEEDED");
   }
   if (request.worlds.length > request.budgets.maximumWorlds) {
-    throw new ContractError("WORLD_BUDGET_EXCEEDED");
+    throw knownContractError("WORLD_BUDGET_EXCEEDED");
   }
 
   const executions =
     request.worlds.length * request.policy.requiredAttempts * (request.candidates.length + 1);
   if (executions > request.budgets.maximumExecutions) {
-    throw new ContractError(
+    throw knownContractError(
       "EXECUTION_BUDGET_EXCEEDED",
       `planned=${executions}, maximum=${request.budgets.maximumExecutions}`,
     );
@@ -2532,7 +2540,7 @@ function assertBudgets(request: CampaignShape): void {
     0,
   );
   if (worldOverlayBytes > request.budgets.maximumWorldOverlayBytes) {
-    throw new ContractError(
+    throw knownContractError(
       "WORLD_OVERLAY_BYTES_EXCEEDED",
       `${worldOverlayBytes} > ${request.budgets.maximumWorldOverlayBytes}`,
     );
@@ -2547,14 +2555,14 @@ function assertBudgets(request: CampaignShape): void {
     );
     totalCandidateBytes += bytes;
     if (bytes > request.budgets.maximumCandidateBytes) {
-      throw new ContractError(
+      throw knownContractError(
         "CANDIDATE_BYTES_EXCEEDED",
         `${candidate.id}: ${bytes} > ${request.budgets.maximumCandidateBytes}`,
       );
     }
   }
   if (totalCandidateBytes > request.budgets.maximumTotalCandidateBytes) {
-    throw new ContractError(
+    throw knownContractError(
       "TOTAL_CANDIDATE_BYTES_EXCEEDED",
       `${totalCandidateBytes} > ${request.budgets.maximumTotalCandidateBytes}`,
     );
@@ -2612,14 +2620,14 @@ export function parseVerificationRequest(value: unknown): VerificationRequest {
     !("schemaVersion" in value) ||
     value.schemaVersion !== SCHEMA_VERSION
   ) {
-    throw new ContractError("SCHEMA_VERSION_UNSUPPORTED");
+    throw knownContractError("SCHEMA_VERSION_UNSUPPORTED");
   }
 
   assertVerificationRequestPreconditions(value);
 
   const parsed = VerificationRequestSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REQUEST_SCHEMA_INVALID", z.prettifyError(parsed.error));
   }
 
   const request = parsed.data;
@@ -2882,7 +2890,7 @@ function assertVerificationRequestPreconditions(value: object): void {
     Array.isArray(rawPolicy.acceptedTargetOutcomes) &&
     rawPolicy.acceptedTargetOutcomes.some((outcome) => outcome !== "ASSERTION_FAILURE")
   ) {
-    throw new ContractError(
+    throw knownContractError(
       "UNSAFE_TARGET_OUTCOME",
       "v1 only admits attributed assertion failures as target evidence",
     );
@@ -2890,22 +2898,22 @@ function assertVerificationRequestPreconditions(value: object): void {
 
   const unsafeNodeTestArgument = findUnsafeNodeTestArgument(value);
   if (unsafeNodeTestArgument !== undefined) {
-    throw new ContractError("UNSAFE_NODE_TEST_ARGUMENT", unsafeNodeTestArgument);
+    throw knownContractError("UNSAFE_NODE_TEST_ARGUMENT", unsafeNodeTestArgument);
   }
 
   const reservedEnvironmentVariable = findReservedEnvironmentVariable(value);
   if (reservedEnvironmentVariable !== undefined) {
-    throw new ContractError("RESERVED_ENVIRONMENT_VARIABLE", reservedEnvironmentVariable);
+    throw knownContractError("RESERVED_ENVIRONMENT_VARIABLE", reservedEnvironmentVariable);
   }
 }
 
 export function parseRepositoryAnalysis(value: unknown): RepositoryAnalysis {
   const parsed = RepositoryAnalysisSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_ANALYSIS_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_ANALYSIS_INVALID", z.prettifyError(parsed.error));
   }
   if (parsed.data.fileCount !== parsed.data.files.length) {
-    throw new ContractError(
+    throw knownContractError(
       "REPOSITORY_ANALYSIS_INCONSISTENT",
       `fileCount=${parsed.data.fileCount}, files=${parsed.data.files.length}`,
     );
@@ -3012,24 +3020,24 @@ function expectedRepositoryAuditCost(audit: RepositoryAudit): RepositoryAudit["c
 export function parseRepositoryAudit(value: unknown): RepositoryAudit {
   const parsed = RepositoryAuditSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_AUDIT_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_AUDIT_INVALID", z.prettifyError(parsed.error));
   }
   if (parsed.data.modules.some((module, index) => module.rank !== index + 1)) {
-    throw new ContractError("REPOSITORY_AUDIT_RANKS_INVALID");
+    throw knownContractError("REPOSITORY_AUDIT_RANKS_INVALID");
   }
   const audit = parsed.data;
   if (
     audit.fileCount !== audit.files.length ||
     audit.repositoryBytes !== audit.files.reduce((sum, file) => sum + file.bytes, 0)
   ) {
-    throw new ContractError("REPOSITORY_AUDIT_INVENTORY_INCONSISTENT");
+    throw knownContractError("REPOSITORY_AUDIT_INVENTORY_INCONSISTENT");
   }
   const fileKeys = audit.files.map((file) => repositoryAuditPortableKey(file.path));
   if (
     new Set(fileKeys).size !== fileKeys.length ||
     fileKeys.some((key, index) => index > 0 && (fileKeys[index - 1] ?? "") >= key)
   ) {
-    throw new ContractError("REPOSITORY_AUDIT_FILES_INVALID");
+    throw knownContractError("REPOSITORY_AUDIT_FILES_INVALID");
   }
   for (const file of audit.files) {
     const arrays = [file.declaredExports, file.noObservedTestReference, file.associatedTests];
@@ -3061,7 +3069,7 @@ export function parseRepositoryAudit(value: unknown): RepositoryAudit {
         (category, index) => index > 0 && (weakCategories[index - 1] ?? "") >= category,
       )
     ) {
-      throw new ContractError("REPOSITORY_AUDIT_FILE_FACTS_INVALID");
+      throw knownContractError("REPOSITORY_AUDIT_FILE_FACTS_INVALID");
     }
   }
   const gitReasonCodes = new Set(audit.reasonCodes);
@@ -3106,7 +3114,7 @@ export function parseRepositoryAudit(value: unknown): RepositoryAudit {
           file.sourceChangedAfterAssociatedTest !== null,
       ))
   ) {
-    throw new ContractError("REPOSITORY_AUDIT_GIT_FACTS_INVALID");
+    throw knownContractError("REPOSITORY_AUDIT_GIT_FACTS_INVALID");
   }
   const expectedModules = expectedRepositoryAuditModules(audit.files);
   if (
@@ -3122,7 +3130,7 @@ export function parseRepositoryAudit(value: unknown): RepositoryAudit {
       );
     })
   ) {
-    throw new ContractError("REPOSITORY_AUDIT_MODULES_INCONSISTENT");
+    throw knownContractError("REPOSITORY_AUDIT_MODULES_INCONSISTENT");
   }
   if (
     !path.isAbsolute(audit.root) ||
@@ -3133,7 +3141,7 @@ export function parseRepositoryAudit(value: unknown): RepositoryAudit {
     audit.verificationRequest?.isolation.acknowledgedUnsafeExecution === true ||
     (audit.verificationRequest !== null && audit.verificationRequest.repository.root !== audit.root)
   ) {
-    throw new ContractError("REPOSITORY_AUDIT_VERIFICATION_INCONSISTENT");
+    throw knownContractError("REPOSITORY_AUDIT_VERIFICATION_INCONSISTENT");
   }
   return audit;
 }
@@ -3143,7 +3151,7 @@ function initCanonicalize(value: unknown): string {
     return JSON.stringify(value);
   }
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new ContractError("REPOSITORY_INIT_CANONICAL_INVALID");
+    if (!Number.isFinite(value)) throw knownContractError("REPOSITORY_INIT_CANONICAL_INVALID");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) return `[${value.map(initCanonicalize).join(",")}]`;
@@ -3154,7 +3162,7 @@ function initCanonicalize(value: unknown): string {
       .map((key) => `${JSON.stringify(key)}:${initCanonicalize(record[key])}`)
       .join(",")}}`;
   }
-  throw new ContractError("REPOSITORY_INIT_CANONICAL_INVALID");
+  throw knownContractError("REPOSITORY_INIT_CANONICAL_INVALID");
 }
 
 function initDigest(value: unknown): string {
@@ -3210,14 +3218,14 @@ function initPortableKey(value: string): string {
 
 function validateInitDetections(
   detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
-  code: string,
+  code: KnownDiagnosticCode,
 ): void {
   if (
     !sortedUnique(detections.ciProviders) ||
     !sortedUnique(detections.reasonCodes) ||
     (detections.testCommand !== null && !initCommandSafe(detections.testCommand))
   ) {
-    throw new ContractError(code);
+    throw knownContractError(code);
   }
 }
 
@@ -3285,7 +3293,7 @@ function expectedInitEvidenceKind(
 export function parseRepositoryInitConfig(value: unknown): RepositoryInitConfig {
   const parsed = RepositoryInitConfigSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_INIT_CONFIG_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_INIT_CONFIG_INVALID", z.prettifyError(parsed.error));
   }
   assertRepositoryInitConfigConsistent(parsed.data);
   return parsed.data;
@@ -3294,7 +3302,7 @@ export function parseRepositoryInitConfig(value: unknown): RepositoryInitConfig 
 export function parseRepositoryInitConfigV2(value: unknown): RepositoryInitConfigV2 {
   const parsed = RepositoryInitConfigV2Schema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_INIT_CONFIG_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_INIT_CONFIG_INVALID", z.prettifyError(parsed.error));
   }
   assertRepositoryInitConfigConsistent(parsed.data);
   return parsed.data;
@@ -3343,7 +3351,7 @@ function assertRepositoryInitConfigConsistent(
     (config.adapter.kind === "testforge-command" &&
       config.adapter.arguments.some((argument) => path.isAbsolute(argument)))
   ) {
-    throw new ContractError("REPOSITORY_INIT_CONFIG_INCONSISTENT");
+    throw knownContractError("REPOSITORY_INIT_CONFIG_INCONSISTENT");
   }
 }
 
@@ -3366,7 +3374,7 @@ export function repositoryInitLockV2Digest(lock: Omit<RepositoryInitLockV2, "loc
 export function parseRepositoryInitLock(value: unknown): RepositoryInitLock {
   const parsed = RepositoryInitLockSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_INIT_LOCK_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_INIT_LOCK_INVALID", z.prettifyError(parsed.error));
   }
   assertRepositoryInitLockConsistent(parsed.data);
   return parsed.data;
@@ -3375,7 +3383,7 @@ export function parseRepositoryInitLock(value: unknown): RepositoryInitLock {
 export function parseRepositoryInitLockV2(value: unknown): RepositoryInitLockV2 {
   const parsed = RepositoryInitLockV2Schema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_INIT_LOCK_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_INIT_LOCK_INVALID", z.prettifyError(parsed.error));
   }
   assertRepositoryInitLockConsistent(parsed.data);
   return parsed.data;
@@ -3419,14 +3427,14 @@ function assertRepositoryInitLockConsistent(lock: RepositoryInitLock | Repositor
         detections: lock.detections,
       })
   ) {
-    throw new ContractError("REPOSITORY_INIT_LOCK_INCONSISTENT");
+    throw knownContractError("REPOSITORY_INIT_LOCK_INCONSISTENT");
   }
 }
 
 export function parseRepositoryInitResult(value: unknown): RepositoryInitResult {
   const parsed = RepositoryInitResultSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
   }
   assertRepositoryInitResultConsistent(parsed.data);
   return parsed.data;
@@ -3435,7 +3443,7 @@ export function parseRepositoryInitResult(value: unknown): RepositoryInitResult 
 export function parseRepositoryInitResultV2(value: unknown): RepositoryInitResultV2 {
   const parsed = RepositoryInitResultV2Schema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
+    throw knownContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
   }
   assertRepositoryInitResultConsistent(parsed.data);
   return parsed.data;
@@ -3447,17 +3455,20 @@ export function parseVersionedRepositoryInitResult(
   if (isJsonObject(value) && value.schemaVersion === "3.0.0") {
     const parsed = RepositoryInitResultV3Schema.safeParse(value);
     if (!parsed.success)
-      throw new ContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
+      throw knownContractError("REPOSITORY_INIT_RESULT_INVALID", z.prettifyError(parsed.error));
     assertRepositoryInitResultConsistent(parsed.data);
     if (
       !parsed.data.reasonCodes.includes("FRAMEWORK_AMBIGUOUS") ||
       parsed.data.detectedFrameworks.length === 0 ||
       !sortedUnique(parsed.data.detectedFrameworks.map((entry) => entry.framework)) ||
       parsed.data.detectedFrameworks.some(
-        (entry) => entry.files.length === 0 || !sortedUnique(entry.files),
+        (entry) =>
+          entry.files.length === 0 ||
+          !sortedUnique(entry.files) ||
+          entry.files.some((file) => !initPortablePath(file)),
       )
     ) {
-      throw new ContractError("REPOSITORY_INIT_RESULT_INCONSISTENT");
+      throw knownContractError("REPOSITORY_INIT_RESULT_INCONSISTENT");
     }
     return parsed.data;
   }
@@ -3483,7 +3494,7 @@ function assertRepositoryInitResultConsistent(
     if (lockFile !== undefined)
       lock = parseVersionedRepositoryInitLock(JSON.parse(lockFile.content));
   } catch (error) {
-    throw new ContractError(
+    throw knownContractError(
       "REPOSITORY_INIT_RESULT_INCONSISTENT",
       error instanceof Error ? error.message : String(error),
     );
@@ -3535,7 +3546,7 @@ function assertRepositoryInitResultConsistent(
     result.nextCommands[0]?.executable !== "assertledger" ||
     JSON.stringify(result.nextCommands[0]?.arguments) !== JSON.stringify(["audit", ".", "--json"])
   ) {
-    throw new ContractError("REPOSITORY_INIT_RESULT_INCONSISTENT");
+    throw knownContractError("REPOSITORY_INIT_RESULT_INCONSISTENT");
   }
 }
 

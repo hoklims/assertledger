@@ -28,6 +28,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { SyntaxKind } from "typescript/unstable/ast";
 import type { BunPreflightRefusal } from "../contracts/diagnostics.js";
 import {
+  assertKnownDiagnosticCodes,
+  knownDiagnosticCode,
+  type KnownDiagnosticCode,
+} from "../contracts/diagnostic-catalogue.js";
+import {
   AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
   type AgenticBenchmarkAcquisitionResult,
@@ -184,7 +189,7 @@ export class RepositoryInitWriteError extends Error {
     temporaryCleanup: "REMOVED" | "UNRESOLVED" | "NOT_OWNED",
     installedPaths: string[],
   ) {
-    super("INIT_WRITE_FAILED", { cause });
+    super(knownDiagnosticCode("INIT_WRITE_FAILED"), { cause });
     this.name = "RepositoryInitWriteError";
     this.targetPath = targetPath;
     this.temporaryPath = temporaryPath;
@@ -622,7 +627,8 @@ function comparePortablePaths(left: string, right: string): number {
 function registerPortablePath(spellings: Map<string, string>, relative: string): void {
   const key = portablePathKey(relative);
   const existing = spellings.get(key);
-  if (existing !== undefined && existing !== relative) throw new Error("PORTABLE_PATH_COLLISION");
+  if (existing !== undefined && existing !== relative)
+    throw new Error(knownDiagnosticCode("PORTABLE_PATH_COLLISION"));
   spellings.set(key, relative);
 }
 
@@ -653,7 +659,7 @@ async function configuredRepositoryFramework(root: string): Promise<string | und
 /** The refusal of a repository link. The message stays the stable code, which callers match and
  * the CLI classifies by value; the link found travels as the cause so a facade can name it. */
 function repositoryLinkError(relative: string): Error {
-  return new Error("UNSUPPORTED_REPOSITORY_SYMLINK", {
+  return new Error(knownDiagnosticCode("UNSUPPORTED_REPOSITORY_SYMLINK"), {
     cause: relative.split(path.sep).join("/"),
   });
 }
@@ -725,7 +731,9 @@ export type RepositoryLinkRefusalCode =
 /** How the links of an inventory relate to the module closure of the tests that would run. */
 export interface RepositoryLinkAssessment {
   links: string[];
-  refused: { path: string; reasonCode: RepositoryLinkRefusalCode } | undefined;
+  refused:
+    | { path: string; reasonCode: RepositoryLinkRefusalCode & KnownDiagnosticCode }
+    | undefined;
   omitted: string[];
   unbounded: UnboundedClosureEdge[];
 }
@@ -2788,7 +2796,14 @@ async function atomicInitWrite(
   }
 }
 
-function initEmptyDetections(reasonCodes: string[]): RepositoryInitDetections {
+type InitDetections = Omit<RepositoryInitDetections, "reasonCodes"> & {
+  reasonCodes: KnownDiagnosticCode[];
+};
+type InitDetectionsV2 = Omit<RepositoryInitDetectionsV2, "reasonCodes"> & {
+  reasonCodes: KnownDiagnosticCode[];
+};
+
+function initEmptyDetections(reasonCodes: KnownDiagnosticCode[]): InitDetections {
   return {
     packageManager: null,
     framework: null,
@@ -2801,8 +2816,8 @@ function initEmptyDetections(reasonCodes: string[]): RepositoryInitDetections {
 
 function initTerminalResult(
   status: "BLOCKED" | "CONFLICT",
-  detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
-  reasonCodes: string[],
+  detections: InitDetections | InitDetectionsV2,
+  reasonCodes: KnownDiagnosticCode[],
 ): RepositoryInitResult | RepositoryInitResultV2 {
   const bunBuiltIn = detections.adapterRecommendation === "bun-test";
   const result = {
@@ -2818,7 +2833,7 @@ function initTerminalResult(
   return bunBuiltIn ? parseRepositoryInitResultV2(result) : parseRepositoryInitResult(result);
 }
 
-export async function initializeRepository(
+async function initializeRepositoryPlan(
   requestedRoot: string,
   options: RepositoryInitOptions = {},
   writeDependencies: RepositoryInitWriteDependencies = {},
@@ -2858,12 +2873,12 @@ export async function initializeRepository(
   // leaves the root refuses the repository whatever the framework.
   const linkConflict = (
     assessment: RepositoryLinkAssessment,
-    detections: RepositoryInitDetections,
-    notices: string[] = [],
+    detections: InitDetections,
+    notices: KnownDiagnosticCode[] = [],
   ) => {
     options.onLinkAssessment?.(assessment);
     const code = assessment.refused?.reasonCode;
-    const codes = [
+    const codes: KnownDiagnosticCode[] = [
       "UNSUPPORTED_REPOSITORY_SYMLINK",
       ...(code === undefined || code === "TEST_CLOSURE_UNSUPPORTED" ? [] : [code]),
       ...notices,
@@ -2975,11 +2990,11 @@ export async function initializeRepository(
   }
   // A manager that came from outside the package is said so on every result from here on, early
   // ones included: the package's own lock does not cover it.
-  const inheritedNotice = managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"] : [];
+  const inheritedNotice: KnownDiagnosticCode[] = managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT" as const] : [];
   const terminal = (
     status: "BLOCKED" | "CONFLICT",
-    detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
-    reasonCodes: string[],
+    detections: InitDetections | InitDetectionsV2,
+    reasonCodes: KnownDiagnosticCode[],
   ) =>
     initTerminalResult(
       status,
@@ -3070,7 +3085,7 @@ export async function initializeRepository(
     return terminal("CONFLICT", detections, ["FRAMEWORK_UNDETECTED"]);
   }
 
-  const linkReasonCodes: string[] = [];
+  const linkReasonCodes: KnownDiagnosticCode[] = [];
   if (links.length > 0) {
     const assessment = await assessRepositoryLinks(
       root,
@@ -3153,7 +3168,7 @@ export async function initializeRepository(
         throw new Error("ADAPTER_CONFIG_INVALID");
       }
       if (parsed.data.kind === "node-test" && framework !== "node:test") {
-        const incompatible: RepositoryInitDetections = {
+        const incompatible: InitDetections = {
           packageManager,
           framework,
           testCommand,
@@ -3168,7 +3183,7 @@ export async function initializeRepository(
       adapterEvidencePath = relative;
       evidenceBytes.set(relative, adapterBytes);
     } catch {
-      const detections: RepositoryInitDetections = {
+      const detections: InitDetections = {
         packageManager,
         framework,
         testCommand,
@@ -3223,20 +3238,20 @@ export async function initializeRepository(
     }
   }
 
-  const reasonCodes = [
+  const reasonCodes: KnownDiagnosticCode[] = [
     ...(adapter === undefined
       ? [
           framework === "node:test" || framework === "bun:test"
             ? indirectCommand
-              ? "TEST_COMMAND_INDIRECT"
-              : "BASE_TEST_FILES_UNAVAILABLE"
-            : "OFFICIAL_ADAPTER_UNAVAILABLE",
+              ? ("TEST_COMMAND_INDIRECT" as const)
+              : ("BASE_TEST_FILES_UNAVAILABLE" as const)
+            : ("OFFICIAL_ADAPTER_UNAVAILABLE" as const),
         ]
       : []),
-    ...(managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"] : []),
+    ...(managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT" as const] : []),
     ...linkReasonCodes,
   ].sort();
-  const detections: RepositoryInitDetectionsV2 = {
+  const detections: InitDetectionsV2 = {
     packageManager,
     framework,
     testCommand,
@@ -3287,7 +3302,8 @@ export async function initializeRepository(
   const evidence: RepositoryInitLock["evidence"] = [];
   for (const file of evidenceFiles) {
     const content = evidenceBytes.get(file);
-    if (content === undefined) throw new Error("INIT_EVIDENCE_SNAPSHOT_INCONSISTENT");
+    if (content === undefined)
+      throw new Error(knownDiagnosticCode("INIT_EVIDENCE_SNAPSHOT_INCONSISTENT"));
     evidence.push({
       path: file,
       digest: rawSha256(content),
@@ -3448,11 +3464,13 @@ export async function initializeRepository(
   const result = bunBuiltIn
     ? parseRepositoryInitResultV2(resultValue)
     : parseRepositoryInitResult(resultValue);
+  assertKnownDiagnosticCodes(result.reasonCodes);
+  assertKnownDiagnosticCodes(result.detections.reasonCodes);
   if (!options.dryRun) {
     const installedPaths: string[] = [];
     for (const action of actions) {
       const file = plannedFiles.find((candidate) => candidate.path === action.path);
-      if (file === undefined) throw new Error("INIT_PLAN_INCONSISTENT");
+      if (file === undefined) throw new Error(knownDiagnosticCode("INIT_PLAN_INCONSISTENT"));
       await atomicInitWrite(
         root,
         file.path,
@@ -3464,6 +3482,17 @@ export async function initializeRepository(
       if (action.kind === "CREATE") installedPaths.push(path.join(root, file.path));
     }
   }
+  return result;
+}
+
+export async function initializeRepository(
+  requestedRoot: string,
+  options: RepositoryInitOptions = {},
+  writeDependencies: RepositoryInitWriteDependencies = {},
+): Promise<RepositoryInitResult | RepositoryInitResultV2 | RepositoryInitResultV3> {
+  const result = await initializeRepositoryPlan(requestedRoot, options, writeDependencies);
+  assertKnownDiagnosticCodes(result.reasonCodes);
+  assertKnownDiagnosticCodes(result.detections.reasonCodes);
   return result;
 }
 
@@ -3498,7 +3527,7 @@ async function probeRuntimeTemporaryWorkspace(): Promise<void> {
   if (failure !== undefined) throw failure;
 }
 
-export async function doctorRepositoryRuntime(
+async function probeRepositoryRuntime(
   requestedRoot: string,
   options: RuntimeDoctorOptions,
 ): Promise<RuntimeDoctorResult | RuntimeDoctorResultV2> {
@@ -3511,7 +3540,7 @@ export async function doctorRepositoryRuntime(
     configuration.detections.adapterRecommendation === "bun-test"
   ) {
     const configFile = configuration.files.find((file) => file.path === INIT_CONFIG_FILE);
-    if (configFile === undefined) throw new Error("BUN_TEST_CONFIG_MISSING");
+    if (configFile === undefined) throw new Error(knownDiagnosticCode("BUN_TEST_CONFIG_MISSING"));
     const config = parseRepositoryInitConfigV2(JSON.parse(configFile.content));
     const environmentAllowlist = ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"];
     let resolvedExecutable = config.adapter.executable;
@@ -3608,6 +3637,18 @@ export async function doctorRepositoryRuntime(
       });
     },
   });
+}
+
+export async function doctorRepositoryRuntime(
+  requestedRoot: string,
+  options: RuntimeDoctorOptions,
+): Promise<RuntimeDoctorResult | RuntimeDoctorResultV2> {
+  const result = await probeRepositoryRuntime(requestedRoot, options);
+  assertKnownDiagnosticCodes(result.reasonCodes);
+  assertKnownDiagnosticCodes(
+    result.checks.flatMap((check) => (check.reasonCode === null ? [] : [check.reasonCode])),
+  );
+  return result;
 }
 
 function languageForFile(file: string): string | undefined {
@@ -3910,13 +3951,15 @@ function detectFrameworkEvidence(file: string, text: string, frameworks: Set<str
 }
 
 async function resolveRepositoryRoot(rootInput: unknown): Promise<string> {
-  const requestedRoot = requireString(rootInput, "repository_root");
+  if (typeof rootInput !== "string" || rootInput.length === 0)
+    throw new TypeError(knownDiagnosticCode("INVALID_REPOSITORY_ROOT"));
+  const requestedRoot = rootInput;
   try {
     const root = await realpath(requestedRoot);
     if (!(await stat(root)).isDirectory()) throw new TypeError("not a directory");
     return root;
   } catch {
-    throw new TypeError("INVALID_REPOSITORY_ROOT");
+    throw new TypeError(knownDiagnosticCode("INVALID_REPOSITORY_ROOT"));
   }
 }
 
@@ -4113,7 +4156,7 @@ function auditModulePrefix(file: string): string {
   return segments.length > 2 ? segments.slice(0, 2).join("/") : (segments[0] ?? file);
 }
 
-export async function auditRepository(
+async function auditRepositoryFacts(
   rootInput: string,
   options: RepositoryAuditOptions = {},
 ): Promise<RepositoryAuditV2> {
@@ -4128,7 +4171,8 @@ export async function auditRepository(
         ? verificationRequest.repository.root
         : path.resolve(root, verificationRequest.repository.root),
     );
-    if (requestRoot !== root) throw new TypeError("VERIFICATION_REQUEST_REPOSITORY_MISMATCH");
+    if (requestRoot !== root)
+      throw new TypeError(knownDiagnosticCode("VERIFICATION_REQUEST_REPOSITORY_MISMATCH"));
     verificationRequest = {
       ...verificationRequest,
       repository: { ...verificationRequest.repository, root },
@@ -4159,7 +4203,11 @@ export async function auditRepository(
       };
     } catch (error) {
       if (error instanceof Error && error.message === "UNSUPPORTED_REPOSITORY_SYMLINK") {
-        throw new RepositoryAuditInventoryError(error.message, appliedExcludes, error.cause);
+        throw new RepositoryAuditInventoryError(
+          knownDiagnosticCode("UNSUPPORTED_REPOSITORY_SYMLINK"),
+          appliedExcludes,
+          error.cause,
+        );
       }
       throw error;
     }
@@ -4184,7 +4232,7 @@ export async function auditRepository(
       for (const identifier of ast.identifiers) testIdentifiers.add(identifier);
   }
 
-  const reasonCodes = new Set<string>();
+  const reasonCodes = new Set<KnownDiagnosticCode>();
   let gitSupported = false;
   let headTimestamp: number | null = null;
   let shallow: boolean | null = null;
@@ -4371,7 +4419,7 @@ export async function auditRepository(
   const overlayBytes = A * ((C + 1n) * sumWorldBytes + W * sumCandidateBytes);
   const final = await inventory();
   if (final.repositoryDigest !== initial.repositoryDigest)
-    throw new Error("REPOSITORY_CHANGED_DURING_AUDIT");
+    throw new Error(knownDiagnosticCode("REPOSITORY_CHANGED_DURING_AUDIT"));
   return parseRepositoryAuditV2({
     schemaVersion: "2.0.0",
     appliedExcludes,
@@ -4410,6 +4458,15 @@ export async function auditRepository(
     },
     verificationRequest,
   });
+}
+
+export async function auditRepository(
+  rootInput: string,
+  options: RepositoryAuditOptions = {},
+): Promise<RepositoryAuditV2> {
+  const result = await auditRepositoryFacts(rootInput, options);
+  assertKnownDiagnosticCodes(result.reasonCodes);
+  return result;
 }
 
 function parseOverlay(value: unknown, forbiddenCode: string, roots: string[]): FileOverlay {

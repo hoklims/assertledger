@@ -2,6 +2,7 @@ import { builtinModules } from "node:module";
 import path from "node:path";
 import { SyntaxKind } from "typescript/unstable/ast";
 import { designatedBunConfig } from "../../integrations/bun/driver.mjs";
+import { knownDiagnosticCode } from "../contracts/diagnostic-catalogue.js";
 import { portablePathKey } from "../core/index.js";
 import { scanJavaScriptTokens } from "./javascript-tokens.js";
 
@@ -486,7 +487,8 @@ class ClosureWalk {
         for (const text of await read(manifest)) {
           const document: unknown = JSON.parse(text);
           const imports = isRecord(document) ? document.imports : undefined;
-          if (!isRecord(imports)) throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          if (!isRecord(imports))
+            throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
           const matching = Object.keys(imports)
             .filter((key) => {
               const star = key.indexOf("*");
@@ -504,7 +506,8 @@ class ClosureWalk {
                   : b.indexOf("*") - a.indexOf("*") || b.length - a.length,
             );
           const key = matching[0];
-          if (key === undefined) throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          if (key === undefined)
+            throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
           const star = key.indexOf("*");
           const capture =
             star < 0 ? "" : specifier.slice(star, specifier.length - (key.length - star - 1));
@@ -513,15 +516,16 @@ class ClosureWalk {
             if (Array.isArray(value)) return value.flatMap(targets);
             if (isRecord(value)) return Object.values(value).flatMap(targets);
             if (value === null) return [];
-            throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+            throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
           };
           const resolved = targets(imports[key]);
-          if (resolved.length === 0) throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+          if (resolved.length === 0)
+            throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
           for (const target of resolved) {
             // Follow all conditional branches conservatively; unsupported external/recursive
             // aliases must refuse before a closure snapshot can silently omit runtime inputs.
             if (!target.startsWith("./"))
-              throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+              throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
             const relative = path.posix.normalize(
               path.posix.join(directory, target.replaceAll("*", capture)),
             );
@@ -530,13 +534,14 @@ class ClosureWalk {
               relative === ".." ||
               !this.includeModulePath(relative)
             ) {
-              throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+              throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
             }
           }
         }
         return;
       }
-      if (directory === ".") throw new Error("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED");
+      if (directory === ".")
+        throw new Error(knownDiagnosticCode("TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"));
       directory = path.posix.dirname(directory);
     }
   }
@@ -702,7 +707,8 @@ export async function computeTestClosure(input: TestClosureInput): Promise<TestC
     // The walk also keeps what Bun reads to compile a file: each configuration a
     // tsconfig or jsconfig extends, and the automatic JSX runtime a .tsx or .jsx file imports.
     if (isProjectConfiguration(file) || compilerConfigurations.has(file)) {
-      if (unresolvedConfigs.has(file)) throw new Error("TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED");
+      if (unresolvedConfigs.has(file))
+        throw new Error(knownDiagnosticCode("TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED"));
       for (const text of await input.read(file)) {
         for (const specifier of tsconfigExtends(text)) {
           const previous = new Set(walk.files);
@@ -829,10 +835,10 @@ function bunJsxImportSource(text: string): string | undefined {
     try {
       source = basic === null ? literal?.[1] : JSON.parse(basic[1] as string);
     } catch {
-      throw new Error("TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED");
+      throw new Error(knownDiagnosticCode("TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED"));
     }
     if (source === undefined || source.length === 0) {
-      throw new Error("TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED");
+      throw new Error(knownDiagnosticCode("TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED"));
     }
   }
   return source;

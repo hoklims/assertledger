@@ -106,6 +106,25 @@ it("reports each detected framework and its evidence in an ambiguous doctor resu
       () => parseVersionedRepositoryInitResult({ ...result, detectedFrameworks: [] }),
       /REPOSITORY_INIT_RESULT_INCONSISTENT/u,
     );
+    for (const file of [
+      "../escape",
+      "/tmp/escape",
+      "C:/escape",
+      "tests/../escape",
+      "tests\\escape",
+      "NUL",
+      "tests/bad?.test.ts",
+    ]) {
+      assert.throws(
+        () =>
+          parseVersionedRepositoryInitResult({
+            ...result,
+            detectedFrameworks: [{ framework: "node:test", files: [file] }],
+          }),
+        /REPOSITORY_INIT_RESULT_INCONSISTENT/u,
+        file,
+      );
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

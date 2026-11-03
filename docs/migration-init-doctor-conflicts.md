@@ -28,7 +28,8 @@ an explicit skip for that single fixture after `ENAMETOOLONG`; Windows/Linux exe
 fixture uses shorter paths and more entries so it runs on all three systems. The same behavioral
 tests fail with attributed assertions on the 1.5.0 source baseline.
 Catalogue tests require `known: true` and actionable guidance for a named set of initialization
-codes. They do not establish coverage of every code emitted by initialization or its helpers.
+codes. Producer boundaries now reject uncatalogued reason codes; the named cases alone do not
+enumerate every possible execution path.
 
 The correction preserves campaign outcome taxonomy, symbolic-link policy, `.gitignore` handling
 and release authority. Its initialization schemas remain unchanged; the audit producer migration

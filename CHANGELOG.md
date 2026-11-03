@@ -85,6 +85,8 @@
 - Explain audit Git limitations, missing verification requests and Bun runtime doctor refusals.
   Ambiguous framework detection now returns init result v3 with the evidence files; see the
   [migration guide](docs/migration-init-result-v3.md).
+- Keep diagnostic producer codes tied to the catalogue, and reject non-portable paths in v3
+  framework evidence. Historical v1 and v2 result parsers remain unchanged.
 
 ## 2.1.0 — 2026-10-13
 

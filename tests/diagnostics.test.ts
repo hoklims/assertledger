@@ -3,13 +3,65 @@ import { describe, it } from "node:test";
 import {
   DiagnosticReportSchema,
   explainReasonCodes,
+  type KnownDiagnosticCode,
   quoteRepositoryEntry,
   renderRepositoryLinkRefusal,
 } from "../src/diagnostics.js";
+import { RuntimeDoctorReasonCodeV2Schema } from "../src/contracts/runtime-doctor.js";
 import { AssertLedger } from "../src/sdk/index.js";
 import { connectPublicMcp, runPublicCli } from "./support/public-surface.js";
 
 describe("versioned diagnostic guidance", () => {
+  it("explains audit request input refusals", async () => {
+    for (const [args, input, expected] of [
+      [["audit", ".", "--verification-request"], "", "MISSING_VERIFICATION_REQUEST"],
+      [["doctor", ".", "--framework"], "", "MISSING_FRAMEWORK"],
+      [
+        ["audit", ".", "--verification-request", "-"],
+        "x".repeat(16 * 1024 * 1024 + 1),
+        "JSON_INPUT_TOO_LARGE",
+      ],
+    ] as const) {
+      let stderr = "";
+      const exitCode = await runPublicCli([...args], {
+        cwd: process.cwd(),
+        readStdin: async () => input,
+        writeStdout: (text) => {
+          assert.fail(text);
+        },
+        writeStderr: (text) => {
+          stderr += text;
+        },
+      });
+      assert.equal(exitCode, 4);
+      assert.equal(stderr.trim(), expected);
+      assert.equal(explainReasonCodes([stderr.trim()]).diagnostics[0]?.known, true, expected);
+    }
+  });
+  it("explains every code admitted by the runtime doctor contract", () => {
+    const codes: readonly KnownDiagnosticCode[] = RuntimeDoctorReasonCodeV2Schema.options;
+    const report = explainReasonCodes(codes);
+    assert.deepEqual(
+      report.diagnostics.filter((entry) => !entry.known),
+      [],
+    );
+  });
+  it("explains verification-request errors returned by audit", async () => {
+    for (const [request, expected] of [
+      [{}, "SCHEMA_VERSION_UNSUPPORTED"],
+      [{ schemaVersion: "1.0.0" }, "REQUEST_SCHEMA_INVALID"],
+    ] as const) {
+      let code = "";
+      try {
+        await new AssertLedger().audit(process.cwd(), { verificationRequest: request });
+        assert.fail("audit accepted an invalid request");
+      } catch (error) {
+        code = (error as { code?: string }).code ?? "";
+      }
+      assert.equal(code, expected);
+      assert.equal(explainReasonCodes([code]).diagnostics[0]?.known, true, code);
+    }
+  });
   it("explains why an audit cannot produce a verification request", async () => {
     let stdout = "";
     const exitCode = await runPublicCli(["explain", "VERIFICATION_REQUEST_UNAVAILABLE", "--json"], {

@@ -24,6 +24,13 @@ decision digest, artifact digest or existing JSON outputs. Unknown codes remain 
 advise consulting the matching package version. Inputs accept only bounded uppercase reason
 codes; arbitrary exception messages, source code, environment values and logs are not inputs.
 
+The catalogue supplies the diagnostic code type used by static audit and initialization producers,
+their link assessment and audit's request-validation errors. Runtime doctor retains its versioned
+contract enum; the typecheck and diagnostic test compare that enum with the catalogue. Producer
+boundaries also check returned reason codes; an unregistered code refuses with
+`DIAGNOSTIC_CATALOGUE_INCOMPLETE` and is retained as the error cause. Initialization checks before
+writing managed files. Free-form system exception messages are not diagnostic codes.
+
 ## Français
 
 La commande `assertledger explain CODE --json` rend les mêmes explications que le SDK et MCP.
