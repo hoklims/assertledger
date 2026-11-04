@@ -1311,9 +1311,13 @@ function initOperandSpelledAsPath(
 }
 
 /** Whether an operand of a runner's command is a path: by spelling or as an existing entry. */
-function initOperandNamesPath(argument: string, testSources: string[]): boolean {
+function initOperandNamesPath(
+  argument: string,
+  testSources: string[],
+  isTestFile: (file: string) => boolean,
+): boolean {
   return (
-    initOperandSpelledAsPath(argument, initNodeTestSource) ||
+    initOperandSpelledAsPath(argument, isTestFile) ||
     (initSafePathPattern(argument) &&
       testSources.some((file) => file === argument || file.startsWith(`${argument}/`)))
   );
@@ -1322,15 +1326,22 @@ function initOperandNamesPath(argument: string, testSources: string[]): boolean 
 function initCommandPathMatchers(
   command: { executable: string; arguments: string[] },
   testSources: string[],
+  isTestFile: (file: string) => boolean,
+  declared: boolean,
 ): Array<(file: string) => boolean> {
-  const operands =
-    command.executable === "bun" && command.arguments[0] === "test"
-      ? command.arguments.slice(1)
-      : command.arguments;
+  // After a recognized `bun test`, wherever it sits (`pnpm exec bun test x`), only what follows
+  // the subcommand are filters: `test` itself is not a conventional directory.
+  const words = [command.executable, ...command.arguments];
+  const subcommand = initBunTestPair(words);
+  const flag = subcommand < 0 ? initNodeRunnerFlag(words, declared) : -1;
+  // Behind a launcher (`pnpm exec node --test`), the launcher's own words are not filters either.
+  let operands = command.arguments;
+  if (subcommand >= 0) operands = initBunTestOperands(words, subcommand);
+  else if (flag >= 0) operands = initNodeRunnerOperands(words, flag);
   return operands
     .filter(
       (argument) =>
-        initOperandNamesPath(argument, testSources) ||
+        initOperandNamesPath(argument, testSources, isTestFile) ||
         (initSafePathPattern(argument) && INIT_CONVENTIONAL_TEST_DIRECTORIES.has(argument)),
     )
     .map(initPathPatternMatcher);
@@ -1345,13 +1356,28 @@ function initCommandPathMatchers(
 function initCommandInvokesRunner(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
+  declared: boolean,
 ): boolean {
   const words = [command.executable, ...command.arguments];
-  if (runner === "bun") {
-    return words.some((word, index) => word === "bun" && words[index + 1] === "test");
-  }
+  if (runner === "bun") return initBunTestPair(words) >= 0;
+  return initNodeRunnerFlag(words, declared) >= 0;
+}
+
+/**
+ * The index of the `--test` option that makes a command Node's own test runner, or -1. Options
+ * come before the program entry point, so `node runner --test` runs a script of its own and
+ * hands it `--test`.
+ */
+function initNodeRunnerFlag(words: readonly string[], declared: boolean): number {
   const flag = words.indexOf("--test", 1);
-  if (flag < 0) return false;
+  if (flag < 0) return -1;
+  // `npm run node --test` runs the package script called `node`: no word of it is a runtime.
+  if (initRunsPackageScript(words)) return -1;
+  // `--` ends the options: what follows it (`node -- --test`) is a script name, not an option.
+  // A `--` before the runtime belongs to a launcher (`npm exec -- node --test`).
+  const runtime = words.findIndex((word) => INIT_NODE_RUNTIMES.has(initCommandWordName(word)));
+  const separator = words.indexOf("--", Math.max(runtime, 0) + 1);
+  if (separator >= 0 && separator < flag) return -1;
   // The nearest word at or before `from` that is not an option or the value of an option that
   // takes one: the executable at index 0 always is a word.
   const nearestWord = (from: number): number => {
@@ -1359,7 +1385,9 @@ function initCommandInvokesRunner(
     while (
       position >= 1 &&
       ((words[position] ?? "").startsWith("-") ||
-        INIT_NODE_VALUE_OPTIONS.has(words[position - 1] ?? ""))
+        initNodeOptionTakesValue(words[position - 1] ?? "") ||
+        // The value of a launcher's option (`npx --package tsx tsx --test`) is no program.
+        INIT_LAUNCHER_VALUE_OPTIONS.has(words[position - 1] ?? ""))
     ) {
       position -= 1;
     }
@@ -1370,12 +1398,316 @@ function initCommandInvokesRunner(
   const program = nearestWord(flag - 1);
   const previous = program >= 1 ? nearestWord(program - 1) : -1;
   const name = words[program] ?? "";
-  const spelledAsScript = name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name);
-  const runtimeBefore = previous >= 0 && INIT_NODE_RUNTIMES.has(words[previous] ?? "");
-  return !spelledAsScript && !runtimeBefore;
+  // The executable slot (`./node --test`) is the command itself, not a script it was given.
+  const spelledAsScript = program >= 1 && (name.includes("/") || /\.[cm]?[jt]sx?$/u.test(name));
+  const runtimeBefore =
+    previous >= 0 && INIT_NODE_RUNTIMES.has(initCommandWordName(words[previous] ?? ""));
+  // `echo node --test` and `npm exec -- echo node --test` only carry their words: unless the
+  // operator declared the command, the program the command dispatches must be the Node runtime
+  // that owns `--test`.
+  const dispatched = initLaunchedProgram(words);
+  const isRuntime =
+    declared || (dispatched === program && INIT_NODE_RUNTIMES.has(initCommandWordName(name)));
+  return !spelledAsScript && !runtimeBefore && isRuntime ? flag : -1;
 }
 
+/**
+ * The path operands of Node's runner: the words after `--test` that are neither options nor the
+ * value of one. What precedes `--test` (a launcher, `exec`, the runtime) is not a filter.
+ */
+function initNodeRunnerOperands(words: readonly string[], flag: number): string[] {
+  const operands: string[] = [];
+  for (let index = flag + 1; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (word.startsWith("-") || initNodeOptionTakesValue(words[index - 1] ?? "")) continue;
+    operands.push(word);
+  }
+  return operands;
+}
+
+/**
+ * Whether the command is a package manager running one of the package's scripts (or its own
+ * subcommand) rather than a program: `npm run node --test`, `pnpm test`. A program only follows
+ * the manager's `exec`, `dlx` or `x`, and a `run` before it makes the next word a script name.
+ */
+function initRunsPackageScript(words: readonly string[]): boolean {
+  const { start, launcher } = initEffectiveLauncher(words);
+  if (!INIT_LAUNCHER_SUBCOMMANDS.has(launcher)) return false;
+  return initManagerSubcommand(words, start, launcher) < 0;
+}
+
+/**
+ * The index of the executing subcommand (`exec`, `dlx`, `x`) of a package manager command, or -1:
+ * the subcommand is the first word that is neither an option nor the value of one, so `npm
+ * --workspace exec node` (where `exec` is a value) and `npm run exec` have none.
+ */
+function initManagerSubcommand(words: readonly string[], start: number, launcher: string): number {
+  const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher) ?? [];
+  const valued = INIT_MANAGER_VALUE_OPTIONS.get(launcher) ?? new Set<string>();
+  let index = start + 1;
+  while ((words[index] ?? "").startsWith("-")) index += valued.has(words[index] ?? "") ? 2 : 1;
+  return subcommands.includes(words[index] ?? "") ? index : -1;
+}
+
+// The options of each manager that take their value in the next word, before its subcommand.
+const INIT_MANAGER_VALUE_OPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [
+    "npm",
+    new Set([
+      "--workspace",
+      "-w",
+      "--prefix",
+      "--registry",
+      "--cache",
+      "--userconfig",
+      "--loglevel",
+    ]),
+  ],
+  [
+    "pnpm",
+    new Set([
+      "--filter",
+      "-F",
+      "--dir",
+      "-C",
+      "--workspace-concurrency",
+      "--loglevel",
+      "--reporter",
+    ]),
+  ],
+  ["yarn", new Set(["--cwd", "--cache-folder", "--mutex", "--registry"])],
+]);
+
+/** The name of a command word: its last path segment without a Windows launcher suffix. */
+function initCommandWordName(word: string): string {
+  return (word.split("/").pop() ?? "").replace(/\.(?:cmd|exe)$/iu, "");
+}
+
+// What `corepack` can dispatch to: `corepack bun test` is a syntax error, not Bun.
+const INIT_COREPACK_MANAGERS = new Set(["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg"]);
+
+/**
+ * The launcher a command starts with and the index of its word: `corepack` is only a prefix when a
+ * manager it dispatches follows it, and is no known launcher (empty name) otherwise.
+ */
+function initEffectiveLauncher(words: readonly string[]): { start: number; launcher: string } {
+  const first = initCommandWordName(words[0] ?? "");
+  if (first !== "corepack") return { start: 0, launcher: first };
+  const next = initCommandWordName(words[1] ?? "");
+  return INIT_COREPACK_MANAGERS.has(next)
+    ? { start: 1, launcher: next }
+    : { start: 0, launcher: "" };
+}
+
+// Executables that run, after their own options, the program that follows (`pnpx` is `pnpm dlx`).
+const INIT_DIRECT_LAUNCHERS = new Set(["npx", "bunx", "pnpx", "c8", "nyc"]);
+
+// Options of `npx`, `bunx` and `npm exec` that take a value (`--opt=value` is one word).
+const INIT_LAUNCHER_VALUE_OPTIONS = new Set([
+  "--package",
+  "-p",
+  "--registry",
+  "--cache",
+  "--userconfig",
+  "--prefix",
+  "--workspace",
+  "-w",
+]);
+
+// Launchers whose subcommand runs the program that follows it. `npm run bun test` is not among
+// them: after `run` the next word is a script name, whatever it is called.
+const INIT_LAUNCHER_SUBCOMMANDS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["pnpm", ["exec", "dlx"]],
+  ["npm", ["exec", "x"]],
+  ["yarn", ["exec", "dlx"]],
+]);
+
+// `env` options that take a value (`--unset=NAME` is one word).
+const INIT_ENV_VALUE_OPTIONS = new Set(["-u", "--unset", "-C", "--chdir"]);
+
+// The options of `bun test` that take a value in a separate word (`--opt=value` is one word); the
+// others are switches. A value is not a path filter.
+const INIT_BUN_TEST_VALUE_OPTIONS = new Set([
+  "--preload",
+  "-r",
+  "--require",
+  "--import",
+  "--timeout",
+  "--rerun-each",
+  "--test-name-pattern",
+  "-t",
+  "--reporter",
+  "--reporter-outfile",
+  "--coverage-reporter",
+  "--coverage-dir",
+  "--max-concurrency",
+  "--seed",
+  "--path-ignore-patterns",
+  "--config",
+  "-c",
+  "--env-file",
+  "--cwd",
+  "--tsconfig-override",
+  "--define",
+  "-d",
+  "--loader",
+  "-l",
+  "--conditions",
+]);
+
+/** The path operands of `bun test`: the words after the subcommand that are not options or values. */
+function initBunTestOperands(words: readonly string[], subcommand: number): string[] {
+  const operands: string[] = [];
+  for (let index = subcommand + 1; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (!word.startsWith("-")) {
+      operands.push(word);
+    } else if (INIT_BUN_TEST_VALUE_OPTIONS.has(word)) {
+      index += 1;
+    }
+  }
+  return operands;
+}
+
+/**
+ * The index of the program a command dispatches, or -1 when its launcher is not known: the
+ * command itself when it is Bun or a Node runtime, or the word right after the options of a
+ * launcher that runs the program that follows (`pnpm exec`, `npx`, `env A=1`, `dotenv --`,
+ * `c8`). `echo bun test` and `npm exec -- echo node --test` dispatch `echo`; `npm run x` runs
+ * a script and dispatches no program.
+ */
+function initLaunchedProgram(words: readonly string[]): number {
+  // `corepack pnpm exec bun test`: corepack only selects the manager that follows.
+  const { start, launcher } = initEffectiveLauncher(words);
+  // The index where the program is looked for, before options are skipped.
+  let cursor = -1;
+  let skipsOptions = true;
+  const subcommands = INIT_LAUNCHER_SUBCOMMANDS.get(launcher);
+  if (launcher === "bun" || INIT_NODE_RUNTIMES.has(launcher)) {
+    cursor = start;
+    skipsOptions = false;
+  } else if (subcommands !== undefined) {
+    const index = initManagerSubcommand(words, start, launcher);
+    if (index >= 0) cursor = index + 1;
+  } else if (INIT_DIRECT_LAUNCHERS.has(launcher)) {
+    cursor = start + 1;
+  } else if (launcher === "env" || launcher === "cross-env") {
+    cursor = start + 1;
+    skipsOptions = false;
+    // Assignments and options come before the program: `env -i -u FOO A=1 bun test`.
+    for (;;) {
+      const word = words[cursor] ?? "";
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(word)) cursor += 1;
+      else if (word.startsWith("-")) cursor += INIT_ENV_VALUE_OPTIONS.has(word) ? 2 : 1;
+      else break;
+    }
+  } else if (launcher === "dotenv") {
+    const separator = words.indexOf("--", start + 1);
+    if (separator >= 0) cursor = separator + 1;
+    skipsOptions = false;
+  }
+  if (cursor < 0) return -1;
+  if (skipsOptions) {
+    // An option's value is not the program: `npx --package bun bun test`.
+    while ((words[cursor] ?? "").startsWith("-")) {
+      cursor += INIT_LAUNCHER_VALUE_OPTIONS.has(words[cursor] ?? "") ? 2 : 1;
+    }
+  }
+  return cursor;
+}
+
+/**
+ * The index of the `test` subcommand of an invocation of `bun` that is Bun's own, or -1: the
+ * command is Bun, or a launcher that runs the program right after its options (`pnpm exec bun
+ * test`, `npx bun test`, `env A=1 bun test`), and global switches (`bun --smol test`) may come
+ * between. A global option with a separate value (`bun --cwd dir test`) is not understood: Bun
+ * only takes the `--cwd=dir` form there. `echo bun test` and `npm run bun test` only carry the
+ * words, and `node runner bun test` hands them to the script.
+ */
+function initBunTestPair(words: readonly string[]): number {
+  const cursor = initLaunchedProgram(words);
+  if (cursor < 0) return -1;
+  if (initCommandWordName(words[cursor] ?? "") !== "bun") return -1;
+  // Bun's global switches come before its subcommand (`bun --smol test`). Any other option is not
+  // known to leave `test` as the subcommand: `bun -e test` evaluates `test` as code.
+  let position = cursor + 1;
+  while ((words[position] ?? "").startsWith("-")) {
+    const word = words[position] ?? "";
+    const name = word.includes("=") ? word.slice(0, word.indexOf("=")) : word;
+    const understood = word.includes("=")
+      ? INIT_BUN_GLOBAL_VALUE_OPTIONS.has(name)
+      : INIT_BUN_GLOBAL_SWITCHES.has(name);
+    if (!understood) return -1;
+    position += 1;
+  }
+  return words[position] === "test" ? position : -1;
+}
+
+// Bun's global switches, and its global options that take a value in the `--opt=value` form.
+const INIT_BUN_GLOBAL_SWITCHES = new Set([
+  "--smol",
+  "--bun",
+  "-b",
+  "--silent",
+  "--hot",
+  "--watch",
+  "--no-install",
+  "--prefer-offline",
+  "--prefer-latest",
+  "--if-present",
+  "--no-clear-screen",
+  "--expose-gc",
+  "--no-deprecation",
+  "--throw-deprecation",
+  "--zero-fill-buffers",
+  "--no-addons",
+  "--no-macros",
+  "--inspect",
+  "--inspect-wait",
+  "--inspect-brk",
+  "-i",
+]);
+const INIT_BUN_GLOBAL_VALUE_OPTIONS = new Set([
+  "--cwd",
+  "--config",
+  "--env-file",
+  "--tsconfig-override",
+  "--port",
+  "--install",
+  "--preload",
+  "--require",
+  "--import",
+  "--conditions",
+  "--define",
+  "--drop",
+  "--loader",
+  "--main-fields",
+  "--extension-order",
+  "--title",
+  "--user-agent",
+  "--max-http-header-size",
+  "--dns-result-order",
+  "--unhandled-rejections",
+  "--console-depth",
+  "--elide-lines",
+  "--fetch-preconnect",
+]);
+
 const INIT_NODE_RUNTIMES = new Set(["node", "tsx", "ts-node", "babel-node", "nodemon"]);
+// Node's own test options that are switches; every other `--test-*` option takes a value.
+const INIT_NODE_TEST_SWITCHES = new Set([
+  "--test-only",
+  "--test-force-exit",
+  "--test-update-snapshots",
+]);
+
+/** Whether a word is a Node option whose value is the next word (`--opt value`, not `--opt=v`). */
+function initNodeOptionTakesValue(word: string): boolean {
+  if (word.includes("=")) return false;
+  if (word.startsWith("--test-")) return !INIT_NODE_TEST_SWITCHES.has(word);
+  return INIT_NODE_VALUE_OPTIONS.has(word);
+}
+
 const INIT_NODE_VALUE_OPTIONS = new Set([
   "--import",
   "--require",
@@ -1386,6 +1718,21 @@ const INIT_NODE_VALUE_OPTIONS = new Set([
   "--conditions",
   "-C",
   "--input-type",
+  "--experimental-test-isolation",
+  "--test-concurrency",
+  "--test-coverage-branches",
+  "--test-coverage-exclude",
+  "--test-coverage-functions",
+  "--test-coverage-include",
+  "--test-coverage-lines",
+  "--test-global-setup",
+  "--test-isolation",
+  "--test-name-pattern",
+  "--test-reporter",
+  "--test-reporter-destination",
+  "--test-shard",
+  "--test-skip-pattern",
+  "--test-timeout",
 ]);
 
 /**
@@ -1397,10 +1744,11 @@ const INIT_NODE_VALUE_OPTIONS = new Set([
 function initCommandIsIndirect(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
+  declared: boolean,
 ): boolean {
   const isTestFile = runner === "bun" ? initBunTestSource : initNodeTestSource;
   return (
-    !initCommandInvokesRunner(command, runner) &&
+    !initCommandInvokesRunner(command, runner, declared) &&
     !command.arguments.some((argument) => initOperandSpelledAsPath(argument, isTestFile))
   );
 }
@@ -1423,15 +1771,6 @@ const INIT_WORKSPACE_PATTERN_COUNT = 1_024;
 const INIT_WORKSPACE_PATTERN_LENGTH = 256;
 const INIT_WORKSPACE_BRACE_DEPTH = 8;
 const INIT_WORKSPACE_PATH_LENGTH = 1_024;
-
-async function initRegularFileStats(file: string): Promise<Stats | undefined> {
-  try {
-    const stats = await lstat(file);
-    return stats.isFile() ? stats : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * What is at a workspace file's path: nothing, text, or something that exists but cannot be read
@@ -1465,6 +1804,15 @@ async function initWorkspaceFileRead(
   }
 }
 
+/** A manager lockfile of a workspace root: absent, a regular file, or present but not one. */
+async function initWorkspaceLockfileState(file: string): Promise<"ABSENT" | "FILE" | "UNRESOLVED"> {
+  try {
+    return (await lstat(file)).isFile() ? "FILE" : "UNRESOLVED";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "ABSENT" : "UNRESOLVED";
+  }
+}
+
 /** Splits the inside of a YAML flow list on the commas outside quotes and braces. */
 function initFlowListItems(inside: string): string[] {
   const items: string[] = [];
@@ -1480,7 +1828,15 @@ function initFlowListItems(inside: string): string[] {
         current += inside[index] ?? "";
         continue;
       }
-      if (character === quote) quote = "";
+      if (character === quote) {
+        if (quote === "'" && inside[index + 1] === "'") {
+          current += character;
+          index += 1;
+          current += inside[index] ?? "";
+          continue;
+        }
+        quote = "";
+      }
     } else if (initYamlQuoteOpens(inside, index)) {
       quote = character;
     } else if (character === "{" || character === "[") {
@@ -1515,6 +1871,7 @@ function initYamlStripComment(line: string): string {
     const character = line[index] ?? "";
     if (quote !== "") {
       if (quote === '"' && character === "\\") index += 1;
+      else if (quote === "'" && character === "'" && line[index + 1] === "'") index += 1;
       else if (character === quote) quote = "";
     } else if (initYamlQuoteOpens(line, index)) {
       quote = character;
@@ -1525,12 +1882,50 @@ function initYamlStripComment(line: string): string {
   return line;
 }
 
-function initYamlUnquote(value: string): string {
+const INIT_YAML_NOT_A_STRING =
+  /^(?:~|null|Null|NULL|true|True|TRUE|false|False|FALSE|[-+]?(?:\.\d+|\d[\d_]*(?:\.\d*)?)(?:[eE][-+]?\d+)?|0x[0-9a-fA-F]+|0o[0-7]+|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/u;
+
+function initYamlUnquote(value: string): string | undefined {
   const text = value.trim();
   const first = text[0];
-  return text.length >= 2 && (first === "'" || first === '"') && text.endsWith(first)
-    ? text.slice(1, -1)
-    : text;
+  if (text.length < 2 || (first !== "'" && first !== '"') || !text.endsWith(first)) {
+    // A plain scalar must be a string: a number, a boolean, null, a mapping entry, a flow
+    // collection, an anchor, an alias, a tag, a block scalar header, a nested sequence item
+    // (`- - x`), a complex key (`? x`) or a reserved indicator is not a pattern.
+    if (
+      INIT_YAML_NOT_A_STRING.test(text) ||
+      /^[[{&*!|>@`]/u.test(text) ||
+      /^[-?:](?:\s|$)/u.test(text) ||
+      text.includes(": ") ||
+      text.endsWith(":")
+    ) {
+      return undefined;
+    }
+    return text;
+  }
+  const inside = text.slice(1, -1);
+  // Single quotes: a doubled quote stands for one quote and nothing else is an escape; a lone
+  // quote inside ends the scalar, so what follows it is not valid YAML.
+  if (first === "'") {
+    return inside.replaceAll("''", "").includes("'") ? undefined : inside.replaceAll("''", "'");
+  }
+  // Double quotes: only the escapes of the characters a pattern may hold are decoded; any other
+  // escape is refused, never read as the literal characters, and an unescaped quote inside ends
+  // the scalar.
+  let decoded = "";
+  for (let index = 0; index < inside.length; index += 1) {
+    const character = inside[index] ?? "";
+    if (character === '"') return undefined;
+    if (character !== "\\") {
+      decoded += character;
+      continue;
+    }
+    index += 1;
+    const escaped = inside[index];
+    if (escaped !== "\\" && escaped !== '"' && escaped !== "/") return undefined;
+    decoded += escaped;
+  }
+  return decoded;
 }
 
 /** The scanner state of a YAML flow list that may span lines. */
@@ -1549,6 +1944,7 @@ function initFlowScan(state: InitFlowScan, text: string): number {
     const character = text[index] ?? "";
     if (state.quote !== "") {
       if (state.quote === '"' && character === "\\") index += 1;
+      else if (state.quote === "'" && character === "'" && text[index + 1] === "'") index += 1;
       else if (character === state.quote) state.quote = "";
     } else if (initYamlQuoteOpens(text, index)) {
       state.quote = character;
@@ -1564,6 +1960,99 @@ function initFlowScan(state: InitFlowScan, text: string): number {
   return -1;
 }
 
+/** The scanner state of a value of another key: its open quote and the closers it still owes. */
+interface InitOpenValue {
+  quote: string;
+  closers: string[];
+}
+
+/** What `initYamlValueEnd` returns while the value is open, and when its brackets do not match. */
+const INIT_YAML_VALUE_OPEN = -1;
+const INIT_YAML_VALUE_MISMATCHED = -2;
+
+/**
+ * Scans a value that opens with a quote or a flow bracket and returns the index just past its end,
+ * `INIT_YAML_VALUE_OPEN` while it is still open, or `INIT_YAML_VALUE_MISMATCHED` when a closing
+ * bracket is not the one its opener asks for (`[}`). The state carries over lines, so a value is
+ * read once however many lines it spans.
+ */
+function initYamlValueEnd(state: InitOpenValue, text: string): number {
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index] ?? "";
+    if (state.quote !== "") {
+      if (state.quote === '"' && character === "\\") index += 1;
+      else if (state.quote === "'" && character === "'" && text[index + 1] === "'") index += 1;
+      else if (character === state.quote) {
+        state.quote = "";
+        if (state.closers.length === 0) return index + 1;
+      }
+    } else if (initYamlQuoteOpens(text, index)) {
+      state.quote = character;
+    } else if (character === "[") {
+      state.closers.push("]");
+    } else if (character === "{") {
+      state.closers.push("}");
+    } else if (character === "]" || character === "}") {
+      if (state.closers.pop() !== character) return INIT_YAML_VALUE_MISMATCHED;
+      if (state.closers.length === 0) return index + 1;
+    }
+  }
+  return INIT_YAML_VALUE_OPEN;
+}
+
+/**
+ * The value of a mapping entry or sequence item that is not read as patterns. One that opens with
+ * a quote or a flow bracket must be a closed scalar or collection with nothing after it: INVALID
+ * when it is not, the scanner state when it is still open at the end of the line, undefined when
+ * there is nothing to check.
+ */
+function initYamlOpenValue(value: string): InitOpenValue | "INVALID" | undefined {
+  const first = value[0];
+  if (first !== "'" && first !== '"' && first !== "[" && first !== "{") return undefined;
+  const state: InitOpenValue = { quote: "", closers: [] };
+  const end = initYamlValueEnd(state, value);
+  if (end === INIT_YAML_VALUE_MISMATCHED) return "INVALID";
+  if (end === INIT_YAML_VALUE_OPEN) return state;
+  return value.slice(end).trim().length > 0 ? "INVALID" : undefined;
+}
+
+/** The value of a line below a key: what follows its sequence markers and its `key:`, if any. */
+function initYamlLineValue(line: string): string {
+  let rest = line.trim();
+  while (/^-(?:\s|$)/u.test(rest)) rest = rest.slice(1).trimStart();
+  const entry = initYamlTopLevelEntry(rest);
+  return (entry === undefined ? rest : entry.value).trim();
+}
+
+/**
+ * The key of a top-level `key: value` line, decoded, and the text after its colon; undefined when
+ * the line is not a mapping entry. A quoted key (`'packages':`) is the same key as the plain one,
+ * and a plain key ends at the first colon that is followed by whitespace or the end of the line.
+ */
+function initYamlTopLevelEntry(line: string): { key: string; value: string } | undefined {
+  const first = line[0];
+  if (first === "'" || first === '"') {
+    let close = 1;
+    for (; close < line.length; close += 1) {
+      const character = line[close];
+      if (first === '"' && character === "\\") close += 1;
+      else if (first === "'" && character === "'" && line[close + 1] === "'") close += 1;
+      else if (character === first) break;
+    }
+    if (close >= line.length) return undefined;
+    const key = initYamlUnquote(line.slice(0, close + 1));
+    const rest = line.slice(close + 1).trimStart();
+    if (key === undefined || !rest.startsWith(":")) return undefined;
+    return { key, value: rest.slice(1) };
+  }
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === ":" && (index + 1 === line.length || /\s/u.test(line[index + 1] ?? ""))) {
+      return { key: line.slice(0, index).trimEnd(), value: line.slice(index + 1) };
+    }
+  }
+  return undefined;
+}
+
 /**
  * The `packages` patterns of a pnpm-workspace.yaml. Only the block and flow list forms are read;
  * a file in any other shape declares nothing, so a member is never inferred from it. The text is
@@ -1572,35 +2061,108 @@ function initFlowScan(state: InitFlowScan, text: string): number {
  */
 function initPnpmWorkspacePatterns(text: string | undefined): string[] {
   if (text === undefined) return [];
-  const flowPatterns = (inside: string): string[] =>
-    initFlowListItems(inside)
-      .map(initYamlUnquote)
-      .filter((entry) => entry.length > 0);
+  const flowPatterns = (inside: string): string[] | undefined => {
+    const entries: string[] = [];
+    const items = initFlowListItems(inside);
+    for (const [index, item] of items.entries()) {
+      // An empty item is null, except after the last comma of the list.
+      if (item.trim().length === 0) {
+        if (index === items.length - 1) continue;
+        return undefined;
+      }
+      const entry = initYamlUnquote(item);
+      if (entry === undefined) return undefined;
+      entries.push(entry);
+    }
+    return entries;
+  };
   const patterns: string[] = [];
+  const keys = new Set<string>();
   let inPackages = false;
+  // The indentation of the items of the block list under `packages`.
+  let itemIndent: number | undefined;
   // The pieces of a flow list still open at the end of a line, and its scanner state.
   let flow: string[] | undefined;
   const scan: InitFlowScan = { quote: "", depth: 0 };
-  for (const raw of text.split(/\r?\n/u)) {
-    const line = initYamlStripComment(raw);
+  // A quoted scalar or a flow collection of another key that is still open at the end of a line.
+  let opaque: InitOpenValue | undefined;
+  // What the last top-level key holds, so that a `-` at column 0 is known to continue a sequence
+  // value: NONE (a scalar or a flow value), OPEN (empty, a block value may follow), NESTED (an
+  // indented block follows) or SEQUENCE (a block sequence at the key's own column).
+  let blockValue: "NONE" | "OPEN" | "NESTED" | "SEQUENCE" = "NONE";
+  // A byte-order mark opens a YAML stream and is not part of its first line.
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  // YAML separates with spaces and tabs only. Any other Unicode whitespace is content that the
+  // trimming below would drop, so a file that has one is not read.
+  if (/[^\S \t\r\n]/u.test(source)) return [];
+  // The indentation of the root mapping: a document may indent all of its content equally.
+  let rootIndent: number | undefined;
+  // Lines end with `\r\n`, `\r` or `\n`.
+  for (const raw of source.split(/\r\n|\r|\n/u)) {
+    let line = initYamlStripComment(raw);
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    // A tab may separate tokens but never indents a line: such a file is not valid YAML.
+    if (/^ *\t/u.test(line)) return [];
+    if (!/^(?:---|\.\.\.)(?:\s|$)/u.test(line)) {
+      const indent = line.length - line.trimStart().length;
+      rootIndent ??= indent;
+      // Content cannot sit left of the root: the structure below is read from the root's column.
+      if (indent < rootIndent) return [];
+      line = line.slice(rootIndent);
+    }
+    if (opaque !== undefined) {
+      const end = initYamlValueEnd(opaque, line);
+      if (end === INIT_YAML_VALUE_MISMATCHED) return [];
+      if (end >= 0) {
+        if (line.slice(end).trim().length > 0) return [];
+        opaque = undefined;
+      }
+      continue;
+    }
     if (flow !== undefined) {
+      // YAML folds a line break inside a scalar to one space and drops the indentation: the
+      // scanner does not, so a break is only read between two items (or before the closing
+      // bracket), never inside a quoted or plain scalar.
+      const previous = (flow[flow.length - 1] ?? "").trimEnd();
+      const betweenItems = previous === "" || previous.endsWith(",") || trimmed.startsWith("]");
+      if (scan.quote !== "" || !betweenItems) return [];
       const end = initFlowScan(scan, line);
       if (end >= 0) {
         // Only whitespace may follow the closing bracket: anything else is not valid YAML.
         if (line.slice(end + 1).trim().length > 0) return [];
         flow.push(line.slice(0, end));
-        patterns.push(...flowPatterns(flow.join(" ")));
+        const entries = flowPatterns(flow.join(" "));
+        if (entries === undefined) return [];
+        patterns.push(...entries);
         flow = undefined;
       } else {
         flow.push(line);
       }
-    } else if (!/^[\s-]/u.test(line)) {
+    } else if (!/^(?:\s|-(?:\s|$)|---(?:\s|$))/u.test(line)) {
+      // A line at the root that starts a mapping entry: `-foo: bar` is a plain key, and only a
+      // `-` followed by white space is a sequence marker.
       inPackages = false;
-      const rest = line.startsWith("packages") ? line.slice("packages".length).trimStart() : "";
-      if (!rest.startsWith(":")) continue;
-      const value = rest.slice(1).trim();
+      itemIndent = undefined;
+      const entry = initYamlTopLevelEntry(line);
+      if (entry === undefined) {
+        // A document end marker is the only top-level line that is not a mapping entry: any
+        // other text makes the file invalid YAML, which declares nothing.
+        if (/^\.\.\.(?:\s|$)/u.test(line)) continue;
+        return [];
+      }
+      // pnpm refuses a mapping that repeats a key, so such a file is no workspace to infer from.
+      if (keys.has(entry.key)) return [];
+      keys.add(entry.key);
+      blockValue = entry.value.trim().length === 0 ? "OPEN" : "NONE";
+      if (entry.key !== "packages") {
+        // The value of another key is not read, but it must be valid YAML for the file to be one.
+        const pending = initYamlOpenValue(entry.value.trim());
+        if (pending === "INVALID") return [];
+        if (pending !== undefined) opaque = pending;
+        continue;
+      }
+      const value = entry.value.trim();
       if (value.length === 0) {
         inPackages = true;
       } else if (value.startsWith("[")) {
@@ -1610,54 +2172,60 @@ function initPnpmWorkspacePatterns(text: string | undefined): string[] {
         const end = initFlowScan(scan, inside);
         if (end >= 0) {
           if (inside.slice(end + 1).trim().length > 0) return [];
-          patterns.push(...flowPatterns(inside.slice(0, end)));
+          const entries = flowPatterns(inside.slice(0, end));
+          if (entries === undefined) return [];
+          patterns.push(...entries);
         } else {
           flow = [inside];
         }
       }
-    } else if (
-      inPackages &&
-      trimmed.startsWith("-") &&
-      (trimmed[1] === undefined || /\s/u.test(trimmed[1]))
-    ) {
-      const item = trimmed.slice(1).trim();
-      if (item.length > 0) patterns.push(initYamlUnquote(item));
+    } else if (inPackages) {
+      // Every line under `packages` must be an item at one indentation: a mapping or a nested
+      // sequence is not the package list, so the file declares nothing.
+      const isItem =
+        trimmed.startsWith("-") && (trimmed[1] === undefined || /\s/u.test(trimmed[1]));
+      const indent = line.length - line.trimStart().length;
+      if (!isItem || (itemIndent !== undefined && indent !== itemIndent)) return [];
+      itemIndent = indent;
+      // An empty item is null: not a pattern, so the file declares nothing.
+      const entry = initYamlUnquote(trimmed.slice(1));
+      if (entry === undefined || entry.length === 0) return [];
+      patterns.push(entry);
+    } else {
+      if (!/^\s/u.test(line)) {
+        // A line at column 0 that starts with `-`: the document marker, or an item of the block
+        // sequence that is the value of the key above. A root collection cannot turn from a
+        // mapping into a sequence.
+        if (/^---(?:\s|$)/u.test(line)) {
+          blockValue = "NONE";
+          continue;
+        }
+        if (blockValue !== "OPEN" && blockValue !== "SEQUENCE") return [];
+        blockValue = "SEQUENCE";
+      } else if (blockValue === "OPEN") {
+        blockValue = "NESTED";
+      }
+      // A line below another key: only its value is checked for being closed.
+      const pending = initYamlOpenValue(initYamlLineValue(line));
+      if (pending === "INVALID") return [];
+      if (pending !== undefined) opaque = pending;
     }
   }
-  // A flow list that never closes is not a declaration.
-  return flow === undefined ? patterns : [];
-}
-
-/**
- * The `workspaces` patterns of a package.json and the shape that declared them: npm takes the
- * array form only, Yarn and Bun also take an object holding a `packages` array.
- */
-function initPackageWorkspacePatterns(document: Record<string, unknown> | undefined): {
-  patterns: string[];
-  shape: "array" | "object" | undefined;
-} {
-  const field = document?.workspaces;
-  const shape =
-    field !== null && typeof field === "object"
-      ? Array.isArray(field)
-        ? "array"
-        : "object"
-      : undefined;
-  const list = shape === "object" ? (field as Record<string, unknown>).packages : field;
-  return {
-    patterns: Array.isArray(list)
-      ? list.filter((entry): entry is string => typeof entry === "string")
-      : [],
-    shape,
-  };
+  // A flow list or a quoted scalar that never closes is not a declaration.
+  return flow === undefined && opaque === undefined ? patterns : [];
 }
 
 /** The deepest nesting of braces in a pattern: sibling groups do not nest. */
 function initBraceNesting(pattern: string): number {
   let level = 0;
   let deepest = 0;
-  for (const character of pattern) {
-    if (character === "{") {
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === "[") {
+      // Braces held in a class are characters: they open no group.
+      const close = pattern.indexOf("]", index + 2);
+      if (close >= 0) index = close;
+    } else if (character === "{") {
       level += 1;
       deepest = Math.max(deepest, level);
     } else if (character === "}") {
@@ -1665,6 +2233,22 @@ function initBraceNesting(pattern: string): number {
     }
   }
   return deepest;
+}
+
+/** The first index of `character` that is not inside a `[...]` class, or -1. */
+function initIndexOutsideClasses(pattern: string, character: string): number {
+  for (let index = 0; index < pattern.length; index += 1) {
+    const current = pattern[index];
+    if (current === "[") {
+      const close = pattern.indexOf("]", index + 2);
+      if (close >= 0) {
+        index = close;
+        continue;
+      }
+    }
+    if (current === character) return index;
+  }
+  return -1;
 }
 
 /**
@@ -1675,9 +2259,9 @@ function initBraceNesting(pattern: string): number {
  * is bounded by the caller.
  */
 function initExpandBraces(pattern: string, budget: { left: number }): string[] | undefined {
-  const open = pattern.indexOf("{");
+  const open = initIndexOutsideClasses(pattern, "{");
   if (open < 0) {
-    if (pattern.includes("}")) return undefined;
+    if (initIndexOutsideClasses(pattern, "}") >= 0) return undefined;
     budget.left -= 1;
     return budget.left < 0 ? undefined : [pattern];
   }
@@ -1686,7 +2270,11 @@ function initExpandBraces(pattern: string, budget: { left: number }): string[] |
   const cuts: number[] = [open];
   for (let index = open; index < pattern.length; index += 1) {
     const character = pattern[index];
-    if (character === "{") {
+    if (character === "[") {
+      // A class holds its characters as they are: a `,` or a brace inside it is not a separator.
+      const classEnd = pattern.indexOf("]", index + 2);
+      if (classEnd >= 0) index = classEnd;
+    } else if (character === "{") {
       level += 1;
     } else if (character === "}") {
       level -= 1;
@@ -1716,7 +2304,7 @@ type InitGlobToken =
   | { kind: "literal"; value: string }
   | { kind: "any" }
   | { kind: "star" }
-  | { kind: "class"; negated: boolean; members: string };
+  | { kind: "class"; members: string };
 
 /** The tokens of one path segment: `*`, `?`, `[a-z]` and literal characters; undefined otherwise. */
 function initGlobTokens(segment: string): InitGlobToken[] | undefined {
@@ -1730,12 +2318,13 @@ function initGlobTokens(segment: string): InitGlobToken[] | undefined {
     } else if (character === "[") {
       const close = segment.indexOf("]", index + 2);
       if (close < 0) return undefined;
-      let members = segment.slice(index + 1, close);
+      const members = segment.slice(index + 1, close);
       if (members.includes("[")) return undefined;
-      const negated = members.startsWith("!") || members.startsWith("^");
-      if (negated) members = members.slice(1);
+      // A class that opens with `!` or `^` is a negation for some glob dialects and a literal
+      // for others: not understood, so nothing is inferred from it.
+      if (members.startsWith("!") || members.startsWith("^")) return undefined;
       if (members.length === 0) return undefined;
-      tokens.push({ kind: "class", negated, members });
+      tokens.push({ kind: "class", members });
       index = close;
     } else {
       tokens.push({ kind: "literal", value: character });
@@ -1760,11 +2349,18 @@ function initGlobTokenMatches(token: InitGlobToken, character: string): boolean 
       inside = character === from;
     }
   }
-  return inside !== token.negated;
+  return inside;
 }
 
 /** Matches one segment against its tokens in time proportional to the product of their lengths. */
 function initGlobSegmentMatches(tokens: readonly InitGlobToken[], text: string): boolean {
+  // A wildcard, `?` or class does not select a name that starts with a dot: only a pattern that
+  // spells the dot does, as a literal or as a class that can match it (`[.]`, `[.a]`).
+  const first = tokens[0];
+  const spellsDot =
+    (first?.kind === "literal" && first.value === ".") ||
+    (first?.kind === "class" && initGlobTokenMatches(first, "."));
+  if (text.startsWith(".") && !spellsDot) return false;
   let token = 0;
   let position = 0;
   let starToken = -1;
@@ -1797,6 +2393,8 @@ function initGlobSegments(pattern: string): InitGlobSegment[] | undefined {
   if (pattern.includes("\\") || pattern.includes("(") || pattern.includes(")")) return undefined;
   const segments: InitGlobSegment[] = [];
   for (const segment of pattern.split("/")) {
+    // Redundant separators (`packages//a`) and `.` segments are normalized away, as pnpm does.
+    if (segment === "" || segment === ".") continue;
     if (segment === "**") {
       if (segments[segments.length - 1] !== "**") segments.push("**");
       continue;
@@ -1819,8 +2417,12 @@ function initGlobMatchesPath(
     const current: boolean[] = new Array<boolean>(path.length + 1).fill(false);
     for (let position = path.length; position >= 0; position -= 1) {
       if (part === "**") {
+        // `**` does not step through a dot-prefixed directory either.
         current[position] =
-          next[position] === true || (position < path.length && current[position + 1] === true);
+          next[position] === true ||
+          (position < path.length &&
+            !(path[position] ?? "").startsWith(".") &&
+            current[position + 1] === true);
       } else {
         current[position] =
           position < path.length &&
@@ -1831,6 +2433,24 @@ function initGlobMatchesPath(
     next = current;
   }
   return next[0] === true;
+}
+
+/**
+ * A plain pattern with its `.` and empty segments dropped and each `..` cancelling the segment
+ * before it; undefined when a `..` has none to cancel or nothing is left.
+ */
+function initNormalizeGlobPath(pattern: string): string | undefined {
+  const segments: string[] = [];
+  for (const segment of pattern.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return undefined;
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  return segments.length === 0 ? undefined : segments.join("/");
 }
 
 /**
@@ -1846,6 +2466,8 @@ function initWorkspaceDeclaresMember(
   if (patterns.length > INIT_WORKSPACE_PATTERN_COUNT) return undefined;
   if (relative.length > INIT_WORKSPACE_PATH_LENGTH) return undefined;
   const path = relative.split("/");
+  // pnpm never selects a directory below a dependency tree, even when a pattern names it.
+  if (path.some((name) => name === "node_modules" || name === "bower_components")) return false;
   const budget = { left: INIT_WORKSPACE_PATTERN_COUNT };
   let included = false;
   let excluded = false;
@@ -1855,15 +2477,17 @@ function initWorkspaceDeclaresMember(
     let pattern = negated ? raw.slice(1) : raw;
     if (pattern.startsWith("./")) pattern = pattern.slice(2);
     while (pattern.endsWith("/")) pattern = pattern.slice(0, -1);
-    if (pattern.length === 0 || pattern.startsWith("/") || pattern.split("/").includes("..")) {
-      continue;
-    }
+    if (pattern.length === 0 || pattern.startsWith("/")) continue;
     if (pattern.length > INIT_WORKSPACE_PATTERN_LENGTH) return undefined;
     if (initBraceNesting(pattern) > INIT_WORKSPACE_BRACE_DEPTH) return undefined;
     const expansions = initExpandBraces(pattern, budget);
     if (expansions === undefined) return undefined;
     for (const expansion of expansions) {
-      const segments = initGlobSegments(expansion);
+      // `a/../b` is `b`, as pnpm normalizes it; a pattern that climbs out of the workspace
+      // root selects nothing in it.
+      const normalized = initNormalizeGlobPath(expansion);
+      if (normalized === undefined) continue;
+      const segments = initGlobSegments(normalized);
       if (segments === undefined) return undefined;
       if (initGlobMatchesPath(segments, path)) {
         if (negated) excluded = true;
@@ -1920,10 +2544,18 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
   }
   for (const directory of ancestors) {
     const relative = path.relative(directory, root).split(path.sep).join("/");
-    // An unreadable pnpm-workspace.yaml is still pnpm's declaration: nothing is inferred.
+    // pnpm-workspace.yaml is the only declaration read. One that exists but cannot be read is
+    // still pnpm's declaration: nothing is inferred from it.
     const workspaceRead = await initWorkspaceFileRead(path.join(directory, "pnpm-workspace.yaml"));
     if (workspaceRead.kind === "UNREADABLE") return undefined;
-    const workspaceFile = workspaceRead.kind === "TEXT" ? workspaceRead.text : undefined;
+    if (workspaceRead.kind !== "TEXT") continue;
+    const declared = initWorkspaceDeclaresMember(
+      initPnpmWorkspacePatterns(workspaceRead.text),
+      relative,
+    );
+    // The nearest workspace manifest decides: pnpm does not look further out when it does not
+    // select the package.
+    if (declared !== true) return undefined;
     const manifestRead = await initWorkspaceFileRead(
       path.join(directory, "package.json"),
       INIT_WORKSPACE_MANIFEST_LIMIT_BYTES,
@@ -1934,44 +2566,32 @@ async function initWorkspaceRootFacts(root: string): Promise<InitWorkspaceRootFa
     const manifest = initPackageDocument(
       manifestRead.kind === "TEXT" ? manifestRead.text : undefined,
     );
-    // pnpm reads its workspace only from pnpm-workspace.yaml once that file exists; the
-    // `workspaces` field of package.json belongs to npm, Yarn and Bun, and its object form to
-    // Yarn and Bun alone.
-    let patterns: string[];
-    let owners: readonly InitPackageManager[];
-    if (workspaceFile !== undefined) {
-      patterns = initPnpmWorkspacePatterns(workspaceFile);
-      owners = ["pnpm"];
-    } else {
-      const declaration = initPackageWorkspacePatterns(manifest);
-      patterns = declaration.patterns;
-      owners = declaration.shape === "object" ? ["yarn", "bun"] : ["npm", "yarn", "bun"];
-    }
-    const declared = initWorkspaceDeclaresMember(patterns, relative);
-    if (declared === undefined) return undefined;
-    if (!declared) continue;
-    const managers = new Set<InitPackageManager>();
+    // The yaml makes the directory a pnpm workspace; the manifest field and the lockfiles of the
+    // JavaScript managers must converge on it, or the facts conflict.
+    const managers = new Set<InitPackageManager>(["pnpm"]);
     let invalidManagerField = false;
     const field = manifest?.packageManager;
     if (typeof field === "string") {
       const id = field.split("@")[0] ?? "";
       if (isInitPackageManager(id)) managers.add(id);
       else invalidManagerField = true;
+    } else if (field !== undefined) {
+      // A number, an object, `null`: a field its manager cannot consume is not an absent one.
+      invalidManagerField = true;
     }
-    if (workspaceFile !== undefined) managers.add("pnpm");
     for (const [manager, files] of INIT_MANAGER_LOCKFILES) {
       if (!INIT_WORKSPACE_MANAGERS.includes(manager)) continue;
       for (const file of files) {
-        if ((await initRegularFileStats(path.join(directory, file))) !== undefined) {
+        const lockfile = await initWorkspaceLockfileState(path.join(directory, file));
+        // A lockfile that exists but is not a regular file (a link, a directory) is still read by
+        // its manager: it is an unresolved fact, not an absent one, and nothing is inferred.
+        if (lockfile === "UNRESOLVED") return undefined;
+        if (lockfile === "FILE") {
           managers.add(manager);
           break;
         }
       }
     }
-    // A single manager that does not own this declaration, or is not a JavaScript manager at
-    // all, does not select the package: nothing is inherited. Several managers stay a conflict.
-    const [only] = managers;
-    if (managers.size === 1 && only !== undefined && !owners.includes(only)) return undefined;
     return {
       managers,
       invalidManagerField,
@@ -2179,12 +2799,14 @@ export async function initializeRepository(
   const linkConflict = (
     assessment: RepositoryLinkAssessment,
     detections: RepositoryInitDetections,
+    notices: string[] = [],
   ) => {
     options.onLinkAssessment?.(assessment);
     const code = assessment.refused?.reasonCode;
     const codes = [
       "UNSUPPORTED_REPOSITORY_SYMLINK",
       ...(code === undefined || code === "TEST_CLOSURE_UNSUPPORTED" ? [] : [code]),
+      ...notices,
     ];
     return initTerminalResult("CONFLICT", { ...detections, reasonCodes: codes }, codes);
   };
@@ -2259,6 +2881,13 @@ export async function initializeRepository(
   let managerFromWorkspaceRoot = false;
   let workspaceFactsKey = "";
   if (packageManager === undefined && packageDocument !== undefined) {
+    // A package that has a `packageManager` field of a type no manager reads has stated
+    // something unusable: it does not inherit its workspace's manager instead.
+    if (packageManagerField !== undefined && typeof packageManagerField !== "string") {
+      return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANAGER_INVALID"]), [
+        "PACKAGE_MANAGER_INVALID",
+      ]);
+    }
     const workspace = await initWorkspaceRootFacts(root);
     if (workspace?.invalidManifest === true) {
       return initTerminalResult("CONFLICT", initEmptyDetections(["PACKAGE_MANIFEST_INVALID"]), [
@@ -2284,6 +2913,19 @@ export async function initializeRepository(
       "PACKAGE_MANAGER_UNDETECTED",
     ]);
   }
+  // A manager that came from outside the package is said so on every result from here on, early
+  // ones included: the package's own lock does not cover it.
+  const inheritedNotice = managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"] : [];
+  const terminal = (
+    status: "BLOCKED" | "CONFLICT",
+    detections: RepositoryInitDetections | RepositoryInitDetectionsV2,
+    reasonCodes: string[],
+  ) =>
+    initTerminalResult(
+      status,
+      { ...detections, reasonCodes: [...detections.reasonCodes, ...inheritedNotice] },
+      [...reasonCodes, ...inheritedNotice],
+    );
 
   const frameworkFacts = new Set<InitFramework>();
   const dependencies = initDependencies(packageDocument);
@@ -2334,7 +2976,7 @@ export async function initializeRepository(
   if (frameworkOverride !== undefined && !isInitFramework(frameworkOverride)) {
     const detections = initEmptyDetections(["FRAMEWORK_OVERRIDE_INVALID"]);
     detections.packageManager = packageManager;
-    return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_OVERRIDE_INVALID"]);
+    return terminal("CONFLICT", detections, ["FRAMEWORK_OVERRIDE_INVALID"]);
   }
   if (
     (frameworkFacts.size > 1 && frameworkOverride === undefined) ||
@@ -2344,13 +2986,13 @@ export async function initializeRepository(
   ) {
     const detections = initEmptyDetections(["FRAMEWORK_AMBIGUOUS"]);
     detections.packageManager = packageManager;
-    return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_AMBIGUOUS"]);
+    return terminal("CONFLICT", detections, ["FRAMEWORK_AMBIGUOUS"]);
   }
   const framework = frameworkOverride ?? [...frameworkFacts][0];
   if (framework === undefined) {
     const detections = initEmptyDetections(["FRAMEWORK_UNDETECTED"]);
     detections.packageManager = packageManager;
-    return initTerminalResult("CONFLICT", detections, ["FRAMEWORK_UNDETECTED"]);
+    return terminal("CONFLICT", detections, ["FRAMEWORK_UNDETECTED"]);
   }
 
   const linkReasonCodes: string[] = [];
@@ -2368,7 +3010,7 @@ export async function initializeRepository(
       const detections = initEmptyDetections([]);
       detections.packageManager = packageManager;
       detections.framework = framework;
-      return linkConflict(assessment, detections);
+      return linkConflict(assessment, detections, inheritedNotice);
     }
     options.onLinkAssessment?.(assessment);
     linkReasonCodes.push("REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE");
@@ -2381,7 +3023,7 @@ export async function initializeRepository(
     const detections = initEmptyDetections(["TEST_COMMAND_INVALID"]);
     detections.packageManager = packageManager;
     detections.framework = framework;
-    return initTerminalResult("CONFLICT", detections, ["TEST_COMMAND_INVALID"]);
+    return terminal("CONFLICT", detections, ["TEST_COMMAND_INVALID"]);
   }
   if (testCommand === undefined && testScript !== undefined)
     testCommand = parseInitScript(testScript);
@@ -2389,7 +3031,7 @@ export async function initializeRepository(
     const detections = initEmptyDetections(["TEST_COMMAND_UNSAFE_OR_AMBIGUOUS"]);
     detections.packageManager = packageManager;
     detections.framework = framework;
-    return initTerminalResult("CONFLICT", detections, ["TEST_COMMAND_UNSAFE_OR_AMBIGUOUS"]);
+    return terminal("CONFLICT", detections, ["TEST_COMMAND_UNSAFE_OR_AMBIGUOUS"]);
   }
   testCommand ??=
     framework === "pytest"
@@ -2444,7 +3086,7 @@ export async function initializeRepository(
           adapterRecommendation: "unavailable",
           reasonCodes: ["ADAPTER_FRAMEWORK_INCOMPATIBLE"],
         };
-        return initTerminalResult("CONFLICT", incompatible, ["ADAPTER_FRAMEWORK_INCOMPATIBLE"]);
+        return terminal("CONFLICT", incompatible, ["ADAPTER_FRAMEWORK_INCOMPATIBLE"]);
       }
       adapter = parsed.data;
       adapterRecommendation = "operator-supplied";
@@ -2459,14 +3101,20 @@ export async function initializeRepository(
         adapterRecommendation: "unavailable",
         reasonCodes: ["ADAPTER_CONFIG_INVALID"],
       };
-      return initTerminalResult("CONFLICT", detections, ["ADAPTER_CONFIG_INVALID"]);
+      return terminal("CONFLICT", detections, ["ADAPTER_CONFIG_INVALID"]);
     }
   } else if (framework === "node:test") {
     const testSources = inScopeFiles.filter(initNodeTestSource);
     // An indirect command is judged before its operands are read as path filters: a task name
     // that happens to be a directory must not select a partial inventory.
-    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "node");
-    const pathMatchers = indirectCommand ? [] : initCommandPathMatchers(testCommand, testSources);
+    // A command the operator declared is taken for the direct runner; one read from a script must
+    // name a Node runtime for its `--test` to be Node's.
+    const declared = options.testCommand !== undefined;
+    indirectCommand =
+      testSources.length > 0 && initCommandIsIndirect(testCommand, "node", declared);
+    const pathMatchers = indirectCommand
+      ? []
+      : initCommandPathMatchers(testCommand, testSources, initNodeTestSource, declared);
     const baseTestFiles = indirectCommand
       ? []
       : pathMatchers.length === 0
@@ -2484,8 +3132,11 @@ export async function initializeRepository(
       const specifiers = initJavaScriptModuleSpecifiers(contents.get(file) ?? "", file);
       return [...BUN_RUNNER_MODULES, "bun:test"].some((name) => specifiers.has(name));
     });
-    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "bun");
-    const pathMatchers = indirectCommand ? [] : initCommandPathMatchers(testCommand, testSources);
+    const declared = options.testCommand !== undefined;
+    indirectCommand = testSources.length > 0 && initCommandIsIndirect(testCommand, "bun", declared);
+    const pathMatchers = indirectCommand
+      ? []
+      : initCommandPathMatchers(testCommand, testSources, initBunTestSource, declared);
     const baseTestFiles = indirectCommand
       ? []
       : pathMatchers.length === 0
@@ -2518,13 +3169,13 @@ export async function initializeRepository(
     adapterRecommendation,
     reasonCodes,
   };
-  if (adapter === undefined) return initTerminalResult("BLOCKED", detections, reasonCodes);
+  if (adapter === undefined) return terminal("BLOCKED", detections, reasonCodes);
   if (
     (adapter.kind === "node-test" || adapter.kind === "bun-test") &&
     adapter.baseTestFiles.length > 1_000
   ) {
     const code = "BASE_TEST_FILES_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   await options.afterEvidenceSnapshot?.();
 
@@ -2544,7 +3195,7 @@ export async function initializeRepository(
   const configContent = initJsonBytes(config);
   if (configContent.length > 16 * 1024 * 1024) {
     const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   const configDigest =
     config.schemaVersion === "2.0.0"
@@ -2555,7 +3206,7 @@ export async function initializeRepository(
     evidenceFiles.push(adapterEvidencePath);
   if (evidenceFiles.some((file) => file.length > 1_024)) {
     const code = "INIT_EVIDENCE_PATH_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   evidenceFiles.sort(comparePortablePaths);
   const evidence: RepositoryInitLock["evidence"] = [];
@@ -2600,7 +3251,7 @@ export async function initializeRepository(
   const lockContent = initJsonBytes(lock);
   if (lockContent.length > 16 * 1024 * 1024) {
     const code = "INIT_FILE_CONTENT_LIMIT_EXCEEDED";
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
+    return terminal("CONFLICT", { ...detections, reasonCodes: [code] }, [code]);
   }
   const plannedFiles: RepositoryInitResult["files"] = [
     { path: INIT_CONFIG_FILE, digest: rawSha256(configContent), content: configContent },
@@ -2638,6 +3289,7 @@ export async function initializeRepository(
       initWorkspaceFactsKey(await initWorkspaceRootFacts(root)) !== workspaceFactsKey;
   }
   if (repositoryChanged) {
+    // The evidence the notice would point at has just changed: this result carries the change.
     return initTerminalResult(
       "CONFLICT",
       { ...detections, reasonCodes: ["REPOSITORY_CHANGED_DURING_INIT"] },
@@ -2661,16 +3313,14 @@ export async function initializeRepository(
   const configRead = await readManaged(INIT_CONFIG_FILE);
   const lockRead = await readManaged(INIT_LOCK_FILE);
   if (configRead.kind === "UNSAFE" || lockRead.kind === "UNSAFE") {
-    return initTerminalResult(
-      "CONFLICT",
-      { ...detections, reasonCodes: ["INIT_MANAGED_PATH_UNSAFE"] },
-      ["INIT_MANAGED_PATH_UNSAFE"],
-    );
+    return terminal("CONFLICT", { ...detections, reasonCodes: ["INIT_MANAGED_PATH_UNSAFE"] }, [
+      "INIT_MANAGED_PATH_UNSAFE",
+    ]);
   }
   const existingConfig = configRead.kind === "FILE" ? configRead.content : undefined;
   const existingLock = lockRead.kind === "FILE" ? lockRead.content : undefined;
   if (existingConfig !== undefined && existingConfig !== configContent) {
-    return initTerminalResult("CONFLICT", { ...detections, reasonCodes: ["CONFIG_CONFLICT"] }, [
+    return terminal("CONFLICT", { ...detections, reasonCodes: ["CONFIG_CONFLICT"] }, [
       "CONFIG_CONFLICT",
     ]);
   }
@@ -2680,16 +3330,14 @@ export async function initializeRepository(
       const value = JSON.parse(existingLock) as unknown;
       structural = parseVersionedRepositoryInitLock(value);
     } catch {
-      return initTerminalResult("CONFLICT", { ...detections, reasonCodes: ["LOCK_INVALID"] }, [
+      return terminal("CONFLICT", { ...detections, reasonCodes: ["LOCK_INVALID"] }, [
         "LOCK_INVALID",
       ]);
     }
     if (structural.configDigest !== configDigest) {
-      return initTerminalResult(
-        "CONFLICT",
-        { ...detections, reasonCodes: ["LOCK_CONFIG_MISMATCH"] },
-        ["LOCK_CONFIG_MISMATCH"],
-      );
+      return terminal("CONFLICT", { ...detections, reasonCodes: ["LOCK_CONFIG_MISMATCH"] }, [
+        "LOCK_CONFIG_MISMATCH",
+      ]);
     }
   }
   if (existingConfig === configContent && existingLock === lockContent) {

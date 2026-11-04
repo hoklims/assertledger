@@ -805,7 +805,8 @@ export async function runCli(
             const value = argv[index + 1];
             // The flags shared with init accept what init accepts: a value is refused only when
             // it looks like another flag, so `-` (stdin) and `-file.json` stay valid paths.
-            const shared = argument !== "--exclude" && argument !== "--framework";
+            // `--exclude` keeps the stricter rule it always had.
+            const shared = argument !== "--exclude";
             usageError =
               value === undefined ||
               value.startsWith(shared ? "--" : "-") ||

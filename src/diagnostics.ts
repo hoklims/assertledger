@@ -38,7 +38,7 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Declare the intended package manager with --package-manager or add its package metadata or lockfile.",
   ],
   PACKAGE_MANAGER_FROM_WORKSPACE_ROOT: [
-    "The package declares no manager of its own; the manager comes from the workspace root that selects it, within the same repository. The evidence lock records files under the package only, so a later change at the workspace root is not detected by the lock.",
+    "The package declares no manager of its own; pnpm was inherited from the pnpm-workspace.yaml that selects it, within the same repository. The evidence lock records files under the package only, so a later change at the workspace root is not detected by the lock.",
     "No action is required. Pass --package-manager to pin the manager from the package itself, and rerun init after the workspace root changes its package manager.",
     "info",
   ],
