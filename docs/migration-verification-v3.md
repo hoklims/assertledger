@@ -21,7 +21,7 @@ the helper and remain ordinary errors. The helper is installed from the package 
 disposable workspace; no adapter implementation is required in the consumer repository.
 
 The Bun runtime profile pins version `1.4.4` and revision
-`5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653` (Bun 1.4.2 until
+`38afee6c84fcf48c0edb2466aa4b27d287a59c30` (Bun 1.4.2 until
 [the 1.4.4 move](migration-bun-1.4.4.md)). New manifests bind the resolved executable
 digest, Bun revision, driver digest, preload digest, helper digest, command shape,
 and fresh runtime preflight. They may have new decision and artifact digests because v3 evidence

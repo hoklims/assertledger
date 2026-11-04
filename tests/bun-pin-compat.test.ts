@@ -16,8 +16,8 @@ import { doctorRepositoryRuntime, initializeRepository } from "../src/engine/ind
 
 const QUALIFIED = {
   version: "1.4.4",
-  revision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653",
-  short: "1.4.4+5d9cc0f4f",
+  revision: "38afee6c84fcf48c0edb2466aa4b27d287a59c30",
+  short: "1.4.4+38afee6c8",
 } as const;
 /** The runtime qualified before the move: it must now be refused, never counted as a kill. */
 const HISTORICAL = {
@@ -25,9 +25,10 @@ const HISTORICAL = {
   revision: "744846f844374847c902b5e7fd59b4342a51ef99",
 } as const;
 
-const PREVIOUS_RUNTIMES = [
+const UNSUPPORTED_RUNTIMES = [
   HISTORICAL,
   { version: "1.4.3", revision: "c6da4a4d3010e5553438c60f6bd76d981976867c" },
+  { version: "1.4.4", revision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653" },
 ] as const;
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -71,8 +72,8 @@ describe("a Bun runtime other than the qualified one is refused, never judged", 
     maximumOutputBytes: 65_536,
   });
 
-  for (const runtime of PREVIOUS_RUNTIMES) {
-    it(`makes the native collector refuse Bun ${runtime.version} as infrastructure failure`, async (context) => {
+  for (const runtime of UNSUPPORTED_RUNTIMES) {
+    it(`makes the native collector refuse Bun ${runtime.version}+${runtime.revision.slice(0, 9)} as infrastructure failure`, async (context) => {
       const cwd = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-"));
       context.after(() => rm(cwd, { recursive: true, force: true }));
       const spawned = fakeSpawn(context, {
@@ -101,8 +102,8 @@ describe("a Bun runtime other than the qualified one is refused, never judged", 
     assert.equal(spawned.length, 2, "identity probe, then the driver");
   });
 
-  for (const runtime of PREVIOUS_RUNTIMES) {
-    it(`blocks the runtime doctor on Bun ${runtime.version} without probing dependencies`, async (context) => {
+  for (const runtime of UNSUPPORTED_RUNTIMES) {
+    it(`blocks the runtime doctor on Bun ${runtime.version}+${runtime.revision.slice(0, 9)} without probing dependencies`, async (context) => {
       const repository = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-doctor-"));
       context.after(() => rm(repository, { recursive: true, force: true, maxRetries: 5 }));
       await writeFile(

@@ -65,7 +65,7 @@
   guessed inventory: declare the direct runner with `--test-command-json`. Commands that invoke
   the runner, or spell a path, are unchanged, as are init schemas and digests. Closes
   [#72](https://github.com/hoklims/assertledger/issues/72).
-- Qualify Bun 1.4.4 (revision `5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653`) in place of Bun 1.4.2
+- Qualify Bun 1.4.4 (revision `38afee6c84fcf48c0edb2466aa4b27d287a59c30`) in place of Bun 1.4.2
   for the `bun-test` and `bun-test-designated` adapters, `doctor --runtime`, witness import and
   the `bun-native` collector. Any other Bun is refused before execution
   (`BUN_TEST_VERSION_UNSUPPORTED`, exit 4) and is never a target kill. Schemas, profile versions,

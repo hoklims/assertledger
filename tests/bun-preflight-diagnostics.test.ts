@@ -26,15 +26,16 @@ const EXPECTED = {
 /** The one Bun the designated profile qualifies; the previous release must be refused. */
 const QUALIFIED_RUNTIME = {
   bunVersion: "1.4.4",
-  bunRevision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653",
+  bunRevision: "38afee6c84fcf48c0edb2466aa4b27d287a59c30",
 };
 const HISTORICAL_RUNTIME = {
   bunVersion: "1.4.2",
   bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
 };
-const PREVIOUS_RUNTIMES = [
+const UNSUPPORTED_RUNTIMES = [
   HISTORICAL_RUNTIME,
   { bunVersion: "1.4.3", bunRevision: "c6da4a4d3010e5553438c60f6bd76d981976867c" },
+  { bunVersion: "1.4.4", bunRevision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653" },
 ];
 const OBSERVED = {
   outcome: "PASS",
@@ -192,8 +193,8 @@ for (const backend of [
   }
 }
 
-for (const unsupportedRuntime of PREVIOUS_RUNTIMES) {
-  it(`refuses Bun ${unsupportedRuntime.bunVersion} before any preflight probe runs`, async (context) => {
+for (const unsupportedRuntime of UNSUPPORTED_RUNTIMES) {
+  it(`refuses Bun ${unsupportedRuntime.bunVersion}+${unsupportedRuntime.bunRevision.slice(0, 9)} before any preflight probe runs`, async (context) => {
     const f = await fixture();
     const calls = fakeProbeExecutor(context, f.out, "mismatch", undefined, unsupportedRuntime);
     const result = await cli(f.root, f.witness, [
@@ -213,7 +214,7 @@ for (const unsupportedRuntime of PREVIOUS_RUNTIMES) {
     assert.ok(!existsSync(f.out), "refusal leaves no output");
   });
 
-  it(`refuses Bun ${unsupportedRuntime.bunVersion} inside the container backend`, async () => {
+  it(`refuses Bun ${unsupportedRuntime.bunVersion}+${unsupportedRuntime.bunRevision.slice(0, 9)} inside the container backend`, async () => {
     const f = await fixture();
     const state = path.join(f.parent, "runtime");
     await mkdir(state);

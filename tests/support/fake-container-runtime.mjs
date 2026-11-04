@@ -181,7 +181,7 @@ async function main() {
           execPath: "/usr/local/bin/bun",
           ...(scenario.bunIdentity ?? {
             bunVersion: "1.4.4",
-            bunRevision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653",
+            bunRevision: "38afee6c84fcf48c0edb2466aa4b27d287a59c30",
           }),
           digest: `sha256:${"a".repeat(64)}`,
         });

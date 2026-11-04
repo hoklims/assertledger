@@ -2,8 +2,10 @@
 
 The built-in Bun adapters qualify exactly one runtime. It moves from Bun 1.4.2 (revision
 `744846f844374847c902b5e7fd59b4342a51ef99`, `bun --revision` prints `1.4.2+744846f84`) to
-Bun 1.4.4 (revision `5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653`, `bun --revision` prints
-`1.4.4+5d9cc0f4f`). There is no range: neither 1.4.2 nor 1.4.3 is accepted.
+Bun 1.4.4 (revision `38afee6c84fcf48c0edb2466aa4b27d287a59c30`, `bun --revision` prints
+`1.4.4+38afee6c8`). This is the identity of the official release binaries installed by CI.
+There is no range: neither 1.4.2 nor 1.4.3 is accepted. A different revision is also refused even
+when its reported version is 1.4.4; the version label alone does not qualify a rebuilt binary.
 
 This applies to the `bun-test` adapter (verification v3), the designated `bun-test-designated`
 adapter (verification v4 and v5, including the container and Windows-native backends), witness

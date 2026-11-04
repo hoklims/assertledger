@@ -140,7 +140,7 @@ describe("official Bun test adapter", () => {
     assert.match(configuration.preloadDigest, /^sha256:[0-9a-f]{64}$/u);
     assert.deepEqual(configuration.profile, JSON.parse(JSON.stringify(BUN_TEST_ADAPTER_PROFILE)));
     assert.equal(configuration.bunVersion, "1.4.4");
-    assert.equal(configuration.bunRevision, "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653");
+    assert.equal(configuration.bunRevision, "38afee6c84fcf48c0edb2466aa4b27d287a59c30");
     // The manifest binds the exact shipped bytes of the transport it ran.
     const shipped = async (file: string) =>
       `sha256:${createHash("sha256")
