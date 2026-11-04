@@ -5,10 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { promisify } from "node:util";
-import { type CliIo, runCli } from "../src/cli.js";
 import type { RepositoryLinkAssessment } from "../src/engine/index.js";
 import { computeTestClosure } from "../src/engine/test-closure.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { type PublicCliIo as CliIo, runPublicCli } from "./support/public-surface.js";
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -91,7 +91,7 @@ describe("repository links judged against the executed test closure", () => {
     assert.equal(assessment?.refused, undefined);
 
     const cli = capture(root);
-    assert.equal(await runCli(["doctor", "."], cli.io), 0);
+    assert.equal(await runPublicCli(["doctor", "."], cli.io), 0);
     assert.match(cli.stderr(), /Links outside every test closure: 1/u);
 
     // The repository analysis still refuses any link: only the closure-aware paths changed.
@@ -119,7 +119,7 @@ describe("repository links judged against the executed test closure", () => {
     });
 
     const cli = capture(root);
-    assert.equal(await runCli(["doctor", "."], cli.io), 4);
+    assert.equal(await runPublicCli(["doctor", "."], cli.io), 4);
     assert.match(cli.stderr(), /Link detail: "src\/linked" \(REPOSITORY_LINK_IN_TEST_CLOSURE\)/u);
     assert.doesNotMatch(cli.stdout(), /no explanation in the installed catalogue/u);
   });

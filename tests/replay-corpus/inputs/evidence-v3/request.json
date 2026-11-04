@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "3.0.0",
+  "repository": {
+    "root": "./repository",
+    "exclude": [
+      ".git",
+      ".testforge",
+      "node_modules"
+    ]
+  },
+  "adapter": {
+    "kind": "bun-test",
+    "executable": "bun",
+    "baseTestFiles": [
+      "tests/base.test.ts"
+    ]
+  },
+  "isolation": {
+    "kind": "trusted-local",
+    "acknowledgedUnsafeExecution": true,
+    "environmentAllowlist": [
+      "PATH",
+      "SystemRoot",
+      "WINDIR",
+      "TEMP",
+      "TMP"
+    ]
+  },
+  "candidateRoots": [
+    "tests/candidates"
+  ],
+  "budgets": {
+    "maximumCandidates": 4,
+    "maximumWorlds": 4,
+    "maximumExecutions": 24,
+    "maximumRepositoryFiles": 10000,
+    "maximumRepositoryBytes": 100000000,
+    "maximumWorldOverlayBytes": 1000000,
+    "maximumCandidateBytes": 16384,
+    "maximumTotalCandidateBytes": 65536,
+    "timeoutMsPerExecution": 10000,
+    "maximumOutputBytes": 65536
+  },
+  "policy": {
+    "policyVersion": "1.0.0",
+    "requiredAttempts": 2,
+    "minimumTargetWeightPermille": 1000,
+    "maximumSelectedCandidates": 1,
+    "acceptedTargetOutcomes": [
+      "ASSERTION_FAILURE"
+    ]
+  },
+  "worlds": [
+    {
+      "id": "reference",
+      "kind": "REFERENCE",
+      "required": true,
+      "weight": 0,
+      "provenance": "corpus:correct",
+      "files": []
+    },
+    {
+      "id": "target-parity-inversion",
+      "kind": "TARGET",
+      "required": true,
+      "weight": 1,
+      "provenance": "corpus:known-fault",
+      "files": [
+        {
+          "path": "src/subject.ts",
+          "content": "export const subject = (value: number) => value % 2 === 1;\n"
+        }
+      ]
+    },
+    {
+      "id": "neutral-bitwise-equivalence",
+      "kind": "NEUTRAL",
+      "required": true,
+      "weight": 0,
+      "provenance": "corpus:reviewed-equivalent",
+      "files": [
+        {
+          "path": "src/subject.ts",
+          "content": "export const subject = (value: number) => (value & 1) === 0;\n"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "strong",
+      "files": [
+        {
+          "path": "tests/candidates/strong.test.ts",
+          "content": "import { test } from \"bun:test\";\nimport { assertSame } from \"assertledger/bun\";\nimport { subject } from \"../../src/subject.ts\";\ntest(\"two is even\", () => assertSame(subject(2), true));\n"
+        }
+      ]
+    },
+    {
+      "id": "weak",
+      "files": [
+        {
+          "path": "tests/candidates/weak.test.ts",
+          "content": "import { test } from \"bun:test\";\nimport { assertSame } from \"assertledger/bun\";\nimport { subject } from \"../../src/subject.ts\";\ntest(\"returns a boolean\", () => assertSame(typeof subject(2), \"boolean\"));\n"
+        }
+      ]
+    }
+  ]
+}

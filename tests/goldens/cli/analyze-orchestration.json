@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdout": "{\"root\":\"<FIXTURE>\",\"fileCount\":17,\"files\":[\".gitignore\",\"bitbucket-pipelines.yml\",\"command-shape.test.mjs\",\"commands.mjs\",\"completion.mjs\",\"faults.json\",\"native.test.ts\",\"package.json\",\"packages/app/package.json\",\"packages/app/verdict.txt\",\"packages/leaf/package.json\",\"packages/leaf/verdict.txt\",\"pnpm-lock.yaml\",\"pnpm-workspace.yaml\",\"task.mjs\",\"turbo.json\",\"wrapper.mjs\"],\"languages\":[{\"name\":\"JavaScript\",\"files\":5},{\"name\":\"TypeScript\",\"files\":1}],\"detectedTestFrameworks\":[\"node:test\"],\"repositoryDigest\":\"sha256:0fd9bdef94155c40fb52df2044dc04b796fcd5fcb5d6a1b1a1f07f34ae1324bb\",\"capabilities\":{\"canExecuteCandidates\":true,\"supportedAdapters\":[\"node-test\",\"testforge-command\"],\"isolationLevels\":[\"UNSANDBOXED\"]}}\n",
+  "stderr": ""
+}
