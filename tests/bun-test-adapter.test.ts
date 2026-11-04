@@ -114,7 +114,7 @@ const strongCandidate = [
 ].join("\n");
 
 describe("official Bun test adapter", () => {
-  it("binds Bun 1.4.3 identity and replays a real assertion campaign", async () => {
+  it("binds Bun 1.4.4 identity and replays a real assertion campaign", async () => {
     const manifest = parseEvidenceManifestV3(
       await verifyCampaign(request(await fixture(), strongCandidate)),
     );
@@ -125,7 +125,7 @@ describe("official Bun test adapter", () => {
     );
     assert.equal(targetRuns.length, 2);
     assert.ok(targetRuns.every((run) => run.outcome === "ASSERTION_FAILURE" && run.attributed));
-    assert.equal(manifest.evidenceContext.adapter.version, "1.4.3");
+    assert.equal(manifest.evidenceContext.adapter.version, "1.4.4");
     assert.equal(manifest.evidenceContext.adapter.name, "bun-test");
     const configuration = manifest.evidenceContext.adapter.configuration as {
       profile: { capabilities: { reporterTransport: string } };
@@ -139,8 +139,8 @@ describe("official Bun test adapter", () => {
     assert.equal(configuration.profile.capabilities.reporterTransport, "signed-preload-pipe+junit");
     assert.match(configuration.preloadDigest, /^sha256:[0-9a-f]{64}$/u);
     assert.deepEqual(configuration.profile, JSON.parse(JSON.stringify(BUN_TEST_ADAPTER_PROFILE)));
-    assert.equal(configuration.bunVersion, "1.4.3");
-    assert.equal(configuration.bunRevision, "c6da4a4d3010e5553438c60f6bd76d981976867c");
+    assert.equal(configuration.bunVersion, "1.4.4");
+    assert.equal(configuration.bunRevision, "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653");
     // The manifest binds the exact shipped bytes of the transport it ran.
     const shipped = async (file: string) =>
       `sha256:${createHash("sha256")

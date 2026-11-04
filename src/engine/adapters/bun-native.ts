@@ -6,7 +6,7 @@ import { runProcess } from "../index.js";
 import { QUALIFICATION_ADAPTER_VERSIONS } from "../../contracts/qualification.js";
 
 export const BUN_NATIVE_ADAPTER_VERSION = QUALIFICATION_ADAPTER_VERSIONS["bun-native"];
-const revision = "1.4.3+c6da4a4d3";
+const revision = "1.4.4+5d9cc0f4f";
 const driver = new URL("../../../integrations/bun-native/driver.mjs", import.meta.url);
 const preload = new URL("../../../integrations/bun-native/preload.mjs", import.meta.url);
 
@@ -97,7 +97,7 @@ export async function collectBunNative(input: BunNativeInput): Promise<BunNative
     if (probe.outcome !== "PASS" || probe.stdout.truncated) return empty("INFRA_ERROR");
     const identity = JSON.parse(probe.stdout.text) as { execPath?: unknown; revision?: unknown };
     if (
-      identity.revision !== "1.4.3+c6da4a4d3010e5553438c60f6bd76d981976867c" ||
+      identity.revision !== "1.4.4+5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653" ||
       typeof identity.execPath !== "string"
     )
       return empty("INFRA_ERROR");

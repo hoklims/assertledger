@@ -180,8 +180,8 @@ async function main() {
         print({
           execPath: "/usr/local/bin/bun",
           ...(scenario.bunIdentity ?? {
-            bunVersion: "1.4.3",
-            bunRevision: "c6da4a4d3010e5553438c60f6bd76d981976867c",
+            bunVersion: "1.4.4",
+            bunRevision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653",
           }),
           digest: `sha256:${"a".repeat(64)}`,
         });

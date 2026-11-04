@@ -36,7 +36,7 @@ const environment = {
 };
 for (const [executable, version] of [
   [turbo, "2.11.7"],
-  [bun, "1.4.3"],
+  [bun, "1.4.4"],
   [pnpm, "12.9.1"],
 ] as const) {
   const probe = spawnSync(executable, ["--version"], {

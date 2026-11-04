@@ -15,15 +15,20 @@ import { collectBunNative } from "../src/engine/adapters/bun-native.js";
 import { doctorRepositoryRuntime, initializeRepository } from "../src/engine/index.js";
 
 const QUALIFIED = {
-  version: "1.4.3",
-  revision: "c6da4a4d3010e5553438c60f6bd76d981976867c",
-  short: "1.4.3+c6da4a4d3",
+  version: "1.4.4",
+  revision: "5d9cc0f4ff81c4dacf8f6952d44aa9cea4f48653",
+  short: "1.4.4+5d9cc0f4f",
 } as const;
 /** The runtime qualified before the move: it must now be refused, never counted as a kill. */
-const PREVIOUS = {
+const HISTORICAL = {
   version: "1.4.2",
   revision: "744846f844374847c902b5e7fd59b4342a51ef99",
 } as const;
+
+const PREVIOUS_RUNTIMES = [
+  HISTORICAL,
+  { version: "1.4.3", revision: "c6da4a4d3010e5553438c60f6bd76d981976867c" },
+] as const;
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 /** Fakes only the executable boundary; identity gates, digests and result handling stay real. */
@@ -66,20 +71,22 @@ describe("a Bun runtime other than the qualified one is refused, never judged", 
     maximumOutputBytes: 65_536,
   });
 
-  it("makes the native collector report infrastructure failure for the previous runtime", async (context) => {
-    const cwd = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-"));
-    context.after(() => rm(cwd, { recursive: true, force: true }));
-    const spawned = fakeSpawn(context, {
-      execPath: process.execPath,
-      revision: `${PREVIOUS.version}+${PREVIOUS.revision}`,
+  for (const runtime of PREVIOUS_RUNTIMES) {
+    it(`makes the native collector refuse Bun ${runtime.version} as infrastructure failure`, async (context) => {
+      const cwd = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-"));
+      context.after(() => rm(cwd, { recursive: true, force: true }));
+      const spawned = fakeSpawn(context, {
+        execPath: process.execPath,
+        revision: `${runtime.version}+${runtime.revision}`,
+      });
+      const result = await collectBunNative(input(cwd));
+      assert.equal(result.state, "INFRA_ERROR");
+      assert.equal(result.facts.attributed, false);
+      assert.equal(result.facts.testsDiscovered, 0);
+      assert.equal(result.runtime.executableDigest, "", "no binary identity is claimed");
+      assert.equal(spawned.length, 1, "refused before the driver ran any test");
     });
-    const result = await collectBunNative(input(cwd));
-    assert.equal(result.state, "INFRA_ERROR");
-    assert.equal(result.facts.attributed, false);
-    assert.equal(result.facts.testsDiscovered, 0);
-    assert.equal(result.runtime.executableDigest, "", "no binary identity is claimed");
-    assert.equal(spawned.length, 1, "refused before the driver ran any test");
-  });
+  }
 
   it("lets the native collector reach its driver for the qualified runtime", async (context) => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-"));
@@ -94,32 +101,34 @@ describe("a Bun runtime other than the qualified one is refused, never judged", 
     assert.equal(spawned.length, 2, "identity probe, then the driver");
   });
 
-  it("blocks the runtime doctor on the previous runtime without probing dependencies", async (context) => {
-    const repository = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-doctor-"));
-    context.after(() => rm(repository, { recursive: true, force: true, maxRetries: 5 }));
-    await writeFile(
-      path.join(repository, "package.json"),
-      JSON.stringify({ name: "bun-fixture", scripts: { test: "bun test" } }),
-    );
-    await writeFile(path.join(repository, "bun.lock"), "");
-    await writeFile(
-      path.join(repository, "base.test.ts"),
-      'import { test } from "bun:test"; test("base", () => {});\n',
-    );
-    assert.equal((await initializeRepository(repository)).status, "CREATED");
-    const spawned = fakeSpawn(context, {
-      execPath: process.execPath,
-      bunVersion: PREVIOUS.version,
-      bunRevision: PREVIOUS.revision,
+  for (const runtime of PREVIOUS_RUNTIMES) {
+    it(`blocks the runtime doctor on Bun ${runtime.version} without probing dependencies`, async (context) => {
+      const repository = await mkdtemp(path.join(os.tmpdir(), "assertledger-bun-pin-doctor-"));
+      context.after(() => rm(repository, { recursive: true, force: true, maxRetries: 5 }));
+      await writeFile(
+        path.join(repository, "package.json"),
+        JSON.stringify({ name: "bun-fixture", scripts: { test: "bun test" } }),
+      );
+      await writeFile(path.join(repository, "bun.lock"), "");
+      await writeFile(
+        path.join(repository, "base.test.ts"),
+        'import { test } from "bun:test"; test("base", () => {});\n',
+      );
+      assert.equal((await initializeRepository(repository)).status, "CREATED");
+      const spawned = fakeSpawn(context, {
+        execPath: process.execPath,
+        bunVersion: runtime.version,
+        bunRevision: runtime.revision,
+      });
+      const result = await doctorRepositoryRuntime(repository, { allowUnsafeExecution: true });
+      assert.notEqual(result.status, "READY");
+      assert.ok(
+        (result.reasonCodes as readonly string[]).includes("RUNTIME_BUN_VERSION_UNSUPPORTED"),
+        JSON.stringify(result.reasonCodes),
+      );
+      assert.equal(spawned.length, 1, "only the identity probe ran");
     });
-    const result = await doctorRepositoryRuntime(repository, { allowUnsafeExecution: true });
-    assert.notEqual(result.status, "READY");
-    assert.ok(
-      (result.reasonCodes as readonly string[]).includes("RUNTIME_BUN_VERSION_UNSUPPORTED"),
-      JSON.stringify(result.reasonCodes),
-    );
-    assert.equal(spawned.length, 1, "only the identity probe ran");
-  });
+  }
 });
 
 describe("evidence sealed under the previous Bun stays valid for that runtime", () => {
@@ -141,8 +150,8 @@ describe("evidence sealed under the previous Bun stays valid for that runtime", 
         bunVersion: string;
         bunRevision: string;
       };
-      assert.equal(configuration.bunVersion, PREVIOUS.version, name);
-      assert.equal(configuration.bunRevision, PREVIOUS.revision, name);
+      assert.equal(configuration.bunVersion, HISTORICAL.version, name);
+      assert.equal(configuration.bunRevision, HISTORICAL.revision, name);
       const replay = replayEvidenceManifest(manifest);
       assert.equal(replay.valid, true, name);
       // The replay recorded next to the manifest predates the current replay result's field set:

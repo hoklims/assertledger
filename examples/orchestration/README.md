@@ -5,11 +5,11 @@ two extractible `node:test` assertions check command shapes and keep passing whi
 cache, failure propagation and pipeline routing faults are present. It contains no private
 consumer source, URLs, credentials or hosted infrastructure.
 
-The named profile `public-turbo-orchestration-2.11.7-bun-1.4.3` requires Turbo 2.11.7,
-Bun 1.4.3, pnpm 12.9.1 and the exact executable identities recorded in its manifest.
+The named profile `public-turbo-orchestration-2.11.7-bun-1.4.4` requires Turbo 2.11.7,
+Bun 1.4.4, pnpm 12.9.1 and the exact executable identities recorded in its manifest.
 No receipt for it ships with the package: the figures below were observed on the
 `-bun-1.4.2` profile of release 1.5.0, and only a receipt collected with this builder on
-Bun 1.4.3 establishes them for the new runtime.
+Bun 1.4.4 establishes them for the new runtime.
 Run the builder under Node with `tsx`, providing absolute paths to those executables:
 
 ```text
@@ -29,7 +29,7 @@ pnpm --dir /absolute/qualification-tools add --ignore-scripts --save-exact turbo
 ```
 
 Use the platform-specific native Turbo and pnpm executables inside that directory's
-`node_modules/.pnpm` distributions. Install Bun 1.4.3 separately using the documented
+`node_modules/.pnpm` distributions. Install Bun 1.4.4 separately using the documented
 platform installation method and pass its real executable. The builder probes versions
 and hashes executable bytes. It deliberately refuses a different version. Provisioning
 needs registry access; fixture setup runs offline with lifecycle scripts disabled.
