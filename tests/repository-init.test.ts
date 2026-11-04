@@ -137,7 +137,11 @@ describe("repository init v1", () => {
       repositoryInitLockJsonSchema(),
       repositoryInitResultJsonSchema(),
     ]) {
-      assert.equal(schema.additionalProperties, false);
+      const id = String(schema.$id);
+      assert.equal(schema.$ref, `#/$defs/${id.replaceAll("~", "~0").replaceAll("/", "~1")}`);
+      const root = (schema.$defs as Record<string, Record<string, unknown>>)[id];
+      assert.ok(root);
+      assert.equal(root.additionalProperties, false);
     }
     const root = await fixture(nodePackage, {
       "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",

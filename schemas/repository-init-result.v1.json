@@ -1,46 +1,49 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "status": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "reasonCodes": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "detections": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "actions": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "files": {
-      "$ref": "#/$defs/__schema8"
-    },
-    "requiredOperatorInputs": {
-      "$ref": "#/$defs/__schema9"
-    },
-    "nextCommands": {
-      "$ref": "#/$defs/__schema10"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "status",
-    "reasonCodes",
-    "detections",
-    "actions",
-    "files",
-    "requiredOperatorInputs",
-    "nextCommands"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger repository init result",
-  "description": "Deterministic initialization plan and outcome without campaign execution.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1repository-init-result.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/repository-init-result.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "status": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "reasonCodes": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "detections": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "actions": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "files": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "requiredOperatorInputs": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "nextCommands": {
+          "$ref": "#/$defs/__schema10"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "status",
+        "reasonCodes",
+        "detections",
+        "actions",
+        "files",
+        "requiredOperatorInputs",
+        "nextCommands"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger repository init result",
+      "description": "Deterministic initialization plan and outcome without campaign execution."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"
@@ -199,7 +202,10 @@
           "type": "string",
           "const": "candidates"
         }
-      ]
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
     },
     "__schema10": {
       "type": "array",

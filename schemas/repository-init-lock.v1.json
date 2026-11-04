@@ -1,31 +1,41 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "configDigest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "detector": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "evidence": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "detections": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "lockDigest": {
-      "$ref": "#/$defs/__schema1"
-    }
-  },
-  "required": ["schemaVersion", "configDigest", "detector", "evidence", "detections", "lockDigest"],
-  "additionalProperties": false,
-  "title": "AssertLedger repository init lock",
-  "description": "Deterministic evidence lock binding an initialized repository configuration.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1repository-init-lock.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/repository-init-lock.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "configDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "detector": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "evidence": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "detections": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "lockDigest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "configDigest",
+        "detector",
+        "evidence",
+        "detections",
+        "lockDigest"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger repository init lock",
+      "description": "Deterministic evidence lock binding an initialized repository configuration."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

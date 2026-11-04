@@ -2,7 +2,7 @@
 export const AUDIT_SCHEMA_LOCK = [
   {
     path: "schemas/repository-audit.v2.json",
-    rawSha256: "sha256:4fe5cbc11d142541bab955ee2827a49b83602d6ff376bf46cf9f90a4b6ee17b3",
+    rawSha256: "sha256:c65998d453aa2cc9e5ebb96ab1dc2a20123477b8d6fffde74a280911aa323600",
     $id: "https://testforge.dev/schemas/repository-audit.v2.json",
   },
 ] as const;

@@ -1,42 +1,45 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "verificationRequest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "referenceWorldId": {
-      "$ref": "#/$defs/__schema10"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema13"
-    },
-    "protocol": {
-      "$ref": "#/$defs/__schema14"
-    },
-    "environment": {
-      "$ref": "#/$defs/__schema15"
-    },
-    "identityFiles": {
-      "$ref": "#/$defs/__schema16"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "verificationRequest",
-    "referenceWorldId",
-    "policy",
-    "protocol",
-    "environment",
-    "identityFiles"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge Agentic Benchmark acquisition request",
-  "description": "A fresh verification campaign plus strict phase-aware acquisition policy and identity bindings.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-acquisition-request.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-benchmark-acquisition-request.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "verificationRequest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "referenceWorldId": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "protocol": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "environment": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "identityFiles": {
+          "$ref": "#/$defs/__schema16"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "verificationRequest",
+        "referenceWorldId",
+        "policy",
+        "protocol",
+        "environment",
+        "identityFiles"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge Agentic Benchmark acquisition request",
+      "description": "A fresh verification campaign plus strict phase-aware acquisition policy and identity bindings."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"
@@ -478,7 +481,10 @@
               "type": "string",
               "const": "EXECUTION"
             }
-          ]
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
         },
         "coldDefinition": {
           "type": "string",

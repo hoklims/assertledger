@@ -1,50 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "repository": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "adapter": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "isolation": {
-      "$ref": "#/$defs/__schema8"
-    },
-    "candidateRoots": {
-      "$ref": "#/$defs/__schema11"
-    },
-    "budgets": {
-      "$ref": "#/$defs/__schema13"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema14"
-    },
-    "worlds": {
-      "$ref": "#/$defs/__schema16"
-    },
-    "candidates": {
-      "$ref": "#/$defs/__schema20"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "repository",
-    "adapter",
-    "isolation",
-    "candidateRoots",
-    "budgets",
-    "policy",
-    "worlds",
-    "candidates"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger verification request v3",
-  "description": "A versioned campaign with an official Bun test adapter and explicit execution backend.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v3.json",
   "$defs": {
+    "https://testforge.dev/schemas/verification-request.v3.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "repository": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "isolation": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "candidateRoots": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "budgets": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "worlds": {
+          "$ref": "#/$defs/__schema16"
+        },
+        "candidates": {
+          "$ref": "#/$defs/__schema20"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repository",
+        "adapter",
+        "isolation",
+        "candidateRoots",
+        "budgets",
+        "policy",
+        "worlds",
+        "candidates"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger verification request v3",
+      "description": "A versioned campaign with an official Bun test adapter and explicit execution backend."
+    },
     "__schema0": {
       "type": "string",
       "const": "3.0.0"

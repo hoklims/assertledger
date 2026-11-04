@@ -1,42 +1,45 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "root": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "fileCount": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "files": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "languages": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "detectedTestFrameworks": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "repositoryDigest": {
-      "$ref": "#/$defs/__schema6"
-    },
-    "capabilities": {
-      "$ref": "#/$defs/__schema7"
-    }
-  },
-  "required": [
-    "root",
-    "fileCount",
-    "files",
-    "languages",
-    "detectedTestFrameworks",
-    "repositoryDigest",
-    "capabilities"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge repository analysis",
-  "description": "A deterministic repository inventory and the execution capabilities exposed by TestForge.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1repository-analysis.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/repository-analysis.v1.json": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "fileCount": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "files": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "languages": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "detectedTestFrameworks": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "repositoryDigest": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "root",
+        "fileCount",
+        "files",
+        "languages",
+        "detectedTestFrameworks",
+        "repositoryDigest",
+        "capabilities"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge repository analysis",
+      "description": "A deterministic repository inventory and the execution capabilities exposed by TestForge."
+    },
     "__schema0": {
       "type": "string",
       "minLength": 1

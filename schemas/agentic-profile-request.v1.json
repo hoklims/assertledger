@@ -1,22 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "manifest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema11"
-    }
-  },
-  "required": ["schemaVersion", "manifest", "policy"],
-  "additionalProperties": false,
-  "title": "TestForge Agentic Test Profile request",
-  "description": "A replay-valid evidence manifest and repository-scoped feedback policy.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-request.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-profile-request.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "manifest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema11"
+        }
+      },
+      "required": ["schemaVersion", "manifest", "policy"],
+      "additionalProperties": false,
+      "title": "TestForge Agentic Test Profile request",
+      "description": "A replay-valid evidence manifest and repository-scoped feedback policy."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

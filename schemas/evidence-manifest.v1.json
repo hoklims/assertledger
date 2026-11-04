@@ -1,66 +1,69 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "repositoryDigest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "evidenceContext": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema9"
-    },
-    "worlds": {
-      "$ref": "#/$defs/__schema12"
-    },
-    "candidates": {
-      "$ref": "#/$defs/__schema13"
-    },
-    "observations": {
-      "$ref": "#/$defs/__schema15"
-    },
-    "decision": {
-      "$ref": "#/$defs/__schema16"
-    },
-    "decisionDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "artifactDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "adapter": {
-      "$ref": "#/$defs/__schema17"
-    },
-    "isolation": {
-      "$ref": "#/$defs/__schema18"
-    },
-    "limitations": {
-      "$ref": "#/$defs/__schema19"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "repositoryDigest",
-    "evidenceContext",
-    "policy",
-    "worlds",
-    "candidates",
-    "observations",
-    "decision",
-    "decisionDigest",
-    "artifactDigest",
-    "adapter",
-    "isolation",
-    "limitations"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge evidence manifest",
-  "description": "The final auditable campaign artifact, including evidence, deterministic gates, decisions, and integrity digests.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-manifest.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/evidence-manifest.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "repositoryDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "evidenceContext": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "worlds": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "candidates": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "observations": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "decision": {
+          "$ref": "#/$defs/__schema16"
+        },
+        "decisionDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema17"
+        },
+        "isolation": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "limitations": {
+          "$ref": "#/$defs/__schema19"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repositoryDigest",
+        "evidenceContext",
+        "policy",
+        "worlds",
+        "candidates",
+        "observations",
+        "decision",
+        "decisionDigest",
+        "artifactDigest",
+        "adapter",
+        "isolation",
+        "limitations"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge evidence manifest",
+      "description": "The final auditable campaign artifact, including evidence, deterministic gates, decisions, and integrity digests."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

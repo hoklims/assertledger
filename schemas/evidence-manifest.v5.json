@@ -1,66 +1,69 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "repositoryDigest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "evidenceContext": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema14"
-    },
-    "worlds": {
-      "$ref": "#/$defs/__schema17"
-    },
-    "candidates": {
-      "$ref": "#/$defs/__schema18"
-    },
-    "observations": {
-      "$ref": "#/$defs/__schema20"
-    },
-    "decision": {
-      "$ref": "#/$defs/__schema21"
-    },
-    "decisionDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "artifactDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "adapter": {
-      "$ref": "#/$defs/__schema22"
-    },
-    "isolation": {
-      "$ref": "#/$defs/__schema23"
-    },
-    "limitations": {
-      "$ref": "#/$defs/__schema25"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "repositoryDigest",
-    "evidenceContext",
-    "policy",
-    "worlds",
-    "candidates",
-    "observations",
-    "decision",
-    "decisionDigest",
-    "artifactDigest",
-    "adapter",
-    "isolation",
-    "limitations"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger evidence manifest v5",
-  "description": "A replayable campaign artifact that also records the snapshot scope, the reproduced repository links and the unfollowed closure edges.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-manifest.v5.json",
   "$defs": {
+    "https://testforge.dev/schemas/evidence-manifest.v5.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "repositoryDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "evidenceContext": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "worlds": {
+          "$ref": "#/$defs/__schema17"
+        },
+        "candidates": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "observations": {
+          "$ref": "#/$defs/__schema20"
+        },
+        "decision": {
+          "$ref": "#/$defs/__schema21"
+        },
+        "decisionDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema22"
+        },
+        "isolation": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "limitations": {
+          "$ref": "#/$defs/__schema25"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repositoryDigest",
+        "evidenceContext",
+        "policy",
+        "worlds",
+        "candidates",
+        "observations",
+        "decision",
+        "decisionDigest",
+        "artifactDigest",
+        "adapter",
+        "isolation",
+        "limitations"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger evidence manifest v5",
+      "description": "A replayable campaign artifact that also records the snapshot scope, the reproduced repository links and the unfollowed closure edges."
+    },
     "__schema0": {
       "type": "string",
       "const": "5.0.0"

@@ -4,87 +4,87 @@
   "schemas": [
     {
       "path": "schemas/evidence-export-replay-result.v1.json",
-      "rawSha256": "sha256:a5374e31995ac446acfae9b13ae389d7ea576aa8ce608e255fddce30c3690b40",
+      "rawSha256": "sha256:3b52decc4b977391a37e20f0a21a74a295f33a7c47739ff882dde38e86a9dab7",
       "$id": "https://testforge.dev/schemas/evidence-export-replay-result.v1.json"
     },
     {
       "path": "schemas/evidence-export-request.v1.json",
-      "rawSha256": "sha256:e70ff92af819291075d4e6c6bed1eace3f993eb2cd4fb4376bd201982a4ad42a",
+      "rawSha256": "sha256:4e960f1cfadc759189a1c62e76ec384cf0b82ae1e6d44cb18d000d30fc6247bc",
       "$id": "https://testforge.dev/schemas/evidence-export-request.v1.json"
     },
     {
       "path": "schemas/evidence-export.v1.json",
-      "rawSha256": "sha256:3e77f26dbc19f75c0e361b6d72cbedc8b00bbd1e04108601175274463e4c3624",
+      "rawSha256": "sha256:fc5bca67694200bc2c588d1e12c7aaed884619f53cfe11e21a8e02261363fb7d",
       "$id": "https://testforge.dev/schemas/evidence-export.v1.json"
     },
     {
       "path": "schemas/evidence-manifest.v2.json",
-      "rawSha256": "sha256:687dcfd2b1ecef5fd9fc6d9ac118ceebebc3fdb74c9e162fddc2759e360adfc7",
+      "rawSha256": "sha256:5c8a34f83bd7fef3a1accb957378956313607ed54b6c07ad8565a809e0ccf68e",
       "$id": "https://testforge.dev/schemas/evidence-manifest.v2.json"
     },
     {
       "path": "schemas/evidence-manifest.v3.json",
-      "rawSha256": "sha256:460925ce29c51e47a38e439264f56dac9d444f52a07ec103f38b44e59679adbd",
+      "rawSha256": "sha256:a1ff17f9c610ad6fee4583716a434d7ca13f2777794116153b0b44d4f4e3aa7c",
       "$id": "https://testforge.dev/schemas/evidence-manifest.v3.json"
     },
     {
       "path": "schemas/evidence-manifest.v4.json",
-      "rawSha256": "sha256:56bad50457b84864decbe911d98e3257880e4562d69487b4a820f7d516c3d11b",
+      "rawSha256": "sha256:6707fcf8d3f68cb3d8ac5730c3474d58d5e64537ceea0b67d2c405320207a16c",
       "$id": "https://testforge.dev/schemas/evidence-manifest.v4.json"
     },
     {
       "path": "schemas/evidence-manifest.v5.json",
-      "rawSha256": "sha256:e1d8d8e329beec84c7b0a4b9558b4b81079937629c0fda02dea1cd7a6c754231",
+      "rawSha256": "sha256:ad6fc0753c6182767b83516743eca6cf1ef8324ae4674cda52182e4c1d095fc5",
       "$id": "https://testforge.dev/schemas/evidence-manifest.v5.json"
     },
     {
       "path": "schemas/evidence-provider-manifest.v1.json",
-      "rawSha256": "sha256:6100995f772cd24b7369e4428fb1aba570f1ba6e1f61295bc42a1f7ce6b5bde3",
+      "rawSha256": "sha256:7574f6e2bd8312f591343d059ee4a1008ad80058ecf6b990c0b50811015c5830",
       "$id": "https://testforge.dev/schemas/evidence-provider-manifest.v1.json"
     },
     {
       "path": "schemas/repository-init-config.v2.json",
-      "rawSha256": "sha256:03176fe2fabd53f1b688815f2d163907ed5771b1b4e45be124a15ccf4e9e2328",
+      "rawSha256": "sha256:51d5c3c7f994f0474eff0f2fb900214c9f07569b0730a733abeea0ade8a63832",
       "$id": "https://testforge.dev/schemas/repository-init-config.v2.json"
     },
     {
       "path": "schemas/repository-init-lock.v2.json",
-      "rawSha256": "sha256:d3d81aa21491cd545163a63b579ad87e2b21f7de19a89ca70c6f4de98eb22966",
+      "rawSha256": "sha256:1db8d97b7b3560ef7a9fb095c35ea50337a35a49a58115a52a15b70ccb8f5f84",
       "$id": "https://testforge.dev/schemas/repository-init-lock.v2.json"
     },
     {
       "path": "schemas/repository-init-result.v2.json",
-      "rawSha256": "sha256:41c984107b3bec203bd049fa8fa0df87e1c3b6b0a421c88a4fdeef18f6b1dea5",
+      "rawSha256": "sha256:6e7f2a437319e216c268b8d7dc8e7fd32df60408c0e87bf2e3b1f6b08f202e83",
       "$id": "https://testforge.dev/schemas/repository-init-result.v2.json"
     },
     {
       "path": "schemas/verification-request.v2.json",
-      "rawSha256": "sha256:cefa0fba0a75435165bf6fdc6ee90b638488cecaab3ad8f40f3e98820a6b8d34",
+      "rawSha256": "sha256:3e6da760006795dc07fbd17f0ce3666577d8de5c94879c449f40b5dc93ee9204",
       "$id": "https://testforge.dev/schemas/verification-request.v2.json"
     },
     {
       "path": "schemas/verification-request.v3.json",
-      "rawSha256": "sha256:3b88e4c58425aa9a45da330b27f4a48d778c1f9a2494ac2a9a4c01b29728fd77",
+      "rawSha256": "sha256:d38e70f10d56cbfb155fed89ed0b62cae9ab1305d8328e15f1024b2108059117",
       "$id": "https://testforge.dev/schemas/verification-request.v3.json"
     },
     {
       "path": "schemas/verification-request.v4.json",
-      "rawSha256": "sha256:f08389ef40c7d73d7f1c2006aee2efcd2bf53c8b78338883f4bc9f21808db842",
+      "rawSha256": "sha256:530c90708977561c591d631e3b39055f2be5412c151222517c058d7bad1b9f8a",
       "$id": "https://testforge.dev/schemas/verification-request.v4.json"
     },
     {
       "path": "schemas/verification-request.v5.json",
-      "rawSha256": "sha256:7b267d9305a195ed866b5d8a78047e5d72ce679bdb971f2549dbe20bc3bcf95c",
+      "rawSha256": "sha256:4c53bf897ad22a1ef8de9e42e8dd6f0cba37575682b03b150450314fc887a9f2",
       "$id": "https://testforge.dev/schemas/verification-request.v5.json"
     },
     {
       "path": "schemas/witness-import-request.v1.json",
-      "rawSha256": "sha256:ec2aa94fd0d50e6dec7ff6f6b9bea294febf8d7ba4598e01fe89177f97348974",
+      "rawSha256": "sha256:80cddb677d6dcae47a119bf4e773018a95191e7262d263c881cd3bb55d0b542b",
       "$id": "https://testforge.dev/schemas/witness-import-request.v1.json"
     },
     {
       "path": "schemas/witness-import-request.v2.json",
-      "rawSha256": "sha256:55ee5c06b0b07f452e2120dd9535c6e97994b2ce1caf395645372f24d4d7cdc8",
+      "rawSha256": "sha256:b0ae349265fc1645e29bc705afedbca379cb98d634fe21a7cbe44feb7ed945d4",
       "$id": "https://testforge.dev/schemas/witness-import-request.v2.json"
     }
   ]

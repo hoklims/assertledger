@@ -1053,7 +1053,10 @@ describe("MCP facade", () => {
     assert.deepEqual(schema.required, ["request"]);
     assert.equal(schema.properties.allowUnsafeExecution, undefined);
     const requestReference = schema.properties.request.$ref as string;
-    const requestDefinition = schema.$defs[requestReference.replace("#/$defs/", "")];
+    const requestDefinition =
+      schema.$defs[
+        requestReference.replace("#/$defs/", "").replaceAll("~1", "/").replaceAll("~0", "~")
+      ];
     assert.equal(requestDefinition.additionalProperties, false);
     assert.ok(requestDefinition.properties.schemaVersion);
     assert.ok(requestDefinition.properties.isolation);
@@ -1085,13 +1088,13 @@ describe("MCP facade", () => {
         arguments: { request },
       });
       const legacy = await client.callTool({ name: "testforge_export", arguments: { request } });
-      assert.equal(preferred.isError, undefined);
+      assert.equal(preferred.isError, undefined, JSON.stringify(preferred));
       assert.deepEqual(preferred.structuredContent, legacy.structuredContent);
       const replayed = await client.callTool({
         name: "assertledger_export_replay",
         arguments: { evidenceExport: preferred.structuredContent },
       });
-      assert.equal(replayed.isError, undefined);
+      assert.equal(replayed.isError, undefined, JSON.stringify(replayed));
       assert.equal((replayed.structuredContent as Record<string, unknown>).valid, true);
       const provider = await client.callTool({ name: "assertledger_provider", arguments: {} });
       assert.equal(provider.isError, undefined);
@@ -1136,7 +1139,10 @@ describe("MCP facade", () => {
     }
     const replayInput = server.toolInputSchemaJson("testforge_replay");
     const manifestReference = replayInput.properties.manifest.$ref as string;
-    const manifestDefinition = replayInput.$defs[manifestReference.replace("#/$defs/", "")];
+    const manifestDefinition =
+      replayInput.$defs[
+        manifestReference.replace("#/$defs/", "").replaceAll("~1", "/").replaceAll("~0", "~")
+      ];
     assert.ok(manifestDefinition.properties.artifactDigest);
 
     const schemaInput = server.toolInputSchemaJson("testforge_schema");

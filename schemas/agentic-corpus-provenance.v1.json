@@ -1,54 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "domain": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "trustPolicyDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "caseId": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "caseDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "source": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "execution": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "author": {
-      "$ref": "#/$defs/__schema6"
-    },
-    "reviewer": {
-      "$ref": "#/$defs/__schema8"
-    },
-    "provenanceDigest": {
-      "$ref": "#/$defs/__schema2"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "domain",
-    "trustPolicyDigest",
-    "caseId",
-    "caseDigest",
-    "source",
-    "execution",
-    "author",
-    "reviewer",
-    "provenanceDigest"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge agentic corpus provenance",
-  "description": "Paired, dual-signed provenance for one unchanged agentic corpus case v1.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-corpus-provenance.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-corpus-provenance.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "domain": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "trustPolicyDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "caseId": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "caseDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "source": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "execution": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "author": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "reviewer": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "provenanceDigest": {
+          "$ref": "#/$defs/__schema2"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "domain",
+        "trustPolicyDigest",
+        "caseId",
+        "caseDigest",
+        "source",
+        "execution",
+        "author",
+        "reviewer",
+        "provenanceDigest"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge agentic corpus provenance",
+      "description": "Paired, dual-signed provenance for one unchanged agentic corpus case v1."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

@@ -1,50 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "requestDigest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "status": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "reasonCodes": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "sourceManifest": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "benchmarkArtifact": {
-      "$ref": "#/$defs/__schema13"
-    },
-    "acquisitionContext": {
-      "$ref": "#/$defs/__schema22"
-    },
-    "limitations": {
-      "$ref": "#/$defs/__schema24"
-    },
-    "resultDigest": {
-      "$ref": "#/$defs/__schema1"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "requestDigest",
-    "status",
-    "reasonCodes",
-    "sourceManifest",
-    "benchmarkArtifact",
-    "acquisitionContext",
-    "limitations",
-    "resultDigest"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge Agentic Benchmark acquisition result",
-  "description": "Fresh VERIFIED evidence and optional replay-valid benchmark timing evidence, sealed independently.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-acquisition-result.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-benchmark-acquisition-result.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "requestDigest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "status": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "reasonCodes": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "sourceManifest": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "benchmarkArtifact": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "acquisitionContext": {
+          "$ref": "#/$defs/__schema22"
+        },
+        "limitations": {
+          "$ref": "#/$defs/__schema24"
+        },
+        "resultDigest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "requestDigest",
+        "status",
+        "reasonCodes",
+        "sourceManifest",
+        "benchmarkArtifact",
+        "acquisitionContext",
+        "limitations",
+        "resultDigest"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge Agentic Benchmark acquisition result",
+      "description": "Fresh VERIFIED evidence and optional replay-valid benchmark timing evidence, sealed independently."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"
@@ -759,7 +762,10 @@
                       "type": "string",
                       "const": "EXECUTION"
                     }
-                  ]
+                  ],
+                  "items": false,
+                  "minItems": 4,
+                  "maxItems": 4
                 },
                 "coldDefinition": {
                   "type": "string",
