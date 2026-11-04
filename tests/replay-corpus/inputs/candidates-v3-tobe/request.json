@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "5.0.0",
+  "repository": {
+    "root": "./repository",
+    "exclude": [
+      ".git",
+      ".testforge",
+      "node_modules"
+    ],
+    "includeDependencies": false,
+    "git": "excluded",
+    "snapshot": "repository",
+    "include": []
+  },
+  "adapter": {
+    "kind": "bun-test-designated",
+    "executable": "bun",
+    "testTimeoutMs": null,
+    "workingDirectory": "repository-root",
+    "isolate": false,
+    "trustedMatchers": []
+  },
+  "isolation": {
+    "kind": "trusted-local",
+    "acknowledgedUnsafeExecution": true,
+    "environmentAllowlist": [
+      "PATH",
+      "SystemRoot",
+      "WINDIR",
+      "TEMP",
+      "TMP"
+    ]
+  },
+  "candidateRoots": [
+    "tests/candidates/strong.test.ts",
+    "tests/candidates/weak.test.ts"
+  ],
+  "budgets": {
+    "maximumCandidates": 4,
+    "maximumWorlds": 4,
+    "maximumExecutions": 24,
+    "maximumRepositoryFiles": 10000,
+    "maximumRepositoryBytes": 100000000,
+    "maximumWorldOverlayBytes": 1000000,
+    "maximumCandidateBytes": 1,
+    "maximumTotalCandidateBytes": 1,
+    "timeoutMsPerExecution": 10000,
+    "maximumOutputBytes": 65536
+  },
+  "policy": {
+    "policyVersion": "1.0.0",
+    "requiredAttempts": 2,
+    "minimumTargetWeightPermille": 1000,
+    "maximumSelectedCandidates": 1,
+    "acceptedTargetOutcomes": [
+      "ASSERTION_FAILURE"
+    ]
+  },
+  "worlds": [
+    {
+      "id": "reference",
+      "kind": "REFERENCE",
+      "required": true,
+      "weight": 0,
+      "provenance": "corpus:correct",
+      "files": []
+    },
+    {
+      "id": "target-parity-inversion",
+      "kind": "TARGET",
+      "required": true,
+      "weight": 1,
+      "provenance": "corpus:known-fault",
+      "files": [
+        {
+          "path": "src/subject.ts",
+          "content": "export const subject = (value: number) => value % 2 === 1;\n"
+        }
+      ]
+    },
+    {
+      "id": "neutral-bitwise-equivalence",
+      "kind": "NEUTRAL",
+      "required": true,
+      "weight": 0,
+      "provenance": "corpus:reviewed-equivalent",
+      "files": [
+        {
+          "path": "src/subject.ts",
+          "content": "export const subject = (value: number) => (value & 1) === 0;\n"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "strong",
+      "test": {
+        "file": "tests/candidates/strong.test.ts",
+        "path": [
+          "two is even"
+        ]
+      },
+      "expectedFailure": null
+    },
+    {
+      "id": "weak",
+      "test": {
+        "file": "tests/candidates/weak.test.ts",
+        "path": [
+          "returns a boolean"
+        ]
+      },
+      "expectedFailure": null
+    }
+  ]
+}

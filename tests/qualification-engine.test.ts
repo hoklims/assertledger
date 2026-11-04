@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { smokeQualificationPlan, smokeTestSource } from "../scripts/qualification-smoke.js";
-import { runCli } from "../src/cli.js";
 import type { QualificationPlan } from "../src/contracts/qualification.js";
 import { sha256Canonical } from "../src/core/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 async function capability() {
   const modulePath = "../src/engine/qualification.js";
@@ -236,7 +236,7 @@ writeFileSync(process.env.ASSERTLEDGER_QUALIFICATION_RESULT_FILE, JSON.stringify
       assert.equal(ledger.replayQualification(reportedResult).valid, true);
     }
     let cliOutput = "";
-    const cliCode = await runCli(["qualify", "-", "--allow-unsafe-execution"], {
+    const cliCode = await runPublicCli(["qualify", "-", "--allow-unsafe-execution"], {
       cwd: root,
       readStdin: async () =>
         JSON.stringify({ root, plan, planDigest: sha256Canonical(plan), candidate: { files: [] } }),

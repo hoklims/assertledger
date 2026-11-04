@@ -4,9 +4,9 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { parseRepositoryInitResult } from "../src/contracts/index.js";
 import { sha256Canonical } from "../src/core/index.js";
+import { connectPublicMcp, listedInputSchemas, runPublicCli } from "./support/public-surface.js";
 
 type IntegrationApi = {
   TestForge: new () => {
@@ -34,31 +34,19 @@ type IntegrationApi = {
       writeStderr(text: string): void;
     },
   ): Promise<number>;
-  createTestForgeServer(options?: {
-    allowUnsafeExecution?: boolean;
-    allowedRepositoryRoots?: string[];
-  }): any;
   decideEvidence(input: unknown): any;
   sealManifestArtifact(input: unknown): any;
 };
 
 async function loadIntegration(): Promise<IntegrationApi> {
   try {
-    const [
-      { TestForge },
-      { runCli },
-      { createTestForgeServer },
-      { decideEvidence, sealManifestArtifact },
-    ] = await Promise.all([
+    const [{ TestForge }, { decideEvidence, sealManifestArtifact }] = await Promise.all([
       import("../src/sdk/index.js"),
-      import("../src/cli.js"),
-      import("../src/mcp/index.js"),
       import("../src/core/index.js"),
     ]);
     return {
       TestForge,
-      runCli,
-      createTestForgeServer,
+      runCli: runPublicCli,
       decideEvidence,
       sealManifestArtifact,
     } as IntegrationApi;
@@ -97,7 +85,6 @@ async function loadIntegration(): Promise<IntegrationApi> {
         }
       },
       runCli: async () => 99,
-      createTestForgeServer: () => undefined,
       decideEvidence: () => undefined,
       sealManifestArtifact: () => undefined,
     };
@@ -926,16 +913,29 @@ describe("MCP facade", () => {
     allowUnsafeExecution?: boolean;
     allowedRepositoryRoots?: string[];
   }) {
-    const server = integration.createTestForgeServer(options);
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "testforge-integration-test", version: "1.0.0" });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
+    assert.ok((options.allowedRepositoryRoots ?? []).length <= 1);
+    const client = await connectPublicMcp({
+      root: options.allowedRepositoryRoots?.[0],
+      allowUnsafeExecution: options.allowUnsafeExecution,
+      name: "testforge-integration-test",
+    });
+    const listed = await listedInputSchemas(client);
+    // The published input schemas, as `tools/list` returns them to any client.
+    const server = {
+      toolInputSchemaJson: (name: string) => listed.get(name),
+      close: async () => {},
+    };
     return { client, server };
   }
 
-  it("is read-only by default and does not register the execution tool", () => {
-    const server = integration.createTestForgeServer();
+  async function listedServer(options: { allowUnsafeExecution?: boolean } = {}) {
+    const { client, server } = await connectServer(options);
+    await client.close();
+    return server;
+  }
+
+  it("is read-only by default and does not register the execution tool", async () => {
+    const server = await listedServer();
 
     assert.ok(server);
     for (const tool of [
@@ -1044,10 +1044,10 @@ describe("MCP facade", () => {
     }
   });
 
-  it("registers verify only when the operator grants unsafe execution", () => {
-    const schema = integration
-      .createTestForgeServer({ allowUnsafeExecution: true })
-      .toolInputSchemaJson("testforge_verify");
+  it("registers verify only when the operator grants unsafe execution", async () => {
+    const schema = (await listedServer({ allowUnsafeExecution: true })).toolInputSchemaJson(
+      "testforge_verify",
+    );
 
     assert.equal(schema.additionalProperties, false);
     assert.deepEqual(schema.required, ["request"]);
@@ -1107,7 +1107,7 @@ describe("MCP facade", () => {
 
   it("publishes strict output schemas and the exhaustive facade schema names", async () => {
     const { client } = await connectServer({ allowUnsafeExecution: true });
-    const server = integration.createTestForgeServer({ allowUnsafeExecution: true });
+    const server = await listedServer({ allowUnsafeExecution: true });
     const listed = await client.listTools();
     for (const tool of [
       "assertledger_qualification_plan",
