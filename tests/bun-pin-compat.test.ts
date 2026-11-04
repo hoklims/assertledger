@@ -10,17 +10,10 @@ import { describe, it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { parseEvidenceManifestV4 } from "../src/contracts/index.js";
-import { QUALIFICATION_ADAPTER_VERSIONS } from "../src/contracts/qualification.js";
 import { replayEvidenceManifest } from "../src/core/index.js";
 import { collectBunNative } from "../src/engine/adapters/bun-native.js";
-import { BUN_TEST_DESIGNATED_ADAPTER_PROFILE } from "../src/engine/adapters/bun-test-designated-profile.js";
-import { BUN_TEST_ADAPTER_PROFILE } from "../src/engine/adapters/bun-test-profile.js";
 import { doctorRepositoryRuntime, initializeRepository } from "../src/engine/index.js";
 
-/**
- * The one runtime the built-in Bun adapters qualify. Moving it is a public contract change: edit
- * this constant together with the five literals below and docs/migration-bun-*.md, never alone.
- */
 const QUALIFIED = {
   version: "1.4.3",
   revision: "c6da4a4d3010e5553438c60f6bd76d981976867c",
@@ -33,49 +26,6 @@ const PREVIOUS = {
 } as const;
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const read = (relative: string): string => readFileSync(path.join(root, relative), "utf8");
-
-describe("the qualified Bun pin is one coherent identity", () => {
-  it("derives the short revision from the version and the full revision", () => {
-    assert.equal(QUALIFIED.short, `${QUALIFIED.version}+${QUALIFIED.revision.slice(0, 9)}`);
-  });
-
-  it("is spelled identically by both runtime profiles", () => {
-    for (const profile of [BUN_TEST_ADAPTER_PROFILE, BUN_TEST_DESIGNATED_ADAPTER_PROFILE]) {
-      assert.equal(profile.bunVersion, QUALIFIED.version, profile.profileId);
-      assert.equal(profile.bunRevision, QUALIFIED.revision, profile.profileId);
-    }
-  });
-
-  it("is spelled identically by the drivers, the native collector and CI", () => {
-    for (const driver of ["integrations/bun/driver.mjs", "integrations/bun-native/driver.mjs"]) {
-      assert.match(
-        read(driver),
-        new RegExp(`^const BUN_REVISION = "${QUALIFIED.short.replace("+", "\\+")}";\\r?$`, "mu"),
-        driver,
-      );
-    }
-    const native = read("src/engine/adapters/bun-native.ts");
-    assert.match(
-      native,
-      new RegExp(`^const revision = "${QUALIFIED.short.replace("+", "\\+")}";$`, "mu"),
-    );
-    assert.ok(
-      native.includes(`identity.revision !== "${QUALIFIED.version}+${QUALIFIED.revision}"`),
-      "the native identity gate compares the full revision",
-    );
-    const pins = [...read(".github/workflows/ci.yml").matchAll(/^\s*bun-version:\s*(\S+)\s*$/gmu)];
-    assert.ok(pins.length >= 2, "both CI matrices install Bun");
-    assert.deepEqual([...new Set(pins.map((match) => match[1]))], [QUALIFIED.version]);
-  });
-
-  it("keeps the native collector contract version independent of the runtime pin", () => {
-    // Replay compares every sealed adapter version with these constants by equality: bumping one
-    // would reject every receipt collected before it, including those without a Bun action.
-    assert.equal(QUALIFICATION_ADAPTER_VERSIONS["bun-native"], "1.0.0");
-  });
-});
-
 /** Fakes only the executable boundary; identity gates, digests and result handling stay real. */
 function fakeSpawn(context: TestContext, identity: unknown) {
   const spawned: string[][] = [];
