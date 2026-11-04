@@ -1760,7 +1760,8 @@ function initCommandChangesDirectory(command: {
   const workspaceOptions = INIT_LAUNCHER_WORKSPACE_OPTIONS.get(
     launcher === "npx" ? "npm" : launcher,
   );
-  const prefixEnd = program > start ? program : words.length;
+  const launcherOptionsEnd = launcher === "npm" ? words.indexOf("--", start + 1) : program;
+  const prefixEnd = launcherOptionsEnd > start ? launcherOptionsEnd : words.length;
   for (let index = start + 1; index < prefixEnd; index += 1) {
     const word = words[index] ?? "";
     const name = word.split("=", 1)[0] ?? "";
