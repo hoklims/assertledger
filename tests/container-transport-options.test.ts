@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { runCli } from "../src/cli.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 async function refusedWitness(transport: string, capable = false) {
   const parent = await mkdtemp(path.join(os.tmpdir(), "assertledger-transport-"));
@@ -51,7 +51,7 @@ async function refusedWitness(transport: string, capable = false) {
       import.meta.url,
     ),
   );
-  const code = await runCli(
+  const code = await runPublicCli(
     [
       "import-witness",
       "-",

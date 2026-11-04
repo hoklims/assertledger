@@ -16,7 +16,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it, type TestContext } from "node:test";
 import { promisify } from "node:util";
-import { type CliIo, runCli } from "../src/cli.js";
 import {
   parseRepositoryAnalysis,
   parseRepositoryInitConfig,
@@ -31,6 +30,7 @@ import {
 import { canonicalize } from "../src/core/index.js";
 import { analyzeRepository, initializeRepository } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { type PublicCliIo as CliIo, runPublicCli } from "./support/public-surface.js";
 
 const temporaryDirectories: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -382,7 +382,7 @@ describe("repository init v1", () => {
     if (!linked) return;
 
     const refused = capture(root);
-    assert.equal(await runCli(["analyze", "."], refused.io), 4);
+    assert.equal(await runPublicCli(["analyze", "."], refused.io), 4);
     assert.equal(refused.stdout(), "");
     const lines = refused.stderr().split("\n");
     assert.equal(lines[0], "UNSUPPORTED_REPOSITORY_SYMLINK");
@@ -393,11 +393,11 @@ describe("repository init v1", () => {
 
     const declared = capture(root);
     assert.equal(
-      await runCli(["init", ".", "--exclude", ".local-tools", "--json"], declared.io),
+      await runPublicCli(["init", ".", "--exclude", ".local-tools", "--json"], declared.io),
       0,
     );
     const analyzed = capture(root);
-    assert.equal(await runCli(["analyze", "."], analyzed.io), 0);
+    assert.equal(await runPublicCli(["analyze", "."], analyzed.io), 0);
     assert.equal(analyzed.stderr(), "");
   });
 
@@ -408,7 +408,7 @@ describe("repository init v1", () => {
     });
 
     const baseline = capture(root);
-    assert.equal(await runCli(["analyze"], baseline.io), 0);
+    assert.equal(await runPublicCli(["analyze"], baseline.io), 0);
     const expected = baseline.stdout();
     assert.notEqual(expected, "");
     assert.equal(baseline.stderr(), "");
@@ -423,7 +423,7 @@ describe("repository init v1", () => {
       ["analyze", ".", "--json", "--json"],
     ]) {
       const accepted = capture(root);
-      assert.equal(await runCli(argv, accepted.io), 0, argv.join(" "));
+      assert.equal(await runPublicCli(argv, accepted.io), 0, argv.join(" "));
       assert.equal(accepted.stdout(), expected, argv.join(" "));
       assert.equal(accepted.stderr(), "", argv.join(" "));
     }
@@ -439,7 +439,7 @@ describe("repository init v1", () => {
       ["analyze", "missing-directory", "--unknown"],
     ]) {
       const refused = capture(root);
-      assert.equal(await runCli(argv, refused.io), 64, argv.join(" "));
+      assert.equal(await runPublicCli(argv, refused.io), 64, argv.join(" "));
       assert.equal(refused.stdout(), "", argv.join(" "));
       assert.match(refused.stderr(), /^Usage: assertledger <command>/u, argv.join(" "));
     }
@@ -473,13 +473,13 @@ describe("repository init v1", () => {
     if (!linked) return;
 
     const refused = capture(root);
-    assert.equal(await runCli(["doctor", "."], refused.io), 4);
+    assert.equal(await runPublicCli(["doctor", "."], refused.io), 4);
     assert.match(refused.stdout(), /UNSUPPORTED_REPOSITORY_SYMLINK: /u);
     assert.doesNotMatch(refused.stdout(), /no explanation in the installed catalogue/u);
 
     const planned = capture(root);
     assert.equal(
-      await runCli(
+      await runPublicCli(
         ["doctor", ".", "--exclude", "vendor", "--exclude", ".local-tools", "--json"],
         planned.io,
       ),
@@ -498,20 +498,23 @@ describe("repository init v1", () => {
     );
 
     const written = capture(root);
-    assert.equal(await runCli(["init", ".", "--exclude", ".local-tools", "--json"], written.io), 0);
+    assert.equal(
+      await runPublicCli(["init", ".", "--exclude", ".local-tools", "--json"], written.io),
+      0,
+    );
     assert.equal(parseRepositoryInitResult(JSON.parse(written.stdout())).status, "CREATED");
 
     const inherited = capture(root);
-    assert.equal(await runCli(["doctor", ".", "--json"], inherited.io), 0);
+    assert.equal(await runPublicCli(["doctor", ".", "--json"], inherited.io), 0);
     assert.equal(parseRepositoryInitResult(JSON.parse(inherited.stdout())).status, "UNCHANGED");
-    assert.equal(await runCli(["analyze", "."], capture(root).io), 0);
+    assert.equal(await runPublicCli(["analyze", "."], capture(root).io), 0);
 
     for (const argv of [
       ["doctor", ".", "--exclude"],
       ["doctor", ".", "--runtime", "--exclude", ".local-tools"],
     ]) {
       const usage = capture(root);
-      assert.equal(await runCli(argv, usage.io), 64, argv.join(" "));
+      assert.equal(await runPublicCli(argv, usage.io), 64, argv.join(" "));
     }
   });
 
@@ -1023,7 +1026,7 @@ describe("repository init v1", () => {
       "test/base.test.js": "import test from 'node:test';\n",
     });
     const output = capture(root);
-    assert.equal(await runCli(["init", ".", "--dry-run", "--json"], output.io), 0);
+    assert.equal(await runPublicCli(["init", ".", "--dry-run", "--json"], output.io), 0);
     const result = JSON.parse(output.stdout());
     assert.equal(result.status, "WOULD_CREATE");
     assert.deepEqual(result.nextCommands[0], {
@@ -1037,7 +1040,7 @@ describe("repository init v1", () => {
       { "bun.lock": "", "a.test.ts": "import { test } from 'bun:test';\n" },
     );
     const bunOutput = capture(bun);
-    assert.equal(await runCli(["init", ".", "--json"], bunOutput.io), 0);
+    assert.equal(await runPublicCli(["init", ".", "--json"], bunOutput.io), 0);
     assert.equal(JSON.parse(bunOutput.stdout()).schemaVersion, "2.0.0");
   });
 
@@ -1059,7 +1062,10 @@ describe("repository init v1", () => {
     );
     const output = capture(cwd);
     assert.equal(
-      await runCli(["init", repository, "--adapter-config", "adapter.json", "--json"], output.io),
+      await runPublicCli(
+        ["init", repository, "--adapter-config", "adapter.json", "--json"],
+        output.io,
+      ),
       0,
     );
     assert.equal(JSON.parse(output.stdout()).status, "CREATED");

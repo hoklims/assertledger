@@ -8,7 +8,8 @@
       "!!.testforge",
       "!!.omx",
       "!!graphify-out",
-      "!!site/evidence"
+      "!!site/evidence",
+      "!!tests/replay-corpus"
     ]
   },
   "formatter": {

@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { type CliIo, runCli } from "../src/cli.js";
 import { parseEvidenceManifestV4, parseWitnessImportRequest } from "../src/contracts/index.js";
 import { replayEvidenceManifest } from "../src/core/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { type PublicCliIo as CliIo, runPublicCli } from "./support/public-surface.js";
 
 const bun = process.env.ASSERTLEDGER_BUN_EXECUTABLE ?? "bun";
 const temporaryDirectories: string[] = [];
@@ -175,7 +175,7 @@ describe("witness import", () => {
         stderr += text;
       },
     };
-    assert.equal(await runCli(["import-witness", requestFile, "--out", "evidence"], io), 4);
+    assert.equal(await runPublicCli(["import-witness", requestFile, "--out", "evidence"], io), 4);
     assert.match(stderr, /without an authorized backend/u);
     await assert.rejects(stat(path.join(parent, "evidence")), { code: "ENOENT" });
   });
