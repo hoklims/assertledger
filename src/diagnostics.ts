@@ -63,8 +63,8 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "Review the runner command and declare it through --test-command-json; initialization does not execute shell scripts.",
   ],
   TEST_COMMAND_INDIRECT: [
-    "The test command reaches the framework runner through another executable, such as a workspace orchestrator (turbo, nx) or a package-manager script runner, and names no test path. Its operands are task names, so no base test files can be derived from it; tests were found in the repository.",
-    "Run doctor on one workspace package, or declare the direct runner for the intended suite with --test-command-json (for example bun test or node --test with the test paths).",
+    "The test command is indirect without an explicit test path, or changes its working directory or workspace selection. Tests were found, but no reliable package-relative baseline can be derived from this command.",
+    "Run doctor on the intended workspace package, or use --test-command-json to declare a direct runner with test paths relative to the inspected package and no directory or workspace redirection.",
   ],
   BASE_TEST_FILES_UNAVAILABLE: [
     "No base test files were found for the selected built-in adapter and test command.",

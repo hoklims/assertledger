@@ -1,0 +1,107 @@
+{
+  "root": "./source",
+  "plan": {
+    "schemaVersion": "1.0.0",
+    "requiredAttempts": 2,
+    "timeoutMs": 5000,
+    "maximumOutputBytes": 65536,
+    "isolation": {
+      "kind": "trusted-local",
+      "acknowledgedUnsafeExecution": true
+    },
+    "profileId": "corpus-nonzero-command-v1",
+    "suites": [],
+    "obligations": [
+      {
+        "id": "propagation",
+        "kind": "propagation",
+        "required": true,
+        "suiteIds": [],
+        "checks": [
+          {
+            "id": "terminal",
+            "actionId": "leaf",
+            "field": "exitCode",
+            "expected": 7
+          }
+        ],
+        "limits": []
+      }
+    ],
+    "actions": [
+      {
+        "id": "leaf",
+        "adapter": "command",
+        "executable": "C:\\nvm4w\\nodejs\\node.exe",
+        "arguments": [
+          "leaf.mjs"
+        ],
+        "environment": {},
+        "prepareFiles": [],
+        "removePaths": [],
+        "observe": {
+          "trace": false,
+          "outputs": [],
+          "report": null
+        }
+      }
+    ],
+    "worlds": [
+      {
+        "id": "reference",
+        "kind": "REFERENCE",
+        "files": [],
+        "discriminants": []
+      },
+      {
+        "id": "swallowed",
+        "kind": "TARGET",
+        "files": [
+          {
+            "path": "leaf.mjs",
+            "content": "process.exit(0);\n"
+          }
+        ],
+        "discriminants": [
+          {
+            "obligationId": "propagation",
+            "checkIds": [
+              "terminal"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "neutral",
+        "kind": "NEUTRAL",
+        "files": [
+          {
+            "path": "leaf.mjs",
+            "content": "// harmless\nimport {writeFileSync} from 'node:fs';\nwriteFileSync(process.env.ASSERTLEDGER_QUALIFICATION_RESULT_FILE, JSON.stringify({facts:{commandOutcome:'EXPECTED_FAILURE',exitCode:7},nonce:process.env.ASSERTLEDGER_QUALIFICATION_NONCE,protocolVersion:'1.0.0'})+'\\n');\nprocess.exit(7);\n"
+          }
+        ],
+        "discriminants": []
+      }
+    ],
+    "subject": {
+      "commit": "corpus-commit",
+      "baseCommit": "corpus-base",
+      "candidateDigest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "inputDigest": "sha256:f1f362d13449b68d9f7b76b964642479fb04326e787bd33ed7d5cc1c8378ec4c"
+    },
+    "tools": [
+      {
+        "id": "node",
+        "version": "22.23.2",
+        "digest": "sha256:0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4"
+      }
+    ],
+    "allowedCandidatePaths": [
+      "leaf.mjs"
+    ]
+  },
+  "planDigest": "sha256:42f1fa806bd7d111060279b2f45ef68b88be1f6ba3ffe63fbd8fcf22f3ed7194",
+  "candidate": {
+    "files": []
+  }
+}

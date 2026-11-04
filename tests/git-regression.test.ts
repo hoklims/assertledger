@@ -3,8 +3,6 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { runCli } from "../src/cli.js";
 import { replayEvidenceManifest } from "../src/core/index.js";
 import {
   batchOutputLimitForTesting,
@@ -15,8 +13,8 @@ import {
   runBoundedProcessForTesting,
 } from "../src/engine/git-regression.js";
 import { runProcess } from "../src/engine/index.js";
-import { createAssertLedgerServer } from "../src/mcp/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { connectPublicMcp, listedInputSchemas, runPublicCli } from "./support/public-surface.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -111,22 +109,26 @@ describe("Git regression qualification", () => {
     const value = await fixture();
     const options = optionsFor(value, "mcp-evidence");
     const { allowUnsafeExecution: _capability, ...request } = options;
-    const readOnly = createAssertLedgerServer({ allowedRepositoryRoots: [value.root] });
-    assert.equal(readOnly.toolInputSchemaJson("assertledger_check"), undefined);
-    const server = createAssertLedgerServer({
-      allowUnsafeExecution: true,
-      allowedRepositoryRoots: [value.root],
-    });
-    const schema = server.toolInputSchemaJson("assertledger_check");
-    assert.ok(schema);
-    assert.equal(schema.additionalProperties, false);
-    assert.equal((schema.properties as Record<string, unknown>).allowUnsafeExecution, undefined);
-    assert.deepEqual(server.toolInputSchemaJson("testforge_check"), schema);
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "git-check-client", version: "1.0.0" });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
+    const readOnly = await connectPublicMcp({ root: value.root });
     try {
+      const listed = await listedInputSchemas(readOnly);
+      assert.ok(listed.has("assertledger_analyze"));
+      assert.equal(listed.has("assertledger_check"), false);
+    } finally {
+      await readOnly.close();
+    }
+    const client = await connectPublicMcp({
+      root: value.root,
+      allowUnsafeExecution: true,
+      name: "git-check-client",
+    });
+    try {
+      const listed = await listedInputSchemas(client);
+      const schema = listed.get("assertledger_check");
+      assert.ok(schema);
+      assert.equal(schema.additionalProperties, false);
+      assert.equal((schema.properties as Record<string, unknown>).allowUnsafeExecution, undefined);
+      assert.deepEqual(listed.get("testforge_check"), schema);
       const outside = await fixture();
       const rejectedRoot = await client.callTool({
         name: "assertledger_check",
@@ -150,7 +152,6 @@ describe("Git regression qualification", () => {
       );
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -627,7 +628,7 @@ describe("Git regression qualification", () => {
 
   it("requires the CLI unsafe flag before parsing or executing Git input", async () => {
     let stderr = "";
-    const code = await runCli(["check", ".", "--json"], {
+    const code = await runPublicCli(["check", ".", "--json"], {
       cwd: process.cwd(),
       readStdin: async () => "",
       writeStdout: () => undefined,

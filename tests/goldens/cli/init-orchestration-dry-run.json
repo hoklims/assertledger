@@ -1,0 +1,5 @@
+{
+  "exitCode": 4,
+  "stdout": "{\"schemaVersion\":\"1.0.0\",\"status\":\"CONFLICT\",\"reasonCodes\":[\"FRAMEWORK_AMBIGUOUS\"],\"detections\":{\"packageManager\":\"pnpm\",\"framework\":null,\"testCommand\":null,\"ciProviders\":[],\"adapterRecommendation\":\"unavailable\",\"reasonCodes\":[\"FRAMEWORK_AMBIGUOUS\"]},\"actions\":[],\"files\":[],\"requiredOperatorInputs\":[\"worlds\",\"candidates\"],\"nextCommands\":[{\"executable\":\"assertledger\",\"arguments\":[\"audit\",\".\",\"--json\"]}]}\n",
+  "stderr": ""
+}

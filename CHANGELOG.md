@@ -45,6 +45,12 @@
   usage text, as `--exclude` already did, instead of exit 4. `doctor --framework` takes the same
   values as `init --framework`, a single dash included (`-x` reaches the engine and returns the
   structured `FRAMEWORK_OVERRIDE_INVALID`, exit 4, instead of a usage error).
+- Commands that redirect their working directory or workspace selection now return `BLOCKED`
+  with `TEST_COMMAND_INDIRECT` instead of deriving base test files against the wrong package.
+  This includes `pnpm --dir other exec node --test`, workspace filters, and Bun's `--cwd`.
+  Directory values `.` and `./` remain supported. Run `doctor` on the intended package or declare
+  a direct command with package-relative test paths and no redirection; explicit adapter
+  configurations remain operator-owned.
 - A `node:test` or `bun:test` command that does not invoke the runner (`node --test`, `bun test`,
   also behind a launcher; `--test` must come before a program's entry point and before a `--`, so
   `node script`, `node script --test`, `./node script --test` and `node -- --test` are not Node's

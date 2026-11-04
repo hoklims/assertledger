@@ -114,8 +114,7 @@ point and before a `--`, so `node script`, `node script --test`, `./node script 
 only when the command is Bun or a launcher that runs it: `pnpm exec`, `npm exec`, `yarn exec` or
 `dlx`, `npx` and `bunx` (with their valued options such as `--package`), `env` and `cross-env`
 assignments and valued options (`env -u NAME`), `dotenv --`, behind `corepack`, with Bun's global
-switches allowed before `test` (`bun --smol test`; `--cwd=dir` is one word, and a separate value
-such as `--cwd dir` is not understood); so `echo bun test`, `npm run bun test` and `pnpm bun test`
+switches allowed before `test` (`bun --smol test`); so `echo bun test`, `npm run bun test` and `pnpm bun test`
 are not Bun) and spells no test path (a
 glob, a nested path or a test file name) returns `BLOCKED` with `TEST_COMMAND_INDIRECT`. `turbo
 test`, `pnpm -r test`
@@ -137,6 +136,15 @@ runner whatever its executable. A Bun global option other than the known switche
 leaves the subcommand unknown (`bun -e test` evaluates `test`), and `corepack bun test` is a
 syntax error of corepack, not Bun. For `bun test`, the values of its options (`--preload
 file`, `--timeout 5000`) are not path filters either.
+
+Commands that redirect their working directory or select another workspace also return
+`BLOCKED` with `TEST_COMMAND_INDIRECT`, even when they spell a test path. This includes pnpm's
+`--dir`/`-C`, `--filter` and workspace/recursive selectors, npm/npx workspace
+selectors, Yarn's `--cwd`, `env --chdir`/`-C`, and Bun's `--cwd`. Directory values `.` and `./`
+keep the current package and remain supported. The static inventory is relative to the inspected
+package; it does not relocate the suite for these options. Run `doctor` in the intended package,
+or declare a direct command with package-relative test paths and no redirection. An explicit
+adapter configuration keeps its operator-declared baseline.
 
 The static inventory walks the filesystem, not the Git index, and never follows or copies a
 symbolic link: a link inside it returns `CONFLICT` with `UNSUPPORTED_REPOSITORY_SYMLINK` and writes

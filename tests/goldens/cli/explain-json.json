@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdout": "{\"catalogueVersion\":\"1.0.0\",\"diagnostics\":[{\"code\":\"GIT_DISABLED\",\"known\":false,\"severity\":\"limitation\",\"explanation\":\"This code has no explanation in the installed catalogue.\",\"nextAction\":\"Keep the original result and consult the matching package version's reference; do not infer a pass.\"},{\"code\":\"NO_SUCH_CODE\",\"known\":false,\"severity\":\"limitation\",\"explanation\":\"This code has no explanation in the installed catalogue.\",\"nextAction\":\"Keep the original result and consult the matching package version's reference; do not infer a pass.\"},{\"code\":\"PACKAGE_MANAGER_UNDETECTED\",\"known\":true,\"severity\":\"blocking\",\"explanation\":\"No supported package manager was detected.\",\"nextAction\":\"Declare the intended package manager with --package-manager or add its package metadata or lockfile.\"}]}\n",
+  "stderr": ""
+}

@@ -1735,12 +1735,68 @@ const INIT_NODE_VALUE_OPTIONS = new Set([
   "--test-timeout",
 ]);
 
-/**
- * Whether the command does not invoke the framework's runner and spells no test path. Its operands
- * are then task or script names (`turbo test`, `pnpm -r test`), not filters, so no inventory can be
- * derived from them. A bare word such as `test` is a task name here even when a directory of that
- * name exists: only the runner's own operands are read as entries.
- */
+const INIT_LAUNCHER_DIRECTORY_OPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["pnpm", new Set(["--dir", "-C"])],
+  ["yarn", new Set(["--cwd"])],
+  ["env", new Set(["--chdir", "-C"])],
+]);
+
+const INIT_LAUNCHER_WORKSPACE_OPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [
+    "pnpm",
+    new Set(["--filter", "--filter-prod", "-F", "--workspace-root", "-w", "--recursive", "-r"]),
+  ],
+  ["npm", new Set(["--workspace", "-w", "--workspaces", "--ws"])],
+]);
+
+function initCommandChangesDirectory(command: {
+  executable: string;
+  arguments: string[];
+}): boolean {
+  const words = [command.executable, ...command.arguments];
+  const { start, launcher } = initEffectiveLauncher(words);
+  const program = initLaunchedProgram(words);
+  const directoryOptions = INIT_LAUNCHER_DIRECTORY_OPTIONS.get(launcher);
+  const workspaceOptions = INIT_LAUNCHER_WORKSPACE_OPTIONS.get(
+    launcher === "npx" ? "npm" : launcher,
+  );
+  const prefixEnd = program > start ? program : words.length;
+  for (let index = start + 1; index < prefixEnd; index += 1) {
+    const word = words[index] ?? "";
+    const name = word.split("=", 1)[0] ?? "";
+    const shortOption = word.startsWith("--") ? "" : word.slice(0, 2);
+    if (workspaceOptions?.has(name) || workspaceOptions?.has(shortOption)) return true;
+    const directoryOption = directoryOptions?.has(name)
+      ? name
+      : directoryOptions?.has(shortOption)
+        ? shortOption
+        : undefined;
+    if (directoryOption !== undefined) {
+      const attachedValue = word.slice(directoryOption.length).replace(/^=/u, "");
+      const value = word === directoryOption ? words[++index] : attachedValue;
+      if (value !== "." && value !== "./") return true;
+    } else if (
+      INIT_MANAGER_VALUE_OPTIONS.get(launcher)?.has(word) ||
+      INIT_LAUNCHER_VALUE_OPTIONS.has(word) ||
+      INIT_ENV_VALUE_OPTIONS.has(word)
+    ) {
+      index += 1;
+    }
+  }
+  if (program < 0 || initCommandWordName(words[program] ?? "") !== "bun") return false;
+  for (let index = program + 1; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (word === "--") break;
+    if (word === "--cwd" || word.startsWith("--cwd=")) {
+      const value = word === "--cwd" ? words[++index] : word.slice("--cwd=".length);
+      if (value !== "." && value !== "./") return true;
+    } else if (INIT_BUN_TEST_VALUE_OPTIONS.has(word)) {
+      index += 1;
+    }
+  }
+  return false;
+}
+
 function initCommandIsIndirect(
   command: { executable: string; arguments: string[] },
   runner: "node" | "bun",
@@ -1748,8 +1804,9 @@ function initCommandIsIndirect(
 ): boolean {
   const isTestFile = runner === "bun" ? initBunTestSource : initNodeTestSource;
   return (
-    !initCommandInvokesRunner(command, runner, declared) &&
-    !command.arguments.some((argument) => initOperandSpelledAsPath(argument, isTestFile))
+    initCommandChangesDirectory(command) ||
+    (!initCommandInvokesRunner(command, runner, declared) &&
+      !command.arguments.some((argument) => initOperandSpelledAsPath(argument, isTestFile)))
   );
 }
 

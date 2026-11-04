@@ -36,9 +36,8 @@ import {
   agenticCorpusProvenanceSigningBytes,
   agenticCorpusTrustPolicyDigest,
 } from "../src/evaluation/agentic-corpus.js";
-import { createTestForgeServer } from "../src/mcp/index.js";
-import { runCli } from "../src/cli.js";
 import { TestForge } from "../src/sdk/index.js";
+import { connectPublicMcp, listedInputSchemas, runPublicCli } from "./support/public-surface.js";
 
 const SOURCE_IDENTITY_DIGEST = `sha256:${"c".repeat(64)}`;
 const SOURCE_B_IDENTITY_DIGEST = `sha256:${"2".repeat(64)}`;
@@ -1041,7 +1040,7 @@ describe("externally anchored H3 experiment v1", () => {
           await writeFile(path.join(root, `${name}.json`), JSON.stringify(document), "utf8");
         }
         const diagnostics: string[] = [];
-        const code = await runCli(
+        const code = await runPublicCli(
           [
             "corpus-experiment-replay",
             "artifact.json",
@@ -1089,7 +1088,7 @@ describe("externally anchored H3 experiment v1", () => {
     assert.equal(await run(fixture({ firstBaselineOutcome: "INFRA_ERROR" })), 3);
     const value = fixture();
     assert.equal(
-      await runCli(["corpus-experiment-replay", "-", "--json"], {
+      await runPublicCli(["corpus-experiment-replay", "-", "--json"], {
         cwd: process.cwd(),
         async readStdin() {
           return JSON.stringify(value.artifact);
@@ -1102,11 +1101,14 @@ describe("externally anchored H3 experiment v1", () => {
   });
 
   it("does not expose H3 creation or replay as default MCP tools", async () => {
-    const server = createTestForgeServer();
-    const tools = (server as unknown as { _registeredTools: Record<string, unknown> })
-      ._registeredTools;
-    assert.equal(Object.hasOwn(tools, "testforge_corpus_experiment"), false);
-    assert.equal(Object.hasOwn(tools, "testforge_corpus_experiment_replay"), false);
-    await server.close();
+    const client = await connectPublicMcp();
+    try {
+      const tools = await listedInputSchemas(client);
+      assert.ok(tools.has("testforge_corpus_allocate"));
+      assert.equal(tools.has("testforge_corpus_experiment"), false);
+      assert.equal(tools.has("testforge_corpus_experiment_replay"), false);
+    } finally {
+      await client.close();
+    }
   });
 });

@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { type CliIo, runCli } from "../src/cli.js";
 import { initializeRepository } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { type PublicCliIo as CliIo, runPublicCli as runCli } from "./support/public-surface.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -1361,7 +1361,6 @@ describe("a command that does not run the framework directly is named as such", 
     ["node --experimental-test-isolation process --test tests", "node:test"],
     ["node --test-reporter spec --test-concurrency 2 --test tests", "node:test"],
     ["pnpm exec bun test tests", "bun:test"],
-    ["pnpm --filter api exec bun test tests", "bun:test"],
     ["npm exec -- bun test tests", "bun:test"],
     ["npx bun test tests", "bun:test"],
     ["npx --package bun bun test tests", "bun:test"],
@@ -1376,13 +1375,10 @@ describe("a command that does not run the framework directly is named as such", 
     ["pnpx bun test tests", "bun:test"],
     ["bun --expose-gc test tests", "bun:test"],
     ["bun --conditions=development test tests", "bun:test"],
-    ["pnpm --filter api exec node --test tests", "node:test"],
-    ["npm --workspace api exec -- node --test tests", "node:test"],
     ["env -u FOO bun test tests", "bun:test"],
     ["env --unset=FOO CI=1 bun test tests", "bun:test"],
     ["env -C . bun test tests", "bun:test"],
     ["bun --smol test tests", "bun:test"],
-    ["bun --cwd=packages/api test tests", "bun:test"],
     ["npm exec -- node --test tests", "node:test"],
     ["npx -- tsx --test tests", "node:test"],
     ["pnpm exec bun --bun test tests", "bun:test"],
@@ -1577,4 +1573,84 @@ describe("a command that does not run the framework directly is named as such", 
     assert.equal(repaired.code, 0);
     assert.equal(repaired.result.status, "WOULD_CREATE");
   });
+});
+
+describe("runner working-directory selection", () => {
+  for (const [script, framework] of [
+    ["pnpm --dir other exec node --test", "node:test"],
+    ["pnpm -C other exec node --test", "node:test"],
+    ["pnpm -Cother exec node --test", "node:test"],
+    ["pnpm -Fother exec node --test", "node:test"],
+    ["npm -wother exec -- node --test", "node:test"],
+    ["pnpm --workspace-root exec node --test", "node:test"],
+    ["pnpm --dir=other exec node --test tests/*.test.js", "node:test"],
+    ["pnpm --dir ../outside exec node --test", "node:test"],
+    ["pnpm --dir=/outside exec node --test", "node:test"],
+    ["corepack pnpm -C other exec node --test", "node:test"],
+    ["pnpm --filter other exec node --test", "node:test"],
+    ["pnpm --filter other exec bun test tests", "bun:test"],
+    ["npm --workspace other exec -- node --test", "node:test"],
+    ["npx --workspace other node --test", "node:test"],
+    ["yarn --cwd other exec node --test", "node:test"],
+    ["env -C other node --test", "node:test"],
+    ["env --chdir=other node --test", "node:test"],
+    ["bun --cwd=other test", "bun:test"],
+    ["bun test --cwd other", "bun:test"],
+    ["pnpm exec bun --cwd=other test tests/*.test.js", "bun:test"],
+  ] as const) {
+    it(`refuses a guessed baseline for ${script}`, async () => {
+      const root = await tree({
+        "package.json": JSON.stringify({
+          type: "module",
+          packageManager: "pnpm@11.1.2",
+          scripts: { test: script },
+        }),
+        "tests/root.test.js": `import { test } from "${framework}"; test("root", () => {});`,
+        "other/tests/other.test.js": `import { test } from "${framework}"; test("other", () => {});`,
+      });
+      for (const options of [
+        { dryRun: false },
+        {
+          dryRun: true,
+          testCommand: { executable: script.split(" ")[0]!, arguments: script.split(" ").slice(1) },
+        },
+      ]) {
+        const result = await initializeRepository(root, options);
+        assert.equal(result.status, "BLOCKED");
+        assert.deepEqual(result.reasonCodes, ["TEST_COMMAND_INDIRECT"]);
+        assert.deepEqual(result.files, []);
+        assert.deepEqual((await readdir(root)).sort(), ["other", "package.json", "tests"]);
+      }
+    });
+  }
+
+  for (const [script, framework] of [
+    ["pnpm --dir . exec node --test", "node:test"],
+    ["npm --prefix other exec -- node --test", "node:test"],
+    ["env -C ./ node --test", "node:test"],
+    ["bun --cwd=. test", "bun:test"],
+    ["pnpm exec bun test --cwd ./", "bun:test"],
+    ["bun test --test-name-pattern --cwd", "bun:test"],
+  ] as const) {
+    it(`keeps the package baseline for ${script}`, async () => {
+      const root = await tree({
+        "package.json": JSON.stringify({
+          type: "module",
+          packageManager: "pnpm@11.1.2",
+          scripts: { test: script },
+        }),
+        "tests/root.test.js": `import { test } from "${framework}"; test("root", () => {});`,
+        "other/tests/other.test.js": `import { test } from "${framework}"; test("other", () => {});`,
+      });
+      const result = await initializeRepository(root, { dryRun: true });
+      assert.equal(result.status, "WOULD_CREATE");
+      const configFile = result.files.find((file) => file.path === "assertledger.config.json");
+      assert.ok(configFile);
+      const config = JSON.parse(configFile.content);
+      assert.deepEqual(config.adapter.baseTestFiles, [
+        "other/tests/other.test.js",
+        "tests/root.test.js",
+      ]);
+    });
+  }
 });

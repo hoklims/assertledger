@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdout": "{\n  \"transport\": \"stdio\",\n  \"command\": \"<NODE>\",\n  \"args\": [\n    \"<PACKAGE>/dist/cli.js\",\n    \"mcp\",\n    \"--root\",\n    \"<FIXTURE>\"\n  ],\n  \"cwd\": \"<FIXTURE>\"\n}\n",
+  "stderr": ""
+}

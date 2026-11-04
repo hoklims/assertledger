@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdout": "EMITTED: <FIXTURE>/.codex/config.toml\nEMITTED: <FIXTURE>/.agents/skills/assertledger/SKILL.md\nNo files changed. Re-run with --write to remove only byte-identical AssertLedger artifacts.\n",
+  "stderr": ""
+}

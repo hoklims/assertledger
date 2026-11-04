@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { afterEach, describe, it } from "node:test";
+import { promisify } from "node:util";
 import {
   parseRepositoryAudit,
   parseRepositoryAuditV2,
@@ -13,7 +13,7 @@ import {
 } from "../src/contracts/index.js";
 import { auditRepository, initializeRepository } from "../src/engine/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
-import { runCli } from "../src/cli.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 const temporaryDirectories: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -23,7 +23,7 @@ describe("audit exclusions", () => {
     const ledger = new AssertLedger();
     for (const name of ["repository-audit", "repository-audit-v2"] as const) {
       let stdout = "";
-      const exit = await runCli(["schema", name], {
+      const exit = await runPublicCli(["schema", name], {
         cwd: process.cwd(),
         readStdin: async () => "",
         writeStdout: (text) => {
@@ -115,7 +115,7 @@ describe("audit exclusions", () => {
     await writeFile(path.join(root, "assertledger.request.json"), JSON.stringify(request(root)));
     let stdout = "";
     let stderr = "";
-    const exit = await runCli(["audit", ".", "--no-git", "--json"], {
+    const exit = await runPublicCli(["audit", ".", "--no-git", "--json"], {
       cwd: root,
       readStdin: async () => "",
       writeStdout: (text) => {
@@ -186,7 +186,7 @@ describe("audit exclusions", () => {
       );
       let stdout = "";
       let stderr = "";
-      const exit = await runCli(
+      const exit = await runPublicCli(
         [
           "audit",
           ".",
@@ -542,32 +542,32 @@ describe("repository audit v1", () => {
       },
     };
     assert.equal(
-      await runCli(["audit", ".", "--emit-verification-request", "--no-git", "--json"], io),
+      await runPublicCli(["audit", ".", "--emit-verification-request", "--no-git", "--json"], io),
       3,
     );
     await writeFile(path.join(root, "assertledger.request.json"), JSON.stringify(request(root)));
     messages.stdout = "";
     assert.equal(
-      await runCli(["audit", ".", "--emit-verification-request", "--no-git", "--json"], io),
+      await runPublicCli(["audit", ".", "--emit-verification-request", "--no-git", "--json"], io),
       0,
     );
     const emitted = JSON.parse(messages.stdout) as ReturnType<typeof request>;
     assert.equal(emitted.isolation.acknowledgedUnsafeExecution, false);
     messages.stdout = "";
-    assert.equal(await runCli(["audit", ".", "--no-git", "--json"], io), 0);
+    assert.equal(await runPublicCli(["audit", ".", "--no-git", "--json"], io), 0);
     assert.equal(
       (JSON.parse(messages.stdout) as { cost: { executions: string } }).cost.executions,
       "444",
     );
     await writeFile(path.join(root, "invalid.json"), "{}\n");
     assert.equal(
-      await runCli(["audit", ".", "--verification-request", "invalid.json", "--json"], io),
+      await runPublicCli(["audit", ".", "--verification-request", "invalid.json", "--json"], io),
       4,
     );
     const otherRoot = await fixture();
     await writeFile(path.join(root, "wrong-root.json"), JSON.stringify(request(otherRoot)));
     assert.equal(
-      await runCli(["audit", ".", "--verification-request", "wrong-root.json", "--json"], io),
+      await runPublicCli(["audit", ".", "--verification-request", "wrong-root.json", "--json"], io),
       4,
     );
   });
