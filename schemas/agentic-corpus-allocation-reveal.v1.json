@@ -42,7 +42,10 @@
           "required": ["keyId", "secret"],
           "additionalProperties": false
         }
-      ]
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
     },
     "revealDigest": {
       "$ref": "#/$defs/__schema0"

@@ -1,28 +1,31 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "policyId": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "keys": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "sources": {
-      "$ref": "#/$defs/__schema6"
-    },
-    "policyDigest": {
-      "$ref": "#/$defs/__schema4"
-    }
-  },
-  "required": ["schemaVersion", "policyId", "keys", "sources", "policyDigest"],
-  "additionalProperties": false,
-  "title": "TestForge agentic corpus trust policy",
-  "description": "An externally pinned Ed25519 trust root for agentic corpus provenance.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-corpus-trust-policy.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-corpus-trust-policy.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "policyId": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "keys": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "sources": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/__schema4"
+        }
+      },
+      "required": ["schemaVersion", "policyId", "keys", "sources", "policyDigest"],
+      "additionalProperties": false,
+      "title": "TestForge agentic corpus trust policy",
+      "description": "An externally pinned Ed25519 trust root for agentic corpus provenance."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

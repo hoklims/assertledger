@@ -12,7 +12,7 @@ export const QUALIFICATION_SCHEMA_LOCK = [
   },
   {
     path: "schemas/qualification-receipt.v1.json",
-    rawSha256: "sha256:7a17f732f93ac7ccb56bc32d897f2790f65637896db43bda0c226be82e8bd44a",
+    rawSha256: "sha256:9c04acd147b66bc1cf6776eab98613e3ff4a67ab87ef7175a749e44fa42b0848",
     $id: "https://testforge.dev/schemas/qualification-receipt.v1.json",
   },
   {

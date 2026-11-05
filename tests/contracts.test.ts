@@ -175,6 +175,14 @@ function findPropertySchema(value: unknown, property: string): Record<string, un
   return undefined;
 }
 
+function rootSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const id = String(schema.$id);
+  assert.equal(schema.$ref, `#/$defs/${id.replaceAll("~", "~0").replaceAll("/", "~1")}`);
+  const root = (schema.$defs as Record<string, Record<string, unknown>>)[id];
+  assert.ok(root);
+  return root;
+}
+
 const contracts = await loadContracts();
 
 function validRequest() {
@@ -247,6 +255,39 @@ function validRequest() {
 }
 
 describe("verification request contract", () => {
+  it("counts Unicode code points at the public path length boundary", () => {
+    const request = validRequest();
+    request.repository.exclude = ["😀".repeat(512)];
+    assert.deepEqual(
+      contracts.parseVerificationRequest(request).repository.exclude,
+      request.repository.exclude,
+    );
+    request.repository.exclude = ["😀".repeat(513)];
+    assert.throws(() => contracts.parseVerificationRequest(request), /REQUEST_SCHEMA_INVALID/);
+  });
+
+  it("reports an oversized command argument collection before its invalid elements", () => {
+    const request = {
+      ...validRequest(),
+      adapter: {
+        kind: "testforge-command",
+        executable: "node",
+        arguments: Array(101).fill(null),
+        protocolVersion: "1.0.0",
+      },
+    };
+    assert.throws(
+      () => contracts.parseVerificationRequest(request),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /REQUEST_SCHEMA_INVALID/);
+        assert.match(error.message, /Too big/);
+        assert.doesNotMatch(error.message, /expected string/);
+        return true;
+      },
+    );
+  });
+
   it("accepts a complete versioned campaign", () => {
     const parsed = contracts.parseVerificationRequest(validRequest());
 
@@ -377,9 +418,10 @@ describe("published JSON Schema", () => {
 
     assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
     assert.equal(schema.$id, "https://testforge.dev/schemas/verification-request.v1.json");
-    assert.equal(schema.additionalProperties, false);
+    const root = rootSchema(schema);
+    assert.equal(root.additionalProperties, false);
     const serialized = JSON.stringify(schema);
-    const properties = schema.properties as Record<string, Record<string, unknown>>;
+    const properties = root.properties as Record<string, Record<string, unknown>>;
     const definitions = schema.$defs as Record<string, Record<string, unknown>>;
     const versionReference = properties.schemaVersion?.$ref;
     assert.equal(typeof versionReference, "string");
@@ -454,7 +496,7 @@ describe("published JSON Schema", () => {
     for (const [schema, id] of schemas) {
       assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
       assert.equal(schema.$id, id);
-      assert.equal(schema.additionalProperties, false);
+      assert.equal(rootSchema(schema).additionalProperties, false);
     }
   });
 });

@@ -1,34 +1,37 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "valid": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "schemaValid": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "sourceManifestValid": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "exportDigestValid": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "semanticsValid": {
-      "$ref": "#/$defs/__schema4"
-    }
-  },
-  "required": [
-    "valid",
-    "schemaValid",
-    "sourceManifestValid",
-    "exportDigestValid",
-    "semanticsValid"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger evidence export replay result",
-  "description": "Independent schema, source, digest, and semantic replay verdicts for an export.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-export-replay-result.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/evidence-export-replay-result.v1.json": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "schemaValid": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "sourceManifestValid": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "exportDigestValid": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "semanticsValid": {
+          "$ref": "#/$defs/__schema4"
+        }
+      },
+      "required": [
+        "valid",
+        "schemaValid",
+        "sourceManifestValid",
+        "exportDigestValid",
+        "semanticsValid"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger evidence export replay result",
+      "description": "Independent schema, source, digest, and semantic replay verdicts for an export."
+    },
     "__schema0": {
       "type": "boolean"
     },
