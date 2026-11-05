@@ -6,7 +6,6 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { smokeQualificationPlan, smokeTestSource } from "../scripts/qualification-smoke.js";
-import { runCli } from "../src/cli.js";
 import { sha256Canonical } from "../src/core/index.js";
 import { sealQualificationPlan } from "../src/core/qualification.js";
 import {
@@ -14,6 +13,7 @@ import {
   qualificationRepositoryDigest,
 } from "../src/engine/qualification.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 test("real CLI qualification and CI import preserve OPEN and REJECTED exits and reject forged replay", async () => {
   const temporary = await mkdtemp(path.join(tmpdir(), "al-cli-"));
@@ -109,8 +109,8 @@ test("CLI names plan, execution and replay surfaces and refuses unauthorized exe
       output += text;
     },
   };
-  assert.equal(await runCli(["--help"], io), 0);
+  assert.equal(await runPublicCli(["--help"], io), 0);
   assert.match(output, /qualification-plan/u, "qualification plan command missing");
   assert.match(output, /qualification-replay/u);
-  assert.equal(await runCli(["qualify", "-"], io), 4);
+  assert.equal(await runPublicCli(["qualify", "-"], io), 4);
 });

@@ -271,7 +271,15 @@ export class AssertLedger {
 
   async doctor(
     root: string,
-    options: Pick<RepositoryInitOptions, "exclude" | "framework" | "onLinkAssessment"> = {},
+    options: Pick<
+      RepositoryInitOptions,
+      | "exclude"
+      | "framework"
+      | "packageManager"
+      | "testCommand"
+      | "adapterConfigPath"
+      | "onLinkAssessment"
+    > = {},
   ): Promise<RepositoryInitResult | RepositoryInitResultV2> {
     return this.init(root, { ...options, dryRun: true });
   }

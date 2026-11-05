@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import { it } from "node:test";
-import { type CliIo, runCli } from "../src/cli.js";
 import { parseVersionedRepositoryInitResult } from "../src/contracts/index.js";
 import { explainReasonCodes } from "../src/diagnostics.js";
 import { initializeRepository } from "../src/engine/index.js";
+import { type PublicCliIo as CliIo, runPublicCli } from "./support/public-surface.js";
 
 function capture(root: string) {
   let stdout = "";
@@ -60,7 +60,7 @@ for (const framework of ["node:test", "bun:test"] as const) {
           `${argv[0]}${argv.includes("--dry-run") ? " --dry-run" : ""}`,
           async () => {
             const output = capture(root);
-            assert.equal(await runCli(argv, output.io), 4);
+            assert.equal(await runPublicCli(argv, output.io), 4);
             assert.notEqual(output.stdout(), "", output.stderr());
             assert.equal(output.stderr(), "");
             const result = parseVersionedRepositoryInitResult(JSON.parse(output.stdout()));
@@ -115,7 +115,7 @@ it("returns a structured conflict when an inventory evidence path exceeds its sc
     for (const command of ["doctor", "init"] as const) {
       const output = capture(root);
       assert.equal(
-        await runCli([command, root, "--framework", "node:test", "--json"], output.io),
+        await runPublicCli([command, root, "--framework", "node:test", "--json"], output.io),
         4,
       );
       assert.notEqual(output.stdout(), "", output.stderr());
@@ -145,7 +145,7 @@ it("returns a structured conflict when the canonical inventory lock exceeds the 
       );
     }
     const output = capture(root);
-    assert.equal(await runCli(["init", root, "--dry-run", "--json"], output.io), 4);
+    assert.equal(await runPublicCli(["init", root, "--dry-run", "--json"], output.io), 4);
     assert.notEqual(output.stdout(), "", output.stderr());
     const result = parseVersionedRepositoryInitResult(JSON.parse(output.stdout()));
     assert.equal(result.status, "CONFLICT");
@@ -177,6 +177,7 @@ const INIT_CODES = [
   "LOCK_INVALID",
   "OFFICIAL_ADAPTER_UNAVAILABLE",
   "PACKAGE_MANAGER_AMBIGUOUS",
+  "PACKAGE_MANAGER_FROM_WORKSPACE_ROOT",
   "PACKAGE_MANAGER_INVALID",
   "PACKAGE_MANAGER_OVERRIDE_INVALID",
   "PACKAGE_MANAGER_UNDETECTED",
@@ -195,6 +196,7 @@ const INIT_CODES = [
   "REPOSITORY_LINK_OUTSIDE_TEST_CLOSURE",
   "REPOSITORY_ROOT_INVALID",
   "TEST_CLOSURE_UNBOUNDED",
+  "TEST_COMMAND_INDIRECT",
   "TEST_COMMAND_INVALID",
   "TEST_COMMAND_UNSAFE_OR_AMBIGUOUS",
   "UNSUPPORTED_REPOSITORY_SYMLINK",
@@ -219,7 +221,7 @@ it("explains every static doctor/init reason and contract error with a next acti
   assert.match(ambiguous?.nextAction ?? "", /--framework/u);
 
   const output = capture(process.cwd());
-  assert.equal(await runCli(["explain", ...INIT_CODES, "--json"], output.io), 0);
+  assert.equal(await runPublicCli(["explain", ...INIT_CODES, "--json"], output.io), 0);
   assert.deepEqual(JSON.parse(output.stdout()), report);
 });
 

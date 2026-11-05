@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import {
   agenticCorpusAllocationJsonSchema,
   agenticCorpusAllocationReplayResultJsonSchema,
@@ -16,10 +15,9 @@ import {
   createAgenticCorpusAllocation,
   replayAgenticCorpusAllocation,
 } from "../src/core/index.js";
-import { runCli } from "../src/cli.js";
 import { parseAgenticCorpusCase } from "../src/evaluation/agentic-corpus.js";
-import { createTestForgeServer } from "../src/mcp/index.js";
 import { TestForge } from "../src/sdk/index.js";
+import { connectPublicMcp, runPublicCli } from "./support/public-surface.js";
 
 const SEED_DIGEST = "sha256:0000000000000000000000000000000000000000000000000000000000000001";
 const CASE_IDS = [
@@ -233,14 +231,10 @@ describe("Agentic Corpus Allocation v1", () => {
       },
       writeStderr() {},
     };
-    assert.equal(await runCli(["corpus-allocate", "-", "--json"], cliIo), 0);
+    assert.equal(await runPublicCli(["corpus-allocate", "-", "--json"], cliIo), 0);
     assert.deepEqual(JSON.parse(cliOutput.join("")), allocation);
 
-    const server = createTestForgeServer();
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "corpus-allocation-test", version: "1.0.0" });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
+    const client = await connectPublicMcp({ name: "corpus-allocation-test" });
     const allocated = await client.callTool({
       name: "testforge_corpus_allocate",
       arguments: { request: request() },
@@ -252,6 +246,5 @@ describe("Agentic Corpus Allocation v1", () => {
     });
     assert.equal((replayed.structuredContent as { valid: boolean }).valid, true);
     await client.close();
-    await server.close();
   });
 });

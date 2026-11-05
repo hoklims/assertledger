@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { pathToFileURL } from "node:url";
 import {
   exerciseQualificationHandlers,
   smokeQualificationPlan,
@@ -12,26 +12,25 @@ import {
 import { sha256Canonical } from "../src/core/index.js";
 import {
   qualificationFileDigest,
-  qualificationMechanismDigest,
   qualificationRepositoryDigest,
 } from "../src/engine/qualification.js";
-import { createAssertLedgerServer } from "../src/mcp/index.js";
 import { AssertLedger } from "../src/sdk/index.js";
+import { PACKAGE_ROOT } from "./support/goldens.js";
+import { connectPublicMcp } from "./support/public-surface.js";
+
+/** The server runs the built package, so its mechanism is the digest of the built modules. */
+async function builtMechanismDigest(): Promise<string> {
+  const built = pathToFileURL(path.join(PACKAGE_ROOT, "dist", "engine", "qualification.js")).href;
+  const engine = (await import(built)) as typeof import("../src/engine/qualification.js");
+  return engine.qualificationMechanismDigest();
+}
 
 test("MCP seals, executes and replays node:test qualification and refuses safe execution", {
   timeout: 30_000,
 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "qualification-mcp-"));
   async function connect(allowUnsafeExecution: boolean) {
-    const server = createAssertLedgerServer({
-      allowedRepositoryRoots: [root],
-      allowUnsafeExecution,
-    });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "qualification-handler-test", version: "1.0.0" });
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
-    return client;
+    return connectPublicMcp({ root, allowUnsafeExecution, name: "qualification-handler-test" });
   }
   try {
     await writeFile(path.join(root, "public.test.mjs"), smokeTestSource);
@@ -57,7 +56,7 @@ test("MCP seals, executes and replays node:test qualification and refuses safe e
       const receipt = await exerciseQualificationHandlers(executing, request);
       assert.equal(
         (receipt.provenance.runtime as Record<string, unknown>).mechanismDigest,
-        await qualificationMechanismDigest(),
+        await builtMechanismDigest(),
       );
       assert.equal(await readFile(path.join(root, "public.test.mjs"), "utf8"), smokeTestSource);
       const outside = await executing.callTool({

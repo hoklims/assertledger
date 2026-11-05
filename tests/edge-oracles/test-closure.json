@@ -1,0 +1,252 @@
+{
+  "cases": [
+    {
+      "id": "resolution-candidates",
+      "description": "Exact file first, then TS source for a JS specifier, then extensions, then a directory index; builtins and Bun modules are not files",
+      "files": {
+        "package.json": "{}",
+        "tsconfig.json": "{}",
+        "test.ts": "import \"./a.js\";\nimport \"./b\";\nimport \"./dir\";\nimport \"./data.json\";\nimport \"./c.js\";\nimport \"./missing.js\";\nimport \"fs\";\nimport \"fs/promises\";\nimport \"node:path\";\nimport \"node:unknown\";\nimport \"bun:test\";\nimport \"bun\";\n",
+        "a.ts": "",
+        "a.mts": "",
+        "b.tsx": "",
+        "b.js": "",
+        "c.js": "",
+        "c.ts": "",
+        "dir/index.ts": "",
+        "data.json": "{}",
+        "unrelated.ts": ""
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": [
+          "a.ts",
+          "b.tsx",
+          "c.js",
+          "data.json",
+          "dir/index.ts",
+          "package.json",
+          "test.ts",
+          "tsconfig.json"
+        ],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "path-keys-and-order",
+      "description": "Paths match after a context-sensitive lowercase (a sigma before '/' folds to final sigma, one before '.ts' does not), keep the inventory spelling, and sort by UTF-16 code unit",
+      "files": {
+        "test.ts": "import \"./Util.js\";\nimport \"./CAFÉ.js\";\nimport \"./ΑΣ/x.js\";\nimport \"./ΣΑΣ.js\";\nimport \"./😀.js\";\nimport \"./｡.js\";\nimport \"./z.js\";\n",
+        "util.ts": "",
+        "café.ts": "",
+        "ας/x.ts": "",
+        "σας.ts": "",
+        "😀.ts": "",
+        "｡.ts": "",
+        "z.ts": ""
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["café.ts", "test.ts", "util.ts", "z.ts", "ας/x.ts", "😀.ts", "｡.ts"],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "unbounded-edges",
+      "description": "Computed, absolute, URL-like and outside-repository specifiers make a file unbounded, sorted by file then reason",
+      "files": {
+        "test.ts": "import(x);\nimport \"/abs.js\";\nimport \"file:///x.js\";\nimport \"c:/x.js\";\nimport \"../outside.js\";\nimport \"./sub/b.js\";\n",
+        "sub/b.ts": "import \"../../up.js\";\nrequire(name);\n"
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["sub/b.ts", "test.ts"],
+        "links": [],
+        "unbounded": [
+          {
+            "file": "sub/b.ts",
+            "reason": "MODULE_OUTSIDE_REPOSITORY"
+          },
+          {
+            "file": "sub/b.ts",
+            "reason": "NON_LITERAL_MODULE_SPECIFIER"
+          },
+          {
+            "file": "test.ts",
+            "reason": "ABSOLUTE_MODULE_SPECIFIER"
+          },
+          {
+            "file": "test.ts",
+            "reason": "MODULE_OUTSIDE_REPOSITORY"
+          },
+          {
+            "file": "test.ts",
+            "reason": "NON_LITERAL_MODULE_SPECIFIER"
+          }
+        ]
+      }
+    },
+    {
+      "id": "packages-and-runner-modules",
+      "description": "A dependency package is kept whole, its declared dependencies follow, JSX adds the runtime, runner modules are skipped",
+      "files": {
+        "test.tsx": "import \"pkg\";\nimport \"@scope/lib/sub\";\nimport \"vitest\";\n",
+        "node_modules/pkg/package.json": "{\"dependencies\":{\"dep\":\"1\"}}",
+        "node_modules/pkg/index.js": "import \"./internal.js\";",
+        "node_modules/pkg/internal.js": "",
+        "node_modules/dep/index.js": "",
+        "node_modules/@scope/lib/package.json": "{}",
+        "node_modules/@scope/lib/sub.js": "",
+        "node_modules/react/package.json": "{}",
+        "node_modules/react/jsx-runtime.js": "",
+        "node_modules/vitest/index.js": "",
+        "node_modules/unused/index.js": ""
+      },
+      "roots": ["test.tsx"],
+      "runnerModules": ["vitest"],
+      "closure": {
+        "files": [
+          "node_modules/@scope/lib/package.json",
+          "node_modules/@scope/lib/sub.js",
+          "node_modules/dep/index.js",
+          "node_modules/pkg/index.js",
+          "node_modules/pkg/internal.js",
+          "node_modules/pkg/package.json",
+          "node_modules/react/jsx-runtime.js",
+          "node_modules/react/package.json",
+          "test.tsx"
+        ],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "link-stops-walk",
+      "description": "Without a target map a link on the path is recorded and not walked",
+      "files": {
+        "test.ts": "import \"./linked/a.js\";\n",
+        "real/a.ts": ""
+      },
+      "links": ["linked"],
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["test.ts"],
+        "links": ["linked"],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "link-followed",
+      "description": "With a target map the link is recorded and its target walked",
+      "files": {
+        "test.ts": "import \"./linked/a.js\";\n",
+        "real/a.ts": "import \"./b.js\";\n",
+        "real/b.ts": ""
+      },
+      "links": ["linked"],
+      "linkTargets": {
+        "linked": "real"
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["real/a.ts", "real/b.ts", "test.ts"],
+        "links": ["linked"],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "tsconfig-paths",
+      "description": "tsconfig paths with comments and trailing commas map wildcard and exact specifiers",
+      "files": {
+        "tsconfig.json": "{\n  // paths\n  \"compilerOptions\": {\n    \"baseUrl\": \".\",\n    \"paths\": { \"@/*\": [\"src/*\"], \"exact\": [\"src/exact.ts\"], },\n  },\n}\n",
+        "test.ts": "import \"@/x.js\";\nimport \"exact\";\n",
+        "src/x.ts": "",
+        "src/exact.ts": ""
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["src/exact.ts", "src/x.ts", "test.ts", "tsconfig.json"],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "bunfig-preload",
+      "description": "A root bunfig test preload is an edge of every test",
+      "files": {
+        "bunfig.toml": "[test]\npreload = [\"./setup.ts\"]\n",
+        "test.ts": "",
+        "setup.ts": "import \"./helper.js\";\n",
+        "helper.ts": ""
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["bunfig.toml", "helper.ts", "setup.ts", "test.ts"],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "package-imports",
+      "description": "package.json imports map exact and wildcard subpath imports",
+      "files": {
+        "package.json": "{\"imports\":{\"#lib/*\":\"./src/lib/*.js\",\"#exact\":{\"node\":\"./src/exact.js\",\"default\":\"./src/fallback.js\"}}}",
+        "test.ts": "import \"#lib/a\";\nimport \"#exact\";\n",
+        "src/lib/a.ts": "",
+        "src/exact.ts": "",
+        "src/fallback.ts": ""
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": ["package.json", "src/exact.ts", "src/fallback.ts", "src/lib/a.ts", "test.ts"],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "workspace-package",
+      "description": "A workspace package is repository source: all of it is kept and scanned",
+      "files": {
+        "test.ts": "import \"w\";\n",
+        "packages/w/package.json": "{\"name\":\"w\",\"main\":\"index.ts\"}",
+        "packages/w/index.ts": "",
+        "packages/w/other.ts": "import \"./deep.js\";\n",
+        "packages/w/deep.ts": ""
+      },
+      "roots": ["test.ts"],
+      "closure": {
+        "files": [
+          "packages/w/deep.ts",
+          "packages/w/index.ts",
+          "packages/w/other.ts",
+          "packages/w/package.json",
+          "test.ts"
+        ],
+        "links": [],
+        "unbounded": []
+      }
+    },
+    {
+      "id": "package-import-unmatched-refused",
+      "description": "A subpath import that no imports key matches refuses the closure",
+      "files": {
+        "package.json": "{\"imports\":{\"#a\":\"./a.js\"}}",
+        "test.ts": "import \"#missing\";\n"
+      },
+      "roots": ["test.ts"],
+      "refusal": "TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED"
+    },
+    {
+      "id": "tsconfig-extends-unresolved-refused",
+      "description": "A reached tsconfig whose extends cannot be resolved refuses the closure",
+      "files": {
+        "tsconfig.json": "{\"extends\":\"./missing-base.json\"}",
+        "test.ts": ""
+      },
+      "roots": ["test.ts"],
+      "refusal": "TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED"
+    }
+  ]
+}

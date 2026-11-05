@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { runCli } from "../src/cli.js";
 import { parseEvidenceManifestV2, parseEvidenceManifestV4 } from "../src/contracts/index.js";
 import { replayEvidenceManifest } from "../src/core/index.js";
 import { runProcess, verifyCampaign } from "../src/engine/index.js";
@@ -15,6 +14,7 @@ import {
   KEEPS_DOCS,
   OVERRUNS_UNDER_FAULT,
 } from "./support/designated-campaign.js";
+import { runPublicCli } from "./support/public-surface.js";
 
 // Hostile scenarios against a real Docker Engine. They need an operator-provided runtime argv and a
 // locally present digest-pinned Node.js image, never pull, and fail instead of skipping when
@@ -355,7 +355,7 @@ describe("real container isolation", { skip, concurrency: false }, () => {
         stderr += text;
       },
     };
-    const code = await runCli(
+    const code = await runPublicCli(
       [
         "check",
         root,
@@ -386,7 +386,7 @@ describe("real container isolation", { skip, concurrency: false }, () => {
     const manifest = parseEvidenceManifestV2(JSON.parse(await readFile(manifestPath, "utf8")));
     assert.equal(manifest.decision.status, "VERIFIED");
     assert.equal(manifest.evidenceContext.execution.backend.kind, "container");
-    assert.equal(await runCli(["replay", manifestPath], io), 0, stderr);
+    assert.equal(await runPublicCli(["replay", manifestPath], io), 0, stderr);
     await assertCleanedUp(volumesBefore);
   });
 });
