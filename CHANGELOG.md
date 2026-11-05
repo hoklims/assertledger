@@ -71,6 +71,17 @@
   guessed inventory: declare the direct runner with `--test-command-json`. Commands that invoke
   the runner, or spell a path, are unchanged, as are init schemas and digests. Closes
   [#72](https://github.com/hoklims/assertledger/issues/72).
+- Qualify Bun 1.4.4 (revision `38afee6c84fcf48c0edb2466aa4b27d287a59c30`) in place of Bun 1.4.2
+  for the `bun-test` and `bun-test-designated` adapters, `doctor --runtime`, witness import and
+  the `bun-native` collector. Any other Bun is refused before execution
+  (`BUN_TEST_VERSION_UNSUPPORTED`, exit 4) and is never a target kill. Schemas, profile versions,
+  digest projections, outcomes and conformance are unchanged. New Bun manifests carry new
+  executable, driver and preload digests and therefore new decision and artifact digests; evidence
+  sealed under 1.4.2 still parses and replays and attests 1.4.2 only. CI installs Bun 1.4.4. The
+  public orchestration profile script now targets Bun 1.4.4 as
+  `public-turbo-orchestration-2.11.7-bun-1.4.4`; receipts collected on 1.4.2 must be recollected
+  and no 1.4.4 receipt ships with the package.
+  See [the migration note](docs/migration-bun-1.4.4.md).
 
 ## 2.1.0 — 2026-10-13
 

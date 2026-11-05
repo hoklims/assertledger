@@ -179,8 +179,10 @@ async function main() {
         writeFileSync(path.join(directory, "exit.json"), JSON.stringify({ exitCode: 0 }));
         print({
           execPath: "/usr/local/bin/bun",
-          bunVersion: "1.4.2",
-          bunRevision: "744846f844374847c902b5e7fd59b4342a51ef99",
+          ...(scenario.bunIdentity ?? {
+            bunVersion: "1.4.4",
+            bunRevision: "38afee6c84fcf48c0edb2466aa4b27d287a59c30",
+          }),
           digest: `sha256:${"a".repeat(64)}`,
         });
         return;
