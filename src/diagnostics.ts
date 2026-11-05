@@ -37,6 +37,11 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
     "No supported package manager was detected.",
     "Declare the intended package manager with --package-manager or add its package metadata or lockfile.",
   ],
+  PACKAGE_MANAGER_FROM_WORKSPACE_ROOT: [
+    "The package declares no manager of its own; pnpm was inherited from the pnpm-workspace.yaml that selects it, within the same repository. The evidence lock records files under the package only, so a later change at the workspace root is not detected by the lock.",
+    "No action is required. Pass --package-manager to pin the manager from the package itself, and rerun init after the workspace root changes its package manager.",
+    "info",
+  ],
   FRAMEWORK_AMBIGUOUS: [
     "Multiple test frameworks were detected, or the explicit choice disagrees with the detected frameworks.",
     "Inspect test imports, dependencies and test scripts, then choose a detected framework with --framework (node:test, bun:test, vitest, jest or pytest). The current init result schema cannot list all detected frameworks.",
@@ -56,6 +61,10 @@ const CATALOGUE: Readonly<Record<string, Entry>> = {
   TEST_COMMAND_UNSAFE_OR_AMBIGUOUS: [
     "The package test script cannot be interpreted as one safe executable and argument array.",
     "Review the runner command and declare it through --test-command-json; initialization does not execute shell scripts.",
+  ],
+  TEST_COMMAND_INDIRECT: [
+    "The test command is indirect without an explicit test path, or changes its working directory or workspace selection. Tests were found, but no reliable package-relative baseline can be derived from this command.",
+    "Run doctor on the intended workspace package, or use --test-command-json to declare a direct runner with test paths relative to the inspected package and no directory or workspace redirection.",
   ],
   BASE_TEST_FILES_UNAVAILABLE: [
     "No base test files were found for the selected built-in adapter and test command.",
