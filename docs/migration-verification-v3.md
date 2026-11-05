@@ -20,8 +20,9 @@ scalar or boolean observation when structural equality is needed. Calculation er
 the helper and remain ordinary errors. The helper is installed from the package into each
 disposable workspace; no adapter implementation is required in the consumer repository.
 
-The Bun runtime profile pins version `1.4.2` and revision
-`744846f844374847c902b5e7fd59b4342a51ef99`. New manifests bind the resolved executable
+The Bun runtime profile pins version `1.4.4` and revision
+`38afee6c84fcf48c0edb2466aa4b27d287a59c30` (Bun 1.4.2 until
+[the 1.4.4 move](migration-bun-1.4.4.md)). New manifests bind the resolved executable
 digest, Bun revision, driver digest, preload digest, helper digest, command shape,
 and fresh runtime preflight. They may have new decision and artifact digests because v3 evidence
 has a new schema identity. No old manifest is resealed. The v3 schemas are added to the
