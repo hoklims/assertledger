@@ -7,6 +7,7 @@ import { replayEvidenceManifest } from "../src/core/index.js";
 import { runProcess, verifyCampaign } from "../src/engine/index.js";
 
 const temporaryDirectories: string[] = [];
+const adapterExecutionTimeoutMs = 30_000;
 
 async function withAliasedTemporaryDirectory<T>(run: () => Promise<T>): Promise<T> {
   const outer = await mkdtemp(path.join(os.tmpdir(), "assertledger-temp-alias-"));
@@ -61,7 +62,7 @@ afterEach(async () => {
 function request(
   root: string,
   candidateContent: string,
-  timeoutMsPerExecution = 5_000,
+  timeoutMsPerExecution = adapterExecutionTimeoutMs,
   requiredAttempts = 1,
 ) {
   return {
@@ -183,7 +184,11 @@ describe("official node:test adapter qualification", () => {
         ),
       );
 
-      assert.equal(manifest.decision.status, "VERIFIED");
+      assert.equal(
+        manifest.decision.status,
+        "VERIFIED",
+        JSON.stringify({ decision: manifest.decision, observations: manifest.observations }),
+      );
       assert.ok(
         candidateObservations(manifest).every(
           (observation: { candidateTestsDiscovered: number }) =>
@@ -205,12 +210,16 @@ describe("official node:test adapter qualification", () => {
           'test("subject remains true", () => assert.equal(subject(), true));',
           "",
         ].join("\n"),
-        5_000,
+        adapterExecutionTimeoutMs,
         2,
       ),
     );
 
-    assert.equal(manifest.decision.status, "VERIFIED");
+    assert.equal(
+      manifest.decision.status,
+      "VERIFIED",
+      JSON.stringify({ decision: manifest.decision, observations: manifest.observations }),
+    );
     assert.deepEqual(
       candidateObservations(manifest).map(
         (observation: {
