@@ -17,7 +17,7 @@ Windows containers and macOS runners provide no container runtime, so that suite
 explicit skip there; the rest of the checks job runs on all three systems.
 
 The workflow permits pushes to `main` and same-repository pull requests from an owner,
-member or collaborator. Fork pull requests are skipped. A skipped job does not establish
+member, collaborator or Dependabot (GitHub user ID `49699333`). Fork pull requests are skipped. A skipped job does not establish
 compatibility or release readiness: a maintainer must inspect the exact contribution and
 bring the reviewed changes onto a trusted repository branch before executing them.
 
