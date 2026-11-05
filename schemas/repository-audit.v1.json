@@ -1,58 +1,61 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "root": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "repositoryDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "fileCount": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "repositoryBytes": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "reasonCodes": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "git": {
-      "$ref": "#/$defs/__schema6"
-    },
-    "files": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "modules": {
-      "$ref": "#/$defs/__schema9"
-    },
-    "cost": {
-      "$ref": "#/$defs/__schema10"
-    },
-    "verificationRequest": {
-      "$ref": "#/$defs/__schema11"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "root",
-    "repositoryDigest",
-    "fileCount",
-    "repositoryBytes",
-    "reasonCodes",
-    "git",
-    "files",
-    "modules",
-    "cost",
-    "verificationRequest"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger repository audit",
-  "description": "A deterministic static repository audit and campaign cost projection.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1repository-audit.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/repository-audit.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "root": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "repositoryDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "fileCount": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "repositoryBytes": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "reasonCodes": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "git": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "files": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "modules": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "cost": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "verificationRequest": {
+          "$ref": "#/$defs/__schema11"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "root",
+        "repositoryDigest",
+        "fileCount",
+        "repositoryBytes",
+        "reasonCodes",
+        "git",
+        "files",
+        "modules",
+        "cost",
+        "verificationRequest"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger repository audit",
+      "description": "A deterministic static repository audit and campaign cost projection."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"
@@ -111,24 +114,10 @@
           "const": 1000
         },
         "shallow": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": ["boolean", "null"]
         },
         "truncated": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": ["boolean", "null"]
         }
       },
       "required": [
@@ -213,14 +202,7 @@
             }
           },
           "sourceChangedAfterAssociatedTest": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": ["boolean", "null"]
           },
           "commitsInWindow": {
             "$ref": "#/$defs/__schema8"
@@ -343,7 +325,10 @@
                 "minimum": 0,
                 "maximum": 9007199254740991
               }
-            ]
+            ],
+            "items": false,
+            "minItems": 6,
+            "maxItems": 6
           }
         },
         "required": ["pathPrefix", "rank", "files", "factualTuple"],
@@ -414,7 +399,7 @@
     "__schema11": {
       "anyOf": [
         {
-          "$ref": "#/$defs/https://testforge.dev/schemas/verification-request.v1.json"
+          "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v1.json"
         },
         {
           "type": "null"

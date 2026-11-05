@@ -1,62 +1,65 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "benchmarkArtifact": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "sourceBenchmarkArtifactDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "comparisonScopeDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema19"
-    },
-    "policyDigest": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "status": {
-      "$ref": "#/$defs/__schema21"
-    },
-    "candidateUniverse": {
-      "$ref": "#/$defs/__schema22"
-    },
-    "candidates": {
-      "$ref": "#/$defs/__schema23"
-    },
-    "portfolios": {
-      "$ref": "#/$defs/__schema24"
-    },
-    "limitations": {
-      "$ref": "#/$defs/__schema25"
-    },
-    "reportDigest": {
-      "$ref": "#/$defs/__schema2"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "benchmarkArtifact",
-    "sourceBenchmarkArtifactDigest",
-    "comparisonScopeDigest",
-    "policy",
-    "policyDigest",
-    "status",
-    "candidateUniverse",
-    "candidates",
-    "portfolios",
-    "limitations",
-    "reportDigest"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge Agentic Test Profile v2 report",
-  "description": "A replayable strength and exact warm-cost profile over a declared benchmark cohort.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-report.v2.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-profile-report.v2.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "benchmarkArtifact": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "sourceBenchmarkArtifactDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "comparisonScopeDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema19"
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "status": {
+          "$ref": "#/$defs/__schema21"
+        },
+        "candidateUniverse": {
+          "$ref": "#/$defs/__schema22"
+        },
+        "candidates": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "portfolios": {
+          "$ref": "#/$defs/__schema24"
+        },
+        "limitations": {
+          "$ref": "#/$defs/__schema25"
+        },
+        "reportDigest": {
+          "$ref": "#/$defs/__schema2"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "benchmarkArtifact",
+        "sourceBenchmarkArtifactDigest",
+        "comparisonScopeDigest",
+        "policy",
+        "policyDigest",
+        "status",
+        "candidateUniverse",
+        "candidates",
+        "portfolios",
+        "limitations",
+        "reportDigest"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge Agentic Test Profile v2 report",
+      "description": "A replayable strength and exact warm-cost profile over a declared benchmark cohort."
+    },
     "__schema0": {
       "type": "string",
       "const": "2.0.0"
@@ -659,7 +662,10 @@
                   "type": "string",
                   "const": "EXECUTION"
                 }
-              ]
+              ],
+              "items": false,
+              "minItems": 4,
+              "maxItems": 4
             },
             "coldDefinition": {
               "type": "string",

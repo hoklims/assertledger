@@ -57,11 +57,11 @@ export const CONFORMANCE_V1_FILE_DIGESTS = {
   "inputs/replay-evidence-resealed-semantic-forgery.json":
     "sha256:a307cee4d0ab4c5545ae4e237cd952b814fbbb8092ffe7cdc373d44c89847529",
   "schemas/expected-digests.json":
-    "sha256:f76ae50c78b89082d549d4030f92ef77a8d88b8376b3ab0864effc84797f0aca",
+    "sha256:30001491ce7d5cf91010914ecd61bbe7a2bf92fdecc58a9c26c2a032ba118099",
 } as const;
 
 export const CONFORMANCE_V1_ROOT_DIGEST =
-  "sha256:ba273caef39191105f3f8ab5d0c52a5c231dc4c8b6e7bd51cdbfdf1868d4d9bb";
+  "sha256:a9c5b058e2b5b0a8b3f6d4c5d1423bb44e2c8330b85090aa7d49c79f2e2a99ee";
 
 export const CONFORMANCE_V1_PUBLIC_DIGESTS = {
   decisionDigest: "sha256:bbecbbbbb790db1912b9ce06336420446c71df8d57eb0b040854ba672a220faa",
@@ -73,4 +73,4 @@ export const CONFORMANCE_V1_PUBLIC_DIGESTS = {
 
 // Schemas published after conformance v1 are locked additively: the v1 bundle bytes stay frozen.
 export const PUBLISHED_SCHEMA_EXTENSIONS_DIGEST =
-  "sha256:581cebbfdeb03e13a6d6ac2c4830a6116c09388e429c843f81b8ff0aefa46cbd";
+  "sha256:a96692df9db7095e2d9b679a89801c594248b6084670152159059cb40a1a5ab5";

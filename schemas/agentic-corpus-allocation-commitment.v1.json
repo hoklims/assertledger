@@ -44,7 +44,10 @@
         {
           "$ref": "#/$defs/__schema4"
         }
-      ]
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
     },
     "commitmentDigest": {
       "$ref": "#/$defs/__schema1"

@@ -1,50 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "repository": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "adapter": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "isolation": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "candidateRoots": {
-      "$ref": "#/$defs/__schema9"
-    },
-    "budgets": {
-      "$ref": "#/$defs/__schema11"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema12"
-    },
-    "worlds": {
-      "$ref": "#/$defs/__schema14"
-    },
-    "candidates": {
-      "$ref": "#/$defs/__schema18"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "repository",
-    "adapter",
-    "isolation",
-    "candidateRoots",
-    "budgets",
-    "policy",
-    "worlds",
-    "candidates"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge verification request",
-  "description": "A versioned campaign describing operator-owned worlds, candidate test overlays, budgets, and evidence policy.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/verification-request.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "repository": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "isolation": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "candidateRoots": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "budgets": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "worlds": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "candidates": {
+          "$ref": "#/$defs/__schema18"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repository",
+        "adapter",
+        "isolation",
+        "candidateRoots",
+        "budgets",
+        "policy",
+        "worlds",
+        "candidates"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge verification request",
+      "description": "A versioned campaign describing operator-owned worlds, candidate test overlays, budgets, and evidence policy."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

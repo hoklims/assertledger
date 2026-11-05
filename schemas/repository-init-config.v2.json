@@ -1,42 +1,45 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "repository": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "packageManager": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "framework": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "testCommand": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "adapter": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "candidateRoots": {
-      "$ref": "#/$defs/__schema12"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "repository",
-    "packageManager",
-    "framework",
-    "testCommand",
-    "adapter",
-    "candidateRoots"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger repository init config v2",
-  "description": "Portable repository configuration with the official Bun test adapter.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1repository-init-config.v2.json",
   "$defs": {
+    "https://testforge.dev/schemas/repository-init-config.v2.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "repository": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "packageManager": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "framework": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "testCommand": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "candidateRoots": {
+          "$ref": "#/$defs/__schema12"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repository",
+        "packageManager",
+        "framework",
+        "testCommand",
+        "adapter",
+        "candidateRoots"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger repository init config v2",
+      "description": "Portable repository configuration with the official Bun test adapter."
+    },
     "__schema0": {
       "type": "string",
       "const": "2.0.0"

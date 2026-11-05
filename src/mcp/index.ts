@@ -60,6 +60,10 @@ function jsonResult(value: unknown) {
   };
 }
 
+function mcpOutputSchema<T extends z.ZodType>(schema: T): T {
+  return schema.clone(schema.def).meta({ ...schema.meta(), id: undefined });
+}
+
 export interface AssertLedgerServerOptions {
   /** Operator-owned capability. Candidate code execution is unavailable unless explicitly enabled. */
   allowUnsafeExecution?: boolean;
@@ -129,7 +133,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       description:
         "Verify an external observer signature against the operator trust root already sealed in an intact receipt. Require exact commit, base, steps and terminal success. Does not run a pipeline or authorize merge.",
       inputSchema: qualificationCiInput,
-      outputSchema: QualificationReceiptSchema,
+      outputSchema: mcpOutputSchema(QualificationReceiptSchema),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -147,7 +151,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       description:
         "Recompute receipt integrity, completeness, decision and optional domain. Does not execute tests or authenticate the producer.",
       inputSchema: qualificationReplayInput,
-      outputSchema: QualificationReplayResultSchema,
+      outputSchema: mcpOutputSchema(QualificationReplayResultSchema),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -168,7 +172,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
         description:
           "DANGEROUS: execute operator-sealed actions and candidate code in explicitly UNSANDBOXED trusted-local workspaces. Reports each covered and open obligation; never authorizes merge.",
         inputSchema: qualificationInput,
-        outputSchema: QualificationReceiptSchema,
+        outputSchema: mcpOutputSchema(QualificationReceiptSchema),
         annotations: {
           readOnlyHint: false,
           destructiveHint: true,
@@ -193,7 +197,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Return versioned guidance and safe next actions without changing any verdict or executing code.",
     inputSchema: explainInputSchema,
-    outputSchema: DiagnosticReportSchema,
+    outputSchema: mcpOutputSchema(DiagnosticReportSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -209,7 +213,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     title: "Analyze a repository",
     description: "Produce deterministic repository context for test generation.",
     inputSchema: analyzeInputSchema,
-    outputSchema: RepositoryAnalysisSchema,
+    outputSchema: mcpOutputSchema(RepositoryAnalysisSchema),
   };
   const analyzeHandler = async ({ root }: z.infer<typeof analyzeInputSchema>) => {
     try {
@@ -297,7 +301,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       description:
         "UNSANDBOXED trusted-local: execute the same node:test candidate on fixed, buggy and declared neutral Git revisions. Publish evidence in a new repository-relative directory. Available only with server-operator authorization.",
       inputSchema: checkInputSchema,
-      outputSchema: EvidenceManifestSchema,
+      outputSchema: mcpOutputSchema(EvidenceManifestSchema),
       annotations: {
         destructiveHint: true,
         idempotentHint: false,
@@ -325,7 +329,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       description:
         "DANGEROUS: execute untrusted candidate code locally, then deterministically evaluate the evidence. This tool exists only when enabled by the server operator.",
       inputSchema: verifyInputSchema,
-      outputSchema: EvidenceManifestSchema,
+      outputSchema: mcpOutputSchema(EvidenceManifestSchema),
       annotations: {
         destructiveHint: true,
         idempotentHint: false,
@@ -354,7 +358,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       ...verifyConfig,
       title: "Verify v3 candidate tests",
       inputSchema: verifyV3InputSchema,
-      outputSchema: EvidenceManifestV3Schema,
+      outputSchema: mcpOutputSchema(EvidenceManifestV3Schema),
     };
     const verifyV3Handler = async ({ request }: z.infer<typeof verifyV3InputSchema>) => {
       const root = await confinedRepositoryRoot(request.repository.root);
@@ -380,7 +384,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
       description:
         "DANGEROUS: execute a fresh verification campaign and strict phase-aware benchmark runs in UNSANDBOXED trusted-local workspaces. This tool exists only when enabled by the server operator.",
       inputSchema: benchmarkAcquireInputSchema,
-      outputSchema: AgenticBenchmarkAcquisitionResultSchema,
+      outputSchema: mcpOutputSchema(AgenticBenchmarkAcquisitionResultSchema),
       annotations: {
         destructiveHint: true,
         idempotentHint: false,
@@ -424,7 +428,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly validate an evidence manifest, then independently replay its integrity seals and deterministic decision semantics.",
     inputSchema: replayInputSchema,
-    outputSchema: ReplayResultSchema,
+    outputSchema: mcpOutputSchema(ReplayResultSchema),
   };
   const replayHandler = ({ manifest }: z.infer<typeof replayInputSchema>) =>
     jsonResult(assertLedger.replay(manifest));
@@ -437,7 +441,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Deterministically summarize declared cold/warm phased measurements without changing the source VERIFIED decision.",
     inputSchema: benchmarkInputSchema,
-    outputSchema: AgenticBenchmarkArtifactSchema,
+    outputSchema: mcpOutputSchema(AgenticBenchmarkArtifactSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -456,7 +460,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly validate and independently replay benchmark source binding, digests, scope, and summary semantics.",
     inputSchema: benchmarkReplayInputSchema,
-    outputSchema: AgenticBenchmarkReplayResultSchema,
+    outputSchema: mcpOutputSchema(AgenticBenchmarkReplayResultSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -481,7 +485,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly replay the acquisition source, artifact, context, digest, and status bindings without executing code.",
     inputSchema: benchmarkAcquireReplayInputSchema,
-    outputSchema: AgenticBenchmarkAcquisitionReplayResultSchema,
+    outputSchema: mcpOutputSchema(AgenticBenchmarkAcquisitionReplayResultSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -512,7 +516,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Assign declared case identifiers to calibration and holdout partitions using the versioned SHA-256 allocation algorithm.",
     inputSchema: corpusAllocateInputSchema,
-    outputSchema: AgenticCorpusAllocationSchema,
+    outputSchema: mcpOutputSchema(AgenticCorpusAllocationSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -533,7 +537,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly recompute the allocation digest, source ordering, assignment scores, and partition semantics.",
     inputSchema: corpusAllocationReplayInputSchema,
-    outputSchema: AgenticCorpusAllocationReplayResultSchema,
+    outputSchema: mcpOutputSchema(AgenticCorpusAllocationReplayResultSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -562,7 +566,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Derive a deterministic hardening-test evidence and latency profile from a replay-valid AssertLedger manifest.",
     inputSchema: profileInputSchema,
-    outputSchema: AgenticProfileReportSchema,
+    outputSchema: mcpOutputSchema(AgenticProfileReportSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -581,7 +585,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly validate and independently replay a self-contained Agentic Test Profile report.",
     inputSchema: profileReplayInputSchema,
-    outputSchema: AgenticProfileReplayResultSchema,
+    outputSchema: mcpOutputSchema(AgenticProfileReplayResultSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -600,7 +604,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Derive a deterministic strength and warm-cost profile from a replay-valid benchmark artifact without changing VERIFIED.",
     inputSchema: profileV2InputSchema,
-    outputSchema: AgenticProfileReportV2Schema,
+    outputSchema: mcpOutputSchema(AgenticProfileReportV2Schema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -619,7 +623,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly validate and replay benchmark binding, policy, report digest, and Profile v2 semantics.",
     inputSchema: profileV2ReplayInputSchema,
-    outputSchema: AgenticProfileReplayResultV2Schema,
+    outputSchema: mcpOutputSchema(AgenticProfileReplayResultV2Schema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -642,7 +646,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Export a replay-valid AssertLedger manifest as typed evidence that separates result, integrity, authenticity, environment, confidence, controls, and cost. Consumers decide admissibility.",
     inputSchema: exportInputSchema,
-    outputSchema: EvidenceExportSchema,
+    outputSchema: mcpOutputSchema(EvidenceExportSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -661,7 +665,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Strictly validate a self-contained evidence export and recompute it from its embedded source manifest.",
     inputSchema: exportReplayInputSchema,
-    outputSchema: EvidenceExportReplayResultSchema,
+    outputSchema: mcpOutputSchema(EvidenceExportReplayResultSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,
@@ -680,7 +684,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     description:
       "Return the provider version, source revision, announced capabilities, formats, cost model, and limits. Announced capabilities never prove that a control ran.",
     inputSchema: providerInputSchema,
-    outputSchema: EvidenceProviderManifestSchema,
+    outputSchema: mcpOutputSchema(EvidenceProviderManifestSchema),
     annotations: {
       destructiveHint: false,
       idempotentHint: true,

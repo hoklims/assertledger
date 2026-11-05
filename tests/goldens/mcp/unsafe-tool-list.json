@@ -2001,7 +2001,10 @@
                                   "type": "string",
                                   "const": "node_modules"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 5,
+                              "maxItems": 5
                             },
                             "dependencySnapshot": {
                               "type": "string",
@@ -3062,7 +3065,10 @@
                               "type": "string",
                               "const": "node_modules"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 5,
+                          "maxItems": 5
                         },
                         "dependencySnapshot": {
                           "type": "string",
@@ -4006,7 +4012,10 @@
                                   "type": "string",
                                   "const": "node_modules"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 5,
+                              "maxItems": 5
                             },
                             "dependencySnapshot": {
                               "type": "string",
@@ -5686,7 +5695,10 @@
                               "type": "string",
                               "const": "node_modules"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 5,
+                          "maxItems": 5
                         },
                         "dependencySnapshot": {
                           "type": "string",
@@ -6510,7 +6522,10 @@
                           "type": "string",
                           "const": "candidates"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     },
                     "nextCommands": {
                       "type": "array",
@@ -6755,7 +6770,10 @@
                           "type": "string",
                           "const": "candidates"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     },
                     "nextCommands": {
                       "type": "array",
@@ -7041,7 +7059,10 @@
                           "type": "string",
                           "const": "candidates"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     },
                     "nextCommands": {
                       "type": "array",
@@ -7286,7 +7307,10 @@
                           "type": "string",
                           "const": "candidates"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     },
                     "nextCommands": {
                       "type": "array",
@@ -7504,7 +7528,10 @@
                           "type": "string",
                           "const": "Runtime doctor uses controlled synthetic node:test probes and does not run repository tests or prove campaign evidence."
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 1,
+                      "maxItems": 1
                     }
                   },
                   "required": [
@@ -7666,7 +7693,10 @@
                           "type": "string",
                           "const": "Runtime doctor uses controlled synthetic Bun callback probes and does not run repository tests or prove campaign evidence."
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 1,
+                      "maxItems": 1
                     },
                     "bunVersion": {
                       "anyOf": [
@@ -7871,7 +7901,10 @@
                           "type": "string",
                           "const": "Runtime doctor uses controlled synthetic node:test probes and does not run repository tests or prove campaign evidence."
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 1,
+                      "maxItems": 1
                     }
                   },
                   "required": [
@@ -8033,7 +8066,10 @@
                           "type": "string",
                           "const": "Runtime doctor uses controlled synthetic Bun callback probes and does not run repository tests or prove campaign evidence."
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 1,
+                      "maxItems": 1
                     },
                     "bunVersion": {
                       "anyOf": [
@@ -9553,7 +9589,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/verification-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v1.json"
                 }
               },
               "required": [
@@ -10630,7 +10666,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/verification-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v1.json"
                 }
               },
               "required": [
@@ -11707,7 +11743,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/verification-request.v3.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v3.json"
                 }
               },
               "required": [
@@ -13170,7 +13206,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/verification-request.v3.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1verification-request.v3.json"
                 }
               },
               "required": [
@@ -14633,7 +14669,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-acquisition-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-acquisition-request.v1.json"
                 }
               },
               "required": [
@@ -15110,7 +15146,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -16563,7 +16602,10 @@
                                   "type": "string",
                                   "const": "EXECUTION"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 4,
+                              "maxItems": 4
                             },
                             "coldDefinition": {
                               "type": "string",
@@ -17550,7 +17592,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-acquisition-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-acquisition-request.v1.json"
                 }
               },
               "required": [
@@ -18027,7 +18069,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -19480,7 +19525,10 @@
                                   "type": "string",
                                   "const": "EXECUTION"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 4,
+                              "maxItems": 4
                             },
                             "coldDefinition": {
                               "type": "string",
@@ -20467,7 +20515,7 @@
               "type": "object",
               "properties": {
                 "manifest": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/evidence-manifest.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-manifest.v1.json"
                 }
               },
               "required": [
@@ -21189,7 +21237,7 @@
               "type": "object",
               "properties": {
                 "manifest": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/evidence-manifest.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-manifest.v1.json"
                 }
               },
               "required": [
@@ -21911,7 +21959,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-request.v1.json"
                 }
               },
               "required": [
@@ -22620,7 +22668,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -23756,7 +23807,10 @@
                           "type": "string",
                           "const": "EXECUTION"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 4,
+                      "maxItems": 4
                     },
                     "coldDefinition": {
                       "type": "string",
@@ -24592,7 +24646,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-request.v1.json"
                 }
               },
               "required": [
@@ -25301,7 +25355,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -26437,7 +26494,10 @@
                           "type": "string",
                           "const": "EXECUTION"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 4,
+                      "maxItems": 4
                     },
                     "coldDefinition": {
                       "type": "string",
@@ -27273,7 +27333,7 @@
               "type": "object",
               "properties": {
                 "artifact": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-artifact.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-artifact.v1.json"
                 }
               },
               "required": [
@@ -27990,7 +28050,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -28877,7 +28940,7 @@
               "type": "object",
               "properties": {
                 "artifact": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-artifact.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-artifact.v1.json"
                 }
               },
               "required": [
@@ -29594,7 +29657,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -30481,7 +30547,7 @@
               "type": "object",
               "properties": {
                 "result": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-acquisition-result.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-acquisition-result.v1.json"
                 }
               },
               "required": [
@@ -31837,7 +31903,10 @@
                                       "type": "string",
                                       "const": "EXECUTION"
                                     }
-                                  ]
+                                  ],
+                                  "items": false,
+                                  "minItems": 4,
+                                  "maxItems": 4
                                 },
                                 "coldDefinition": {
                                   "type": "string",
@@ -32867,7 +32936,7 @@
               "type": "object",
               "properties": {
                 "result": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-benchmark-acquisition-result.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-acquisition-result.v1.json"
                 }
               },
               "required": [
@@ -34223,7 +34292,10 @@
                                       "type": "string",
                                       "const": "EXECUTION"
                                     }
-                                  ]
+                                  ],
+                                  "items": false,
+                                  "minItems": 4,
+                                  "maxItems": 4
                                 },
                                 "coldDefinition": {
                                   "type": "string",
@@ -36307,7 +36379,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-request.v1.json"
                 }
               },
               "required": [
@@ -38140,7 +38212,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-request.v1.json"
                 }
               },
               "required": [
@@ -39973,7 +40045,7 @@
               "type": "object",
               "properties": {
                 "report": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-report.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-report.v1.json"
                 }
               },
               "required": [
@@ -41095,7 +41167,7 @@
               "type": "object",
               "properties": {
                 "report": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-report.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-report.v1.json"
                 }
               },
               "required": [
@@ -42217,7 +42289,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-request.v2.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-request.v2.json"
                 }
               },
               "required": [
@@ -42941,7 +43013,10 @@
                                   "type": "string",
                                   "const": "EXECUTION"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 4,
+                              "maxItems": 4
                             },
                             "coldDefinition": {
                               "type": "string",
@@ -44581,7 +44656,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -45895,7 +45973,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-request.v2.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-request.v2.json"
                 }
               },
               "required": [
@@ -46619,7 +46697,10 @@
                                   "type": "string",
                                   "const": "EXECUTION"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 4,
+                              "maxItems": 4
                             },
                             "coldDefinition": {
                               "type": "string",
@@ -48259,7 +48340,10 @@
                               "type": "string",
                               "const": "EXECUTION"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "coldDefinition": {
                           "type": "string",
@@ -49573,7 +49657,7 @@
               "type": "object",
               "properties": {
                 "report": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-report.v2.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-report.v2.json"
                 }
               },
               "required": [
@@ -50297,7 +50381,10 @@
                                   "type": "string",
                                   "const": "EXECUTION"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 4,
+                              "maxItems": 4
                             },
                             "coldDefinition": {
                               "type": "string",
@@ -51650,7 +51737,7 @@
               "type": "object",
               "properties": {
                 "report": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/agentic-profile-report.v2.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-report.v2.json"
                 }
               },
               "required": [
@@ -52374,7 +52461,10 @@
                                   "type": "string",
                                   "const": "EXECUTION"
                                 }
-                              ]
+                              ],
+                              "items": false,
+                              "minItems": 4,
+                              "maxItems": 4
                             },
                             "coldDefinition": {
                               "type": "string",
@@ -53727,7 +53817,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/evidence-export-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-export-request.v1.json"
                 }
               },
               "required": [
@@ -55410,7 +55500,10 @@
                           "type": "string",
                           "const": "DECISION_SEMANTICS"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 4,
+                      "maxItems": 4
                     },
                     "bindings": {
                       "type": "object",
@@ -56253,7 +56346,7 @@
               "type": "object",
               "properties": {
                 "request": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/evidence-export-request.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-export-request.v1.json"
                 }
               },
               "required": [
@@ -57936,7 +58029,10 @@
                           "type": "string",
                           "const": "DECISION_SEMANTICS"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 4,
+                      "maxItems": 4
                     },
                     "bindings": {
                       "type": "object",
@@ -58779,7 +58875,7 @@
               "type": "object",
               "properties": {
                 "evidenceExport": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/evidence-export.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-export.v1.json"
                 }
               },
               "required": [
@@ -59705,7 +59801,10 @@
                               "type": "string",
                               "const": "DECISION_SEMANTICS"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "bindings": {
                           "type": "object",
@@ -60579,7 +60678,7 @@
               "type": "object",
               "properties": {
                 "evidenceExport": {
-                  "$ref": "#/$defs/https://testforge.dev/schemas/evidence-export.v1.json"
+                  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-export.v1.json"
                 }
               },
               "required": [
@@ -61505,7 +61604,10 @@
                               "type": "string",
                               "const": "DECISION_SEMANTICS"
                             }
-                          ]
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
                         },
                         "bindings": {
                           "type": "object",

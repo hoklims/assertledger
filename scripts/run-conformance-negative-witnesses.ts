@@ -73,6 +73,9 @@ async function copyCandidate(target: string): Promise<void> {
     cp(SOURCE_CONFORMANCE, path.join(target, "conformance"), { recursive: true }),
     cp(SOURCE_SCHEMAS, path.join(target, "schemas"), { recursive: true }),
     cp(SOURCE_SRC, path.join(target, "src"), { recursive: true }),
+    cp(path.join(REPOSITORY, "integrations"), path.join(target, "integrations"), {
+      recursive: true,
+    }),
     cp(path.join(REPOSITORY, "package.json"), path.join(target, "package.json")),
   ]);
   await mkdir(path.join(target, "scripts"), { recursive: true });
