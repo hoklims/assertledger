@@ -1,54 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "provenance": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "repository": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "adapter": {
-      "$ref": "#/$defs/__schema4"
-    },
-    "test": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "expectedFailure": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "targets": {
-      "$ref": "#/$defs/__schema8"
-    },
-    "neutral": {
-      "$ref": "#/$defs/__schema10"
-    },
-    "requiredAttempts": {
-      "$ref": "#/$defs/__schema12"
-    },
-    "timeoutMsPerExecution": {
-      "$ref": "#/$defs/__schema13"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "provenance",
-    "repository",
-    "adapter",
-    "test",
-    "expectedFailure",
-    "targets",
-    "neutral",
-    "requiredAttempts",
-    "timeoutMsPerExecution"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger witness import request",
-  "description": "A recorded red/green witness to replay: mutated targets, one designated test and its expected failure line.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1witness-import-request.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/witness-import-request.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "provenance": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "repository": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "adapter": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "test": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "expectedFailure": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "targets": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "neutral": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "requiredAttempts": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "timeoutMsPerExecution": {
+          "$ref": "#/$defs/__schema13"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "provenance",
+        "repository",
+        "adapter",
+        "test",
+        "expectedFailure",
+        "targets",
+        "neutral",
+        "requiredAttempts",
+        "timeoutMsPerExecution"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger witness import request",
+      "description": "A recorded red/green witness to replay: mutated targets, one designated test and its expected failure line."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"

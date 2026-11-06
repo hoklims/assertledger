@@ -1,42 +1,45 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "sourceManifest": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "referenceWorldId": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema11"
-    },
-    "protocol": {
-      "$ref": "#/$defs/__schema12"
-    },
-    "fingerprint": {
-      "$ref": "#/$defs/__schema13"
-    },
-    "runs": {
-      "$ref": "#/$defs/__schema15"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "sourceManifest",
-    "referenceWorldId",
-    "policy",
-    "protocol",
-    "fingerprint",
-    "runs"
-  ],
-  "additionalProperties": false,
-  "title": "TestForge Agentic Benchmark request",
-  "description": "A replay-valid source manifest and raw cold/warm benchmark observations.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-benchmark-request.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-benchmark-request.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "sourceManifest": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "referenceWorldId": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "protocol": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "runs": {
+          "$ref": "#/$defs/__schema15"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "sourceManifest",
+        "referenceWorldId",
+        "policy",
+        "protocol",
+        "fingerprint",
+        "runs"
+      ],
+      "additionalProperties": false,
+      "title": "TestForge Agentic Benchmark request",
+      "description": "A replay-valid source manifest and raw cold/warm benchmark observations."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"
@@ -719,7 +722,10 @@
               "type": "string",
               "const": "EXECUTION"
             }
-          ]
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
         },
         "coldDefinition": {
           "type": "string",

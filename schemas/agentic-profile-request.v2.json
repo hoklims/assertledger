@@ -1,22 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "benchmarkArtifact": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "policy": {
-      "$ref": "#/$defs/__schema19"
-    }
-  },
-  "required": ["schemaVersion", "benchmarkArtifact", "policy"],
-  "additionalProperties": false,
-  "title": "TestForge Agentic Test Profile v2 request",
-  "description": "A replay-valid benchmark artifact and an exact warm-cost profile policy.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1agentic-profile-request.v2.json",
   "$defs": {
+    "https://testforge.dev/schemas/agentic-profile-request.v2.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "benchmarkArtifact": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "policy": {
+          "$ref": "#/$defs/__schema19"
+        }
+      },
+      "required": ["schemaVersion", "benchmarkArtifact", "policy"],
+      "additionalProperties": false,
+      "title": "TestForge Agentic Test Profile v2 request",
+      "description": "A replay-valid benchmark artifact and an exact warm-cost profile policy."
+    },
     "__schema0": {
       "type": "string",
       "const": "2.0.0"
@@ -619,7 +622,10 @@
                   "type": "string",
                   "const": "EXECUTION"
                 }
-              ]
+              ],
+              "items": false,
+              "minItems": 4,
+              "maxItems": 4
             },
             "coldDefinition": {
               "type": "string",

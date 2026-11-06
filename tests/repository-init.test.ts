@@ -137,7 +137,11 @@ describe("repository init v1", () => {
       repositoryInitLockJsonSchema(),
       repositoryInitResultJsonSchema(),
     ]) {
-      assert.equal(schema.additionalProperties, false);
+      const id = String(schema.$id);
+      assert.equal(schema.$ref, `#/$defs/${id.replaceAll("~", "~0").replaceAll("/", "~1")}`);
+      const root = (schema.$defs as Record<string, Record<string, unknown>>)[id];
+      assert.ok(root);
+      assert.equal(root.additionalProperties, false);
     }
     const root = await fixture(nodePackage, {
       "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
@@ -1176,11 +1180,12 @@ describe("repository init v1", () => {
   it("packs the built package and initializes a clean consumer through the installed entrypoint", {
     timeout: 120_000,
   }, async () => {
-    // The invoking pnpm supplies its actual CLI path on every supported platform.
-    // Node 24 no longer bundles Corepack alongside the Node executable.
     const packageManagerCli = process.env.npm_execpath;
     assert(packageManagerCli, "Run this package test through pnpm test or pnpm exec.");
     assert.equal((await stat(packageManagerCli)).isFile(), true);
+    const javascriptCli = /\.(?:c|m)?js$/iu.test(packageManagerCli);
+    const packageManagerExecutable = javascriptCli ? process.execPath : packageManagerCli;
+    const packageManagerArguments = javascriptCli ? [packageManagerCli] : [];
     const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-init-package-smoke-"));
     temporaryDirectories.push(root);
     const consumer = path.join(root, "consumer");
@@ -1199,14 +1204,16 @@ describe("repository init v1", () => {
       path.join(repository, "test", "base.test.js"),
       "import test from 'node:test';\ntest('base', () => {});\n",
     );
-    await execFileAsync(process.execPath, [packageManagerCli, "pack", "--pack-destination", root], {
-      cwd: path.resolve("."),
-    });
+    await execFileAsync(
+      packageManagerExecutable,
+      [...packageManagerArguments, "pack", "--pack-destination", root],
+      { cwd: path.resolve(".") },
+    );
     const tarballName = (await readdir(root)).find((name) => name.endsWith(".tgz"));
     assert(tarballName);
     await execFileAsync(
-      process.execPath,
-      [packageManagerCli, "add", "--ignore-scripts", path.join(root, tarballName)],
+      packageManagerExecutable,
+      [...packageManagerArguments, "add", "--ignore-scripts", path.join(root, tarballName)],
       { cwd: consumer },
     );
     const cli = path.join(consumer, "node_modules", "assertledger", "dist", "cli.js");

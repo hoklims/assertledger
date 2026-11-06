@@ -1,50 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "$ref": "#/$defs/__schema0"
-    },
-    "provider": {
-      "$ref": "#/$defs/__schema1"
-    },
-    "scope": {
-      "$ref": "#/$defs/__schema2"
-    },
-    "formats": {
-      "$ref": "#/$defs/__schema3"
-    },
-    "capabilities": {
-      "$ref": "#/$defs/__schema5"
-    },
-    "adapters": {
-      "$ref": "#/$defs/__schema7"
-    },
-    "cost": {
-      "$ref": "#/$defs/__schema9"
-    },
-    "limits": {
-      "$ref": "#/$defs/__schema11"
-    },
-    "manifestDigest": {
-      "$ref": "#/$defs/__schema13"
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "provider",
-    "scope",
-    "formats",
-    "capabilities",
-    "adapters",
-    "cost",
-    "limits",
-    "manifestDigest"
-  ],
-  "additionalProperties": false,
-  "title": "AssertLedger evidence provider manifest",
-  "description": "Announced provider identity, capabilities, formats, cost model, and limits. An announced capability never proves that a control ran.",
+  "$ref": "#/$defs/https:~1~1testforge.dev~1schemas~1evidence-provider-manifest.v1.json",
   "$defs": {
+    "https://testforge.dev/schemas/evidence-provider-manifest.v1.json": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "provider": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "scope": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "formats": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "adapters": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "cost": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "limits": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "manifestDigest": {
+          "$ref": "#/$defs/__schema13"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "provider",
+        "scope",
+        "formats",
+        "capabilities",
+        "adapters",
+        "cost",
+        "limits",
+        "manifestDigest"
+      ],
+      "additionalProperties": false,
+      "title": "AssertLedger evidence provider manifest",
+      "description": "Announced provider identity, capabilities, formats, cost model, and limits. An announced capability never proves that a control ran."
+    },
     "__schema0": {
       "type": "string",
       "const": "1.0.0"
