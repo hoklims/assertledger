@@ -1,0 +1,214 @@
+{
+  "target": "x86_64-pc-windows-msvc",
+  "revision": "fedea045d705ca27fad0011c2fc97095e0f088b9",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "node": "v24.22.2",
+  "platform": "win32",
+  "arch": "x64",
+  "machine": "x86_64",
+  "release": "10.0.20348",
+  "osVersion": "Windows Server 2022 Datacenter",
+  "cpus": 4,
+  "model": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "totalMemory": 17174360064,
+  "executableIdentities": {
+    "rust": {
+      "executable": "e1-probe.exe",
+      "argv": ["core", "noop"],
+      "sha256": "582319b1a0197dc175c7df34831eed45932b4f5e07a545ff82be6848e7cf09bc",
+      "size": 138240
+    },
+    "node": {
+      "executable": "node.exe",
+      "argv": ["--eval", "", "core", "noop"],
+      "sha256": "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9",
+      "size": 93922624
+    }
+  },
+  "sources": {
+    "driver": "44b5c26e5b176ecb54ef117d463ea7f6350e6820b4f2c25413a10ba460782c0f",
+    "probe": "7961dd9c4eacbd04e929986feede8168c2bc80207b9b3a39fd879d26c3c0fdbb"
+  },
+  "timeoutMs": 2000,
+  "budgetMs": 120000,
+  "warmupPerTarget": 20,
+  "samplesPerTarget": 600,
+  "orders": [
+    ["rust", "node"],
+    ["node", "rust"],
+    ["node", "rust"],
+    ["rust", "node"],
+    ["node", "rust"],
+    ["rust", "node"]
+  ],
+  "start": {
+    "at": "2026-11-06T15:55:14.467Z",
+    "loadavg": [0, 0, 0],
+    "freeMemory": 14458413056,
+    "cpuTimes": {
+      "user": 82842,
+      "nice": 0,
+      "sys": 57623,
+      "idle": 4595420,
+      "irq": 1124
+    }
+  },
+  "telemetry": [
+    {
+      "at": "2026-11-06T15:55:15.559Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14474403840,
+      "cpuTimes": {
+        "user": 83467,
+        "nice": 0,
+        "sys": 58327,
+        "idle": 4598467,
+        "irq": 1139
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:20.692Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14508060672,
+      "cpuTimes": {
+        "user": 86952,
+        "nice": 0,
+        "sys": 60795,
+        "idle": 4613014,
+        "irq": 1139
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:20.692Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14508060672,
+      "cpuTimes": {
+        "user": 86952,
+        "nice": 0,
+        "sys": 60795,
+        "idle": 4613014,
+        "irq": 1139
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:25.825Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14531219456,
+      "cpuTimes": {
+        "user": 90217,
+        "nice": 0,
+        "sys": 63249,
+        "idle": 4627921,
+        "irq": 1155
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:25.825Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14531219456,
+      "cpuTimes": {
+        "user": 90217,
+        "nice": 0,
+        "sys": 63249,
+        "idle": 4627921,
+        "irq": 1155
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:30.936Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14619623424,
+      "cpuTimes": {
+        "user": 93514,
+        "nice": 0,
+        "sys": 65998,
+        "idle": 4642248,
+        "irq": 1186
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:30.936Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14619623424,
+      "cpuTimes": {
+        "user": 93514,
+        "nice": 0,
+        "sys": 65998,
+        "idle": 4642248,
+        "irq": 1186
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:36.185Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14619803648,
+      "cpuTimes": {
+        "user": 98702,
+        "nice": 0,
+        "sys": 68951,
+        "idle": 4655107,
+        "irq": 1202
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:36.185Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14619799552,
+      "cpuTimes": {
+        "user": 98702,
+        "nice": 0,
+        "sys": 68951,
+        "idle": 4655107,
+        "irq": 1202
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:41.313Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14621609984,
+      "cpuTimes": {
+        "user": 102639,
+        "nice": 0,
+        "sys": 71498,
+        "idle": 4669186,
+        "irq": 1217
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:41.313Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14621609984,
+      "cpuTimes": {
+        "user": 102639,
+        "nice": 0,
+        "sys": 71498,
+        "idle": 4669186,
+        "irq": 1217
+      }
+    },
+    {
+      "at": "2026-11-06T15:55:46.400Z",
+      "loadavg": [0, 0, 0],
+      "freeMemory": 14620512256,
+      "cpuTimes": {
+        "user": 105810,
+        "nice": 0,
+        "sys": 74077,
+        "idle": 4683749,
+        "irq": 1248
+      }
+    }
+  ],
+  "end": {
+    "at": "2026-11-06T15:55:46.400Z",
+    "loadavg": [0, 0, 0],
+    "freeMemory": 14620512256,
+    "cpuTimes": {
+      "user": 105810,
+      "nice": 0,
+      "sys": 74077,
+      "idle": 4683749,
+      "irq": 1248
+    }
+  }
+}

@@ -118,20 +118,50 @@ pnpm exec tsx scripts/benchmark-launch-cost.ts summarize benchmarks/launch-cost/
 | D7 target | Observation status |
 | --- | --- |
 | `aarch64-apple-darwin` | Retained macOS 27.2 / Node 26.13.0 series above |
-| `x86_64-unknown-linux-gnu` | Pending native CI observation |
-| `aarch64-unknown-linux-gnu` | Pending native CI observation |
-| `x86_64-pc-windows-msvc` | Pending native CI observation |
+| `x86_64-unknown-linux-gnu` | [Native Ubuntu 22.04 runner / Node 24.22.2](../benchmarks/launch-cost/2026-11-06-linux-x64) |
+| `aarch64-unknown-linux-gnu` | [Native Ubuntu 22.04 ARM64 runner / Node 24.22.2](../benchmarks/launch-cost/2026-11-06-linux-arm64) |
+| `x86_64-pc-windows-msvc` | [Native Windows Server 2022 runner / Node 24.22.2](../benchmarks/launch-cost/2026-11-06-windows-x64) |
+
+The three new series completed in
+[run 42247340038, attempt 1](https://github.com/hoklims/assertledger/actions/runs/42247340038),
+source head `66b4c6232befa89efda900e8dd49f4ec28a9d7a9`, merge revision
+`fedea045d705ca27fad0011c2fc97095e0f088b9`. Native-host checks, argument controls and refusal
+tests passed on each runner before measurement. Their 4,968 records contain no removed or replaced
+failure. Raw ordering, counts and statistics were independently replayed with Python's standard
+library; the TypeScript summary also replays them. Samples remain byte-identical to the downloaded
+artifacts. Metadata and summaries are reformatted JSON with unchanged values.
+The [provenance index](../benchmarks/launch-cost/2026-11-06-ci.json) retains job links, original
+artifact digests, downloaded metadata/summary hashes and raw sample hashes. These integrity
+identifiers do not authenticate the producer or promise byte-identical rebuilding.
+
+| Native CI observation (600 samples per target, ms) | Rust median | Rust P95 | Unix true median | Empty Node median |
+| --- | ---: | ---: | ---: | ---: |
+| Linux x64 GNU | 4.586 | 4.943 | 4.310 | 24.462 |
+| Linux ARM64 GNU | 5.264 | 5.515 | 5.138 | 23.799 |
+| Windows x64 MSVC | 5.991 | 6.601 | — | 44.532 |
+
+The Linux hosts ran kernel `6.8.0-1070-azure`, each with four logical CPUs and approximately
+16 GiB RAM. Reported CPU models were AMD EPYC 9V74 for x64 and `unknown` for ARM64; no ARM CPU
+model is inferred. Windows reported Server 2022 Datacenter, kernel `10.0.20348`, four logical
+CPUs, approximately 16 GiB RAM and Intel Xeon Platinum 8573C. All used Rust 1.99.1 with native
+GNU/MSVC host triplets and the documented optimization flags. Series times (UTC) were
+15:54:39.080–15:54:59.677 for Linux x64, 15:54:49.002–15:55:10.202 for Linux ARM64, and
+15:55:14.467–15:55:46.400 for Windows. Full distributions, executable hashes/sizes and block CPU
+counters are retained beside each series. Different hardware, runtimes, VM policies and load make
+these observations unsuitable for ranking OSes or inferring an AssertLedger speedup.
 
 The [experiment workflow](../.github/workflows/launch-cost.yml) uses standard `ubuntu-22.04`,
 `ubuntu-22.04-arm` and `windows-2022` runners with Node 24. This repository is public. The
 [GitHub runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 consulted 2026-11-06, lists these native architectures and free standard-runner usage for public
-repositories. The catalogue is an offer, not evidence of repository scheduling permission or
-successful execution. No paid runner, secret, remote setting or account permission is enabled.
+repositories. The completed run above establishes scheduling and execution for this experiment;
+the catalogue alone would not establish either. No paid runner, secret, remote setting or account
+permission was enabled.
 Each PR-triggered series runs once per affected revision and uploads evidence for 14 days;
 accepted observations must be retained in Git before artifact expiry. Data/documentation-only
 updates do not schedule another measurement series. Normal product CI is unchanged.
 
-The matrix is incomplete until actual runs and their raw data are retained. macOS 14, Node 22,
-Windows 11 desktop and WSL links are not exercised by the retained macOS series or the proposed
-CI matrix. D7's separate E2/E4 qualifications and OS floor checks remain separate from E1.
+All four target triplets now have retained E1 observations, within the recorded environments.
+macOS 14, Node 22, Windows 11 desktop and WSL links are not exercised by these measurement series.
+D7's separate E2/E4 qualifications and OS floor checks remain separate from E1. No new local
+measurement series was used to complete the matrix.
