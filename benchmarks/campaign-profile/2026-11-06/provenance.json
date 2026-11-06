@@ -1,0 +1,47 @@
+{
+  "sourceRevision": "66bd40468fe6cff671b686d7a5529bda457a4832",
+  "issue": "https://github.com/hoklims/assertledger/issues/114",
+  "capturedAt": "2026-11-06T14:58:48.854Z",
+  "privateEvidenceArchive": {
+    "bytes": 110794,
+    "sha256": "f03ae55ad1f9a7f499b6ec4a202bdf48b0c592d33485f93a5608479baa08e988",
+    "verifiedEntries": 67,
+    "published": false
+  },
+  "originalRequestSha256": "c0ae378380168a710e430d797868dbe82df545be19a15f4bdbb09fb14514f88e",
+  "originalScripts": {
+    "prepare.py": "d02fa2718f818a288c4532898de45b1c9ec82bc0a53ba3c6a9a555021deac3bd",
+    "run.mjs": "231227c2355dfa8cec86602b1d2a9131e587eeec36bbff56c6c99fcce7aa138f",
+    "instrument.mjs": "1eaaef4fecc67b92ef8f3391bb870958b566e0ba3401af2e1359ef04e618fad0",
+    "recorder.mjs": "ebc2b01bb1e7915c175a23c62266597bcb68f6a83f10d15f1bbc3a45e7bee065",
+    "analyze.py": "34b00d38f8ec87d5445b3b301f4e4bc54eb4a75be3fddf9226e357bcbc682161"
+  },
+  "publicationChanges": [
+    "Machine paths replaced with placeholders in the request, environment, manifests and process span metadata; timing fields unchanged.",
+    "Captured logs, private report and full producer/dependency trees are not published.",
+    "Reproducer takes explicit source/task/Node paths; runner resolves dependencies through the base producer and refuses existing runs; analyzer takes an input directory and prints JSON without overwriting captured data.",
+    "JavaScript formatting only in instrument.mjs and recorder.mjs; no instrumentation boundary or measurement formula changed."
+  ],
+  "captureValidation": {
+    "campaigns": 8,
+    "observationsPerCampaign": 18,
+    "outcomesPerCampaign": {
+      "PASS": 16,
+      "ASSERTION_FAILURE": 2
+    },
+    "profileProcessSpansPerCampaign": 22,
+    "nativeSnapshotsPerCampaign": 1,
+    "nativeWorkspaceCopiesPerCampaign": 18,
+    "allCapturedReplaysValid": true
+  },
+  "historicalRepositoryCheck": {
+    "command": "pnpm check",
+    "exitCode": 1,
+    "tests": 1233,
+    "passed": 1154,
+    "failed": 78,
+    "skipped": 1,
+    "cancelled": 0,
+    "testDurationMs": 172226.807166
+  }
+}

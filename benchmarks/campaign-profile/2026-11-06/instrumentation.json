@@ -1,0 +1,33 @@
+[
+  {
+    "file": "engine/index.js",
+    "functions": [
+      "verifyCampaign",
+      "verifyCampaignWithTrace",
+      "verifyPreparedCampaign",
+      "resolveRepositoryRoot",
+      "walkFiles",
+      "probeNodeTestExecutable",
+      "runNodeExecutableProbe",
+      "sha256File",
+      "copyRepository",
+      "analyzeRepository",
+      "repositoryInventoryDigest",
+      "executeObservation",
+      "executeTrustedLocalAdapter",
+      "runProcess",
+      "runBoundedProcess",
+      "applyFiles",
+      "readNodeTestReport",
+      "removeTemporaryDirectory"
+    ]
+  },
+  {
+    "file": "engine/adapters/node-test-runtime.js",
+    "functions": ["runNodeTestRuntimePreflight"]
+  },
+  {
+    "file": "core/index.js",
+    "functions": ["decideEvidence"]
+  }
+]
