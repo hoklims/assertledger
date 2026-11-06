@@ -100,8 +100,10 @@ The original `samples.jsonl` bytes are retained, SHA-256
 records the original metadata SHA. Executable identities also replace personal paths. Hostnames,
 account paths, approval messages and the private report/archive are not included.
 The `sources/*.txt` snapshots preserve the measured driver, boundary control and independent
-Python summary source bytes, without reformatting. Their hashes are in the retained metadata;
-the current `probe.rs` is the measured source (SHA-256
+Python summary source bytes, without reformatting. Driver and boundary hashes are in the retained
+metadata. The Python source SHA-256 is
+`837205aad5d5165888ab1848a3e0e03b561c9484cdfcabf8d3302735704e9f29`.
+The current `probe.rs` is the measured source (SHA-256
 `7961dd9c4eacbd04e929986feede8168c2bc80207b9b3a39fd879d26c3c0fdbb`). The active TypeScript driver
 adds native-host checks, Windows handling and strict replay; its CI source identity is recorded
 separately. The original summary includes paired Rust-minus-true differences and block telemetry.
