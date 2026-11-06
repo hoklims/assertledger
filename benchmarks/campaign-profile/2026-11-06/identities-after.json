@@ -1,0 +1,20 @@
+{
+  "base": {
+    "sha256": "d893ffba0a239f17676770642638a4390895426c15248d7dcf8ea3ff5e038d5c",
+    "files": 180
+  },
+  "profile": {
+    "sha256": "05323ecaa7020953f3ec9d0986f33ab52034a272e833b03954cce8c3bfb5b9e7",
+    "files": 182
+  },
+  "dependencies": {
+    "sha256": "7eac2b45b983ffa7eceface3b9dadd554d72b4ca6379f6a6cd27a43ba8019334",
+    "files": 2013
+  },
+  "repository": {
+    "sha256": "2848faffca6717e2c9f636c138ce49a3cc98701a81f852eaaa6bb5224bd09a24",
+    "files": 3
+  },
+  "request": "c0ae378380168a710e430d797868dbe82df545be19a15f4bdbb09fb14514f88e",
+  "node": "6f32069480ec14d52b6d7b1f3c7124cfbbc46203abf5ddf5c65b127435f3f329"
+}

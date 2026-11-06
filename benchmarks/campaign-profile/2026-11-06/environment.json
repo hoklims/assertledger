@@ -1,0 +1,41 @@
+{
+  "date": "2026-11-06T14:58:48.853Z",
+  "node": "v24.22.1",
+  "executable": "<NODE_EXECUTABLE>",
+  "platform": "darwin",
+  "arch": "arm64",
+  "release": "27.2.0",
+  "version": "Darwin Kernel Version 27.2.0: Wed Oct 14 23:44:56 PDT 2026; root:xnu-13432.41.4~25/RELEASE_ARM64_T6041",
+  "cpus": [
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max",
+    "Apple M4 Max"
+  ],
+  "memory": 68719476736,
+  "environment": {
+    "PATH": "<CAPTURED_PATH_REDACTED>"
+  },
+  "order": [
+    "base-warm",
+    "profile-warm",
+    "base-1",
+    "profile-1",
+    "profile-2",
+    "base-2",
+    "base-3",
+    "profile-3"
+  ]
+}

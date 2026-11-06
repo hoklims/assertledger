@@ -1,0 +1,190 @@
+[
+  {
+    "label": "profile-warm",
+    "wallMs": 2591.2165830000004,
+    "partitionMs": {
+      "outsidePrepared": 198.72870800000055,
+      "identity": 164.037,
+      "preflight": 221.641167,
+      "observations": 1988.3681669999996,
+      "decision": 4.511833999999908,
+      "preparedOther": 13.929707000000235
+    },
+    "observationPartitionMs": {
+      "process": 1904.3178740000005,
+      "copy": 43.99803900000052,
+      "overlay": 7.873706000000766,
+      "reportRead": 4.526624999999967,
+      "cleanup": 21.35174900000061,
+      "other": 6.3001739999972415
+    },
+    "allProcessMs": 2201.5481240000004,
+    "nodeExecutableHashMs": 83.47112500000003,
+    "nativeMs": {
+      "host-snapshot": 3.6198329999999714,
+      "host-workspace-copy": 44.5928319999997
+    },
+    "counts": {
+      "analyzeRepository": 1,
+      "applyFiles": 30,
+      "copyRepository": 19,
+      "decideEvidence": 1,
+      "executeObservation": 18,
+      "executeTrustedLocalAdapter": 18,
+      "probeNodeTestExecutable": 1,
+      "readNodeTestReport": 18,
+      "removeTemporaryDirectory": 19,
+      "resolveRepositoryRoot": 2,
+      "runBoundedProcess": 22,
+      "runNodeExecutableProbe": 2,
+      "runNodeTestRuntimePreflight": 1,
+      "runProcess": 22,
+      "sha256File": 1,
+      "verifyCampaign": 1,
+      "verifyCampaignWithTrace": 1,
+      "verifyPreparedCampaign": 1,
+      "walkFiles": 3
+    }
+  },
+  {
+    "label": "profile-1",
+    "wallMs": 2581.8068329999987,
+    "partitionMs": {
+      "outsidePrepared": 194.93299899999874,
+      "identity": 171.42245799999998,
+      "preflight": 216.66612500000002,
+      "observations": 1978.0356679999995,
+      "decision": 4.572750000000269,
+      "preparedOther": 16.176832999999988
+    },
+    "observationPartitionMs": {
+      "process": 1892.7980839999996,
+      "copy": 44.99633399999914,
+      "overlay": 7.654793000001064,
+      "reportRead": 4.69595500000014,
+      "cleanup": 21.426832999999988,
+      "other": 6.463668999999754
+    },
+    "allProcessMs": 2191.7117509999994,
+    "nodeExecutableHashMs": 84.14620800000003,
+    "nativeMs": {
+      "host-snapshot": 3.488707999999974,
+      "host-workspace-copy": 45.60358499999984
+    },
+    "counts": {
+      "analyzeRepository": 1,
+      "applyFiles": 30,
+      "copyRepository": 19,
+      "decideEvidence": 1,
+      "executeObservation": 18,
+      "executeTrustedLocalAdapter": 18,
+      "probeNodeTestExecutable": 1,
+      "readNodeTestReport": 18,
+      "removeTemporaryDirectory": 19,
+      "resolveRepositoryRoot": 2,
+      "runBoundedProcess": 22,
+      "runNodeExecutableProbe": 2,
+      "runNodeTestRuntimePreflight": 1,
+      "runProcess": 22,
+      "sha256File": 1,
+      "verifyCampaign": 1,
+      "verifyCampaignWithTrace": 1,
+      "verifyPreparedCampaign": 1,
+      "walkFiles": 3
+    }
+  },
+  {
+    "label": "profile-2",
+    "wallMs": 2558.306124999999,
+    "partitionMs": {
+      "outsidePrepared": 197.1663329999992,
+      "identity": 160.76562500000003,
+      "preflight": 217.633083,
+      "observations": 1964.50479,
+      "decision": 4.793999999999869,
+      "preparedOther": 13.442293999999947
+    },
+    "observationPartitionMs": {
+      "process": 1881.9236250000006,
+      "copy": 43.51625100000024,
+      "overlay": 6.607875000001059,
+      "reportRead": 4.593584000000078,
+      "cleanup": 21.503251000000205,
+      "other": 6.360203999997793
+    },
+    "allProcessMs": 2174.1110410000006,
+    "nodeExecutableHashMs": 81.56387500000002,
+    "nativeMs": {
+      "host-snapshot": 3.4569999999999936,
+      "host-workspace-copy": 44.132752000000096
+    },
+    "counts": {
+      "analyzeRepository": 1,
+      "applyFiles": 30,
+      "copyRepository": 19,
+      "decideEvidence": 1,
+      "executeObservation": 18,
+      "executeTrustedLocalAdapter": 18,
+      "probeNodeTestExecutable": 1,
+      "readNodeTestReport": 18,
+      "removeTemporaryDirectory": 19,
+      "resolveRepositoryRoot": 2,
+      "runBoundedProcess": 22,
+      "runNodeExecutableProbe": 2,
+      "runNodeTestRuntimePreflight": 1,
+      "runProcess": 22,
+      "sha256File": 1,
+      "verifyCampaign": 1,
+      "verifyCampaignWithTrace": 1,
+      "verifyPreparedCampaign": 1,
+      "walkFiles": 3
+    }
+  },
+  {
+    "label": "profile-3",
+    "wallMs": 2579.6515419999996,
+    "partitionMs": {
+      "outsidePrepared": 204.60958299999993,
+      "identity": 164.045666,
+      "preflight": 218.383333,
+      "observations": 1973.708708999999,
+      "decision": 4.892166999999972,
+      "preparedOther": 14.012084000000414
+    },
+    "observationPartitionMs": {
+      "process": 1889.4445389999996,
+      "copy": 44.18479299999956,
+      "overlay": 7.132042000000638,
+      "reportRead": 4.714583000000971,
+      "cleanup": 21.88583399999993,
+      "other": 6.346917999998368
+    },
+    "allProcessMs": 2183.8377469999996,
+    "nodeExecutableHashMs": 83.06520800000001,
+    "nativeMs": {
+      "host-snapshot": 3.6189170000000104,
+      "host-workspace-copy": 44.82449699999995
+    },
+    "counts": {
+      "analyzeRepository": 1,
+      "applyFiles": 30,
+      "copyRepository": 19,
+      "decideEvidence": 1,
+      "executeObservation": 18,
+      "executeTrustedLocalAdapter": 18,
+      "probeNodeTestExecutable": 1,
+      "readNodeTestReport": 18,
+      "removeTemporaryDirectory": 19,
+      "resolveRepositoryRoot": 2,
+      "runBoundedProcess": 22,
+      "runNodeExecutableProbe": 2,
+      "runNodeTestRuntimePreflight": 1,
+      "runProcess": 22,
+      "sha256File": 1,
+      "verifyCampaign": 1,
+      "verifyCampaignWithTrace": 1,
+      "verifyPreparedCampaign": 1,
+      "walkFiles": 3
+    }
+  }
+]
