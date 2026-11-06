@@ -65,7 +65,7 @@ start timestamps have millisecond precision and are not merged with high-resolut
 Wrappers retain function bodies, return values and thrown errors, and close spans in `finally`.
 Instrumentation refuses absent or ambiguous function boundaries; `node --check` validates each
 modified module. It is tied to the recorded compiler output, not a general JavaScript parser.
-The exact function inventory is in [the data](2026-11-06/profile/dist/instrumentation.json).
+The exact function inventory is in [the data](2026-11-06/instrumentation.json).
 
 At the source SHA, the principal boundaries are `src/engine/index.ts`:
 `runBoundedProcess` (502), `probeNodeTestExecutable` (5031), `executeObservation` (6020),
