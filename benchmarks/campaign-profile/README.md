@@ -178,8 +178,9 @@ and free memory is not a memory-pressure measurement. Caches were warm; three re
 provide neither a broad workload model nor a confidence interval.
 
 The historical `pnpm check` failed: 1,154 pass / 78 fail / one skip out of 1,233 tests.
-It used a rebuilt Bun 1.4.4 with a revision different from the admitted pin, a temporary directory
-inside the source tree and a pnpm shim. Not every failure was individually diagnosed. These
+It encountered a rebuilt Bun 1.4.4 with a revision different from the admitted pin, a temporary
+directory inside the source tree and a package test unable to resolve pnpm from `npm_execpath`.
+Not every failure was individually diagnosed. These
 failures are not campaign results or release qualification; this delivery does not weaken any pin
 or test. Current delivery checks belong to the pull request, not to these historical measurements.
 
