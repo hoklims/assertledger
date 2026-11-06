@@ -144,6 +144,10 @@ reach a CLI or MCP user only through the command that parses the document.
 
 56 published schemas: 1 equivalent, 55 partial.
 
+The [211-case JSON Schema/Zod corpus](schema-zod-non-equivalence.md) records concrete refinement,
+post-parse and replay witnesses for 16 of these schema types; it tests the measured divergences,
+not an assumption of equal acceptance.
+
 Versioned parsers dispatch on `schemaVersion` to the parsers above:
 
 | Export | Published schemas | Status |
