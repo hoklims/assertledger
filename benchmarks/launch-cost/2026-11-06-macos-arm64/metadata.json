@@ -1,0 +1,263 @@
+{
+  "start": {
+    "at": "2026-11-06T14:52:24.935Z",
+    "loadavg": [5.34814453125, 4.8798828125, 4.7939453125],
+    "freeMemory": 921468928,
+    "cpuTimes": {
+      "user": 389159970,
+      "nice": 0,
+      "sys": 149558730,
+      "idle": 4866331130,
+      "irq": 0
+    }
+  },
+  "driverPid": 35388,
+  "executable": "<node>",
+  "node": {
+    "node": "26.13.0",
+    "acorn": "8.19.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.3",
+    "libffi": "3.8.0",
+    "lief": "1.0.0",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "147",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "3.5.9",
+    "simdjson": "5.0.3",
+    "simdutf": "7.7.0",
+    "sqlite": "3.54.0",
+    "tz": "2026e",
+    "undici": "8.12.2",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "14.6.202.34-node.40",
+    "zlib": "1.3.2.1-motley-456ae73",
+    "zstd": "1.5.7"
+  },
+  "platform": "darwin",
+  "arch": "arm64",
+  "release": "27.2.0",
+  "cpus": 16,
+  "model": "Apple M4 Max",
+  "totalMemory": 68719476736,
+  "definitions": {
+    "rust": ["<lab>/probe", ["core", "noop"]],
+    "true": ["/usr/bin/true", ["core", "noop"]],
+    "node": ["<node>", ["--eval", "", "core", "noop"]]
+  },
+  "timeoutMs": 2000,
+  "warmupPerTarget": 20,
+  "samplesPerTarget": 600,
+  "orders": [
+    ["rust", "true", "node"],
+    ["true", "node", "rust"],
+    ["node", "rust", "true"],
+    ["rust", "node", "true"],
+    ["node", "true", "rust"],
+    ["true", "rust", "node"]
+  ],
+  "telemetry": [
+    {
+      "block": 0,
+      "edge": "start",
+      "at": "2026-11-06T14:52:25.799Z",
+      "loadavg": [5.72021484375, 4.96484375, 4.82421875],
+      "freeMemory": 878395392,
+      "cpuTimes": {
+        "user": 389164750,
+        "nice": 0,
+        "sys": 149561270,
+        "idle": 4866337540,
+        "irq": 0
+      }
+    },
+    {
+      "block": 0,
+      "edge": "end",
+      "at": "2026-11-06T14:52:30.055Z",
+      "loadavg": [5.72021484375, 4.96484375, 4.82421875],
+      "freeMemory": 783384576,
+      "cpuTimes": {
+        "user": 389190280,
+        "nice": 0,
+        "sys": 149572450,
+        "idle": 4866368370,
+        "irq": 0
+      }
+    },
+    {
+      "block": 1,
+      "edge": "start",
+      "at": "2026-11-06T14:52:30.055Z",
+      "loadavg": [5.72021484375, 4.96484375, 4.82421875],
+      "freeMemory": 783499264,
+      "cpuTimes": {
+        "user": 389190280,
+        "nice": 0,
+        "sys": 149572450,
+        "idle": 4866368370,
+        "irq": 0
+      }
+    },
+    {
+      "block": 1,
+      "edge": "end",
+      "at": "2026-11-06T14:52:34.044Z",
+      "loadavg": [5.982421875, 5.03173828125, 4.8486328125],
+      "freeMemory": 922681344,
+      "cpuTimes": {
+        "user": 389210490,
+        "nice": 0,
+        "sys": 149578120,
+        "idle": 4866406010,
+        "irq": 0
+      }
+    },
+    {
+      "block": 2,
+      "edge": "start",
+      "at": "2026-11-06T14:52:34.044Z",
+      "loadavg": [5.982421875, 5.03173828125, 4.8486328125],
+      "freeMemory": 922714112,
+      "cpuTimes": {
+        "user": 389210490,
+        "nice": 0,
+        "sys": 149578120,
+        "idle": 4866406010,
+        "irq": 0
+      }
+    },
+    {
+      "block": 2,
+      "edge": "end",
+      "at": "2026-11-06T14:52:38.009Z",
+      "loadavg": [5.9033203125, 5.03076171875, 4.84912109375],
+      "freeMemory": 942227456,
+      "cpuTimes": {
+        "user": 389229570,
+        "nice": 0,
+        "sys": 149584560,
+        "idle": 4866443560,
+        "irq": 0
+      }
+    },
+    {
+      "block": 3,
+      "edge": "start",
+      "at": "2026-11-06T14:52:38.009Z",
+      "loadavg": [5.9033203125, 5.03076171875, 4.84912109375],
+      "freeMemory": 942276608,
+      "cpuTimes": {
+        "user": 389229570,
+        "nice": 0,
+        "sys": 149584560,
+        "idle": 4866443560,
+        "irq": 0
+      }
+    },
+    {
+      "block": 3,
+      "edge": "end",
+      "at": "2026-11-06T14:52:41.956Z",
+      "loadavg": [5.91064453125, 5.04638671875, 4.85546875],
+      "freeMemory": 1018216448,
+      "cpuTimes": {
+        "user": 389246820,
+        "nice": 0,
+        "sys": 149591250,
+        "idle": 4866482370,
+        "irq": 0
+      }
+    },
+    {
+      "block": 4,
+      "edge": "start",
+      "at": "2026-11-06T14:52:41.956Z",
+      "loadavg": [5.91064453125, 5.04638671875, 4.85546875],
+      "freeMemory": 1018249216,
+      "cpuTimes": {
+        "user": 389246820,
+        "nice": 0,
+        "sys": 149591250,
+        "idle": 4866482380,
+        "irq": 0
+      }
+    },
+    {
+      "block": 4,
+      "edge": "end",
+      "at": "2026-11-06T14:52:45.959Z",
+      "loadavg": [5.99755859375, 5.07861328125, 4.86767578125],
+      "freeMemory": 1786707968,
+      "cpuTimes": {
+        "user": 389262990,
+        "nice": 0,
+        "sys": 149596110,
+        "idle": 4866525040,
+        "irq": 0
+      }
+    },
+    {
+      "block": 5,
+      "edge": "start",
+      "at": "2026-11-06T14:52:45.959Z",
+      "loadavg": [5.99755859375, 5.07861328125, 4.86767578125],
+      "freeMemory": 1786740736,
+      "cpuTimes": {
+        "user": 389262990,
+        "nice": 0,
+        "sys": 149596110,
+        "idle": 4866525040,
+        "irq": 0
+      }
+    },
+    {
+      "block": 5,
+      "edge": "end",
+      "at": "2026-11-06T14:52:49.998Z",
+      "loadavg": [5.99755859375, 5.07861328125, 4.86767578125],
+      "freeMemory": 1764245504,
+      "cpuTimes": {
+        "user": 389282920,
+        "nice": 0,
+        "sys": 149603130,
+        "idle": 4866562290,
+        "irq": 0
+      }
+    }
+  ],
+  "hashes": {
+    "probe.rs": "7961dd9c4eacbd04e929986feede8168c2bc80207b9b3a39fd879d26c3c0fdbb",
+    "probe": "0d8e7a1b721e64fb46be5b203b6f47d86bccce8939c1607bfbbfa779dcb15bc8",
+    "boundary.mjs": "f6eb1b79828be3187832f4e8d333f09089f126aeb0fe29a13a8eba737d219c4f",
+    "measure.mjs": "d95175a2c0e4024e403ab18b87629790af2c88cace4d06ee3ba1944d8a933a0b"
+  },
+  "end": {
+    "at": "2026-11-06T14:52:49.998Z",
+    "loadavg": [5.99755859375, 5.07861328125, 4.86767578125],
+    "freeMemory": 1760083968,
+    "cpuTimes": {
+      "user": 389282920,
+      "nice": 0,
+      "sys": 149603130,
+      "idle": 4866562290,
+      "irq": 0
+    }
+  },
+  "redaction": {
+    "fields": ["executable", "definitions.rust[0]", "definitions.node[0]"],
+    "originalSha256": "df79733675dfa464852c4c123bcfb3d02294f4f2e8bded4f2530f6b0332f5249"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "rust": {
+    "executable": "<lab>/probe",
+    "resolved": "<lab>/probe",
+    "argv": ["core", "noop"],
+    "size": 472248,
+    "sha256": "0d8e7a1b721e64fb46be5b203b6f47d86bccce8939c1607bfbbfa779dcb15bc8"
+  },
+  "true": {
+    "executable": "/usr/bin/true",
+    "resolved": "/usr/bin/true",
+    "argv": ["core", "noop"],
+    "size": 133184,
+    "sha256": "0d7233119152bf4785f3ef148abcab615f4a4ae3ee8b2f1e72eed51c35212db3"
+  },
+  "node": {
+    "executable": "<node>",
+    "resolved": "<node>",
+    "argv": ["--eval", "", "core", "noop"],
+    "size": 147346864,
+    "sha256": "533bd644c5ae0e0ea3a80e433aad16b817447ccba1e1eea701875eac80cb75d4"
+  }
+}
