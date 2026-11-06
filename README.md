@@ -238,7 +238,7 @@ The [client guide](docs/client-connections.md) covers installation and removal.
 | Verify the actual distributed package | [Distribution checks](docs/distribution.md) · [CI evidence](docs/ci.md) |
 | Extend an adapter | [Adapter protocol](docs/adapter-protocol.md) · [Architecture](docs/architecture.md) |
 | Review the 1.0 scope | [Release criteria](docs/release-1.0.md) · [Roadmap](docs/roadmap.md) |
-| Explore advanced evaluation work | [Profiles](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) |
+| Explore advanced evaluation work | [Profiles](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) · [Campaign duration](benchmarks/campaign-profile/README.md) |
 
 Scientific profiles and calibration retain their own evidence requirements. Their presence does
 not establish an improvement on an external product or a measured product-market fit.
