@@ -157,9 +157,11 @@ consulted 2026-11-06, lists these native architectures and free standard-runner 
 repositories. The completed run above establishes scheduling and execution for this experiment;
 the catalogue alone would not establish either. No paid runner, secret, remote setting or account
 permission was enabled.
-Each PR-triggered series runs once per affected revision and uploads evidence for 14 days;
-accepted observations must be retained in Git before artifact expiry. Data/documentation-only
-updates do not schedule another measurement series. Normal product CI is unchanged.
+Each PR-triggered series uploads evidence for 14 days; accepted observations must be retained in
+Git before artifact expiry. GitHub evaluates PR path filters against the cumulative PR diff, so
+subsequent updates to an affected PR can schedule another series. The first successful series
+above is retained as the observation set; later CI runs are not pooled into it or substituted
+for individual samples. Normal product CI is unchanged.
 
 All four target triplets now have retained E1 observations, within the recorded environments.
 macOS 14, Node 22, Windows 11 desktop and WSL links are not exercised by these measurement series.
