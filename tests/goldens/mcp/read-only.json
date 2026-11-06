@@ -5408,7 +5408,10 @@
                           "type": "string",
                           "const": "candidates"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     },
                     "nextCommands": {
                       "type": "array",
@@ -6214,7 +6217,10 @@
                           "type": "string",
                           "const": "candidates"
                         }
-                      ]
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     },
                     "nextCommands": {
                       "type": "array",

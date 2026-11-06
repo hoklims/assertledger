@@ -59,7 +59,7 @@
     },
     {
       "path": "schemas/repository-init-result.v3.json",
-      "rawSha256": "sha256:baaa7e26f107d3615228084ab8843941db310a995114280bab6c0f79f14328b4",
+      "rawSha256": "sha256:5baaaa7315eb966ef200285592da92bfa18d31a93cf3f6ddd0bb4f48638d18d9",
       "$id": "https://testforge.dev/schemas/repository-init-result.v3.json"
     },
     {

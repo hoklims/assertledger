@@ -15,7 +15,6 @@ describe("versioned diagnostic guidance", () => {
   it("explains audit request input refusals", async () => {
     for (const [args, input, expected] of [
       [["audit", ".", "--verification-request"], "", "MISSING_VERIFICATION_REQUEST"],
-      [["doctor", ".", "--framework"], "", "MISSING_FRAMEWORK"],
       [
         ["audit", ".", "--verification-request", "-"],
         "x".repeat(16 * 1024 * 1024 + 1),

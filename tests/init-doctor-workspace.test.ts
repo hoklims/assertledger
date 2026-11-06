@@ -928,6 +928,36 @@ describe("a workspace member inherits the package manager of its workspace root"
     ]);
   });
 
+  it("preserves inherited manager guidance alongside ambiguous framework evidence", async () => {
+    const base = await tree({
+      ".git/": "",
+      "pnpm-workspace.yaml": "packages: ['domains/*/api']\n",
+      "pnpm-lock.yaml": "",
+      ...member({ scripts: { test: "bun test" } }),
+      "domains/x/api/node.test.ts": 'import { test } from "node:test";',
+    });
+    const root = path.join(base, "domains", "x", "api");
+    const { code, result } = await doctorJson([root], root);
+    assert.equal(code, 4);
+    assert.equal(result.schemaVersion, "3.0.0");
+    assert.equal(result.detections.packageManager, "pnpm");
+    assert.deepEqual(result.reasonCodes, [
+      "FRAMEWORK_AMBIGUOUS",
+      "PACKAGE_MANAGER_FROM_WORKSPACE_ROOT",
+    ]);
+    assert.deepEqual(result.detections.reasonCodes, result.reasonCodes);
+    assert.deepEqual(result.detectedFrameworks, [
+      { framework: "bun:test", files: ["a.spec.ts", "package.json"] },
+      { framework: "node:test", files: ["node.test.ts"] },
+    ]);
+    const selected = await doctorJson([root, "--framework", "bun:test"], root);
+    assert.equal(selected.code, 0);
+    assert.equal(selected.result.status, "WOULD_CREATE");
+    assert.deepEqual(selected.result.reasonCodes, ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"]);
+    assert(!(await readdir(root)).includes("assertledger.config.json"));
+    assert(!(await readdir(root)).includes("assertledger.lock.json"));
+  });
+
   it("does not let a member with an unusable packageManager inherit its workspace's", async () => {
     const run = async (field: unknown) => {
       const base = await tree({

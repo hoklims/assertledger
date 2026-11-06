@@ -2990,7 +2990,9 @@ async function initializeRepositoryPlan(
   }
   // A manager that came from outside the package is said so on every result from here on, early
   // ones included: the package's own lock does not cover it.
-  const inheritedNotice: KnownDiagnosticCode[] = managerFromWorkspaceRoot ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT" as const] : [];
+  const inheritedNotice: KnownDiagnosticCode[] = managerFromWorkspaceRoot
+    ? ["PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"]
+    : [];
   const terminal = (
     status: "BLOCKED" | "CONFLICT",
     detections: InitDetections | InitDetectionsV2,
