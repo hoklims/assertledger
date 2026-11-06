@@ -11,7 +11,7 @@ The JavaScript API is the three package exports and every runtime value they exp
 
 | Export | Runtime values | Content |
 | --- | --- | --- |
-| `.` | 332 | Everything below |
+| `.` | 334 | Everything below |
 | `./core` | 40 | A subset of `.`, marked † in this page |
 | `./bun` | 2 | `assertSame`, `isAssertSameFailure` |
 
@@ -68,7 +68,7 @@ Statuses:
 | `corpusExperiment` | — | — | none | Creates an H3 experiment artifact; only its replay has a command. |
 | `replayCorpusExperiment` | `corpus-experiment-replay` | — | equivalent |  |
 | `replayCorpusAllocationCommitment` | — | — | none | Replayed only inside `corpus-experiment-replay`. |
-| `schema` | `schema NAME` | `assertledger_schema` | equivalent | MCP accepts 36 of the 48 CLI names. |
+| `schema` | `schema NAME` | `assertledger_schema` | equivalent | MCP accepts 36 of the 49 CLI names. |
 
 36 methods: 31 equivalent, 3 partial, 2 none (`corpusExperiment`, `replayCorpusAllocationCommitment`).
 
@@ -134,6 +134,7 @@ reach a CLI or MCP user only through the command that parses the document.
 | `repository-init-lock.v2.json` | `RepositoryInitLockV2Schema`, `parseRepositoryInitLockV2`, `repositoryInitLockV2JsonSchema` | yes | — | partial | `parseRepositoryInitLockV2` enforces invariants beyond the schema. |
 | `repository-init-result.v1.json` | `RepositoryInitResultSchema`, `parseRepositoryInitResult`, `repositoryInitResultJsonSchema` | yes | — | partial | `parseRepositoryInitResult` enforces invariants beyond the schema. |
 | `repository-init-result.v2.json` | `RepositoryInitResultV2Schema`, `parseRepositoryInitResultV2`, `repositoryInitResultV2JsonSchema` | yes | — | partial | `parseRepositoryInitResultV2` enforces invariants beyond the schema. |
+| `repository-init-result.v3.json` | `RepositoryInitResultV3Schema`, `repositoryInitResultV3JsonSchema` | yes | — | equivalent |  |
 | `verification-request.v1.json` | `VerificationRequestSchema`, `parseVerificationRequest`, `verificationRequestJsonSchema` | yes | yes | partial | `parseVerificationRequest` enforces invariants beyond the schema. |
 | `verification-request.v2.json` | `VerificationRequestV2Schema`, `parseVerificationRequestV2`, `verificationRequestV2JsonSchema` | yes | — | partial | `parseVerificationRequestV2` enforces invariants beyond the schema. |
 | `verification-request.v3.json` | `VerificationRequestV3Schema`, `parseVerificationRequestV3`, `verificationRequestV3JsonSchema` | yes | — | partial | `parseVerificationRequestV3` enforces invariants beyond the schema. |
@@ -142,7 +143,7 @@ reach a CLI or MCP user only through the command that parses the document.
 | `witness-import-request.v1.json` | `WitnessImportRequestSchema`, `parseWitnessImportRequest`, `witnessImportRequestJsonSchema` | — | — | partial | `parseWitnessImportRequest` enforces invariants beyond the schema. |
 | `witness-import-request.v2.json` | `WitnessImportRequestV2Schema`, `parseWitnessImportRequestV2`, `witnessImportRequestV2JsonSchema` | — | — | partial | `parseWitnessImportRequestV2` enforces invariants beyond the schema. |
 
-56 published schemas: 1 equivalent, 55 partial.
+57 published schemas: 2 equivalent, 55 partial.
 
 Versioned parsers dispatch on `schemaVersion` to the parsers above:
 
@@ -151,7 +152,7 @@ Versioned parsers dispatch on `schemaVersion` to the parsers above:
 | `parseVersionedEvidenceManifest` | `evidence-manifest.v1.json`, `evidence-manifest.v2.json`, `evidence-manifest.v3.json`, `evidence-manifest.v4.json`, `evidence-manifest.v5.json` | partial |
 | `parseVersionedRepositoryInitConfig` | `repository-init-config.v1.json`, `repository-init-config.v2.json` | partial |
 | `parseVersionedRepositoryInitLock` | `repository-init-lock.v1.json`, `repository-init-lock.v2.json` | partial |
-| `parseVersionedRepositoryInitResult` | `repository-init-result.v1.json`, `repository-init-result.v2.json` | partial |
+| `parseVersionedRepositoryInitResult` | `repository-init-result.v1.json`, `repository-init-result.v2.json`, `repository-init-result.v3.json` | partial |
 | `parseVersionedRuntimeDoctorResult` | none published | partial |
 | `parseVersionedVerificationRequest` | `verification-request.v1.json`, `verification-request.v2.json`, `verification-request.v3.json`, `verification-request.v4.json`, `verification-request.v5.json` | partial |
 | `parseVersionedWitnessImportRequest` | `witness-import-request.v1.json`, `witness-import-request.v2.json` | partial |

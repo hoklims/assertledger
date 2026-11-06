@@ -1,10 +1,18 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { publishedSchemas } from "./schema-registry.js";
 
 const schemaDirectory = path.resolve("schemas");
 const expectedSchemas = publishedSchemas();
+
+const registeredNames = new Set(expectedSchemas.map(([filename]) => filename));
+const unregisteredSchemas = (await readdir(schemaDirectory)).filter(
+  (filename) => filename.endsWith(".json") && !registeredNames.has(filename),
+);
+if (unregisteredSchemas.length > 0) {
+  throw new Error(`UNREGISTERED_JSON_SCHEMAS: ${unregisteredSchemas.sort().join(", ")}`);
+}
 
 const staleSchemas: string[] = [];
 for (const [filename, expected] of expectedSchemas) {

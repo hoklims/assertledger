@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { it } from "node:test";
 import { parseVersionedRepositoryInitResult } from "../src/contracts/index.js";
 import { explainReasonCodes } from "../src/diagnostics.js";
 import { initializeRepository } from "../src/engine/index.js";
-import { type PublicCliIo as CliIo, runPublicCli } from "./support/public-surface.js";
+import {
+  connectPublicMcp,
+  type PublicCliIo as CliIo,
+  runPublicCli,
+} from "./support/public-surface.js";
 
 function capture(root: string) {
   let stdout = "";
@@ -23,6 +27,108 @@ function capture(root: string) {
   };
   return { io, stdout: () => stdout, stderr: () => stderr };
 }
+
+it("reports each detected framework and its evidence in an ambiguous doctor result", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-framework-evidence-"));
+  try {
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        packageManager: "bun@1.4.2",
+        scripts: { test: "bun test" },
+      }),
+    );
+    await mkdir(path.join(root, "tests"));
+    await writeFile(path.join(root, "tests", "node.test.ts"), 'import { test } from "node:test";');
+    await writeFile(path.join(root, "tests", "bun.test.ts"), 'import { test } from "bun:test";');
+    const output = capture(root);
+    assert.equal(await runPublicCli(["doctor", root, "--json"], output.io), 4);
+    const result = JSON.parse(output.stdout());
+    assert.equal(result.schemaVersion, "3.0.0");
+    assert.deepEqual(result.detectedFrameworks, [
+      { framework: "bun:test", files: ["package.json", "tests/bun.test.ts"] },
+      { framework: "node:test", files: ["tests/node.test.ts"] },
+    ]);
+    const mismatch = capture(root);
+    assert.equal(
+      await runPublicCli(["doctor", root, "--framework", "jest", "--json"], mismatch.io),
+      4,
+    );
+    assert.deepEqual(JSON.parse(mismatch.stdout()).detectedFrameworks, result.detectedFrameworks);
+    assert.deepEqual(parseVersionedRepositoryInitResult(result), result);
+    const client = await connectPublicMcp({ root, cwd: root });
+    try {
+      const response = await client.callTool({ name: "assertledger_doctor", arguments: { root } });
+      assert.notEqual(response.isError, true);
+      assert.deepEqual(response.structuredContent, result);
+    } finally {
+      await client.close();
+    }
+    const withNotice = {
+      ...result,
+      reasonCodes: ["FRAMEWORK_AMBIGUOUS", "PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"],
+      detections: {
+        ...result.detections,
+        reasonCodes: ["FRAMEWORK_AMBIGUOUS", "PACKAGE_MANAGER_FROM_WORKSPACE_ROOT"],
+      },
+    };
+    assert.deepEqual(parseVersionedRepositoryInitResult(withNotice), withNotice);
+    const { detectedFrameworks: _evidence, ...rest } = result;
+    const legacy = { ...rest, schemaVersion: "1.0.0" };
+    assert.deepEqual(parseVersionedRepositoryInitResult(legacy), legacy);
+    const legacyV2 = { ...legacy, schemaVersion: "2.0.0" };
+    assert.deepEqual(parseVersionedRepositoryInitResult(legacyV2), legacyV2);
+    assert.throws(
+      () =>
+        parseVersionedRepositoryInitResult({
+          ...legacy,
+          detectedFrameworks: result.detectedFrameworks,
+        }),
+      /REPOSITORY_INIT_RESULT_INVALID/u,
+    );
+    assert.throws(
+      () =>
+        parseVersionedRepositoryInitResult({
+          ...result,
+          detectedFrameworks: [...result.detectedFrameworks].reverse(),
+        }),
+      /REPOSITORY_INIT_RESULT_INCONSISTENT/u,
+    );
+    assert.throws(
+      () =>
+        parseVersionedRepositoryInitResult({
+          ...result,
+          detectedFrameworks: [{ framework: "node:test", files: [] }],
+        }),
+      /REPOSITORY_INIT_RESULT_INCONSISTENT/u,
+    );
+    assert.throws(
+      () => parseVersionedRepositoryInitResult({ ...result, detectedFrameworks: [] }),
+      /REPOSITORY_INIT_RESULT_INCONSISTENT/u,
+    );
+    for (const file of [
+      "../escape",
+      "/tmp/escape",
+      "C:/escape",
+      "tests/../escape",
+      "tests\\escape",
+      "NUL",
+      "tests/bad?.test.ts",
+    ]) {
+      assert.throws(
+        () =>
+          parseVersionedRepositoryInitResult({
+            ...result,
+            detectedFrameworks: [{ framework: "node:test", files: [file] }],
+          }),
+        /REPOSITORY_INIT_RESULT_INCONSISTENT/u,
+        file,
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 async function fixture(root: string, framework: "node:test" | "bun:test", count: number) {
   await writeFile(
@@ -202,7 +308,7 @@ const INIT_CODES = [
   "UNSUPPORTED_REPOSITORY_SYMLINK",
 ];
 
-it("explains every static doctor/init reason and contract error with a next action", async () => {
+it("explains the listed static doctor/init reasons and contract errors with a next action", async () => {
   const report = explainReasonCodes(INIT_CODES);
   assert.deepEqual(
     report.diagnostics
@@ -223,37 +329,4 @@ it("explains every static doctor/init reason and contract error with a next acti
   const output = capture(process.cwd());
   assert.equal(await runPublicCli(["explain", ...INIT_CODES, "--json"], output.io), 0);
   assert.deepEqual(JSON.parse(output.stdout()), report);
-});
-
-it("keeps the catalogue coverage list complete for initialization source codes", async () => {
-  const engine = await readFile(new URL("../src/engine/index.ts", import.meta.url), "utf8");
-  const init = engine.slice(
-    engine.indexOf("export async function initializeRepository("),
-    engine.indexOf("async function probeRuntimeTemporaryWorkspace("),
-  );
-  const internal = new Set([
-    "CONFLICT",
-    "BLOCKED",
-    "UNCHANGED",
-    "WOULD_CREATE",
-    "CREATED",
-    "ABSENT",
-    "FILE",
-    "UNSAFE",
-    "ENOENT",
-    "ADAPTER_CONFIG",
-    "TEST_SOURCE",
-    "CREATE",
-    "REGENERATE",
-    "REPOSITORY_ROOT_NOT_DIRECTORY",
-    "ADAPTER_CONFIG_OUTSIDE_REPOSITORY",
-    "TEST_CLOSURE_UNSUPPORTED",
-  ]);
-  const emitted = [
-    ...new Set([...init.matchAll(/"([A-Z][A-Z0-9_]+)"/gu)].map((match) => match[1] as string)),
-  ].filter((code) => !internal.has(code));
-  assert.deepEqual(
-    emitted.filter((code) => !INIT_CODES.includes(code)),
-    [],
-  );
 });

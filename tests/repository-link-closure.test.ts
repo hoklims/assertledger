@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -76,10 +85,68 @@ async function doctor(root: string, framework?: string) {
     ...(framework === undefined ? {} : { framework }),
     onLinkAssessment: (assessment) => assessments.push(assessment),
   });
+  const diagnostics = new AssertLedger().explain(result.reasonCodes).diagnostics;
+  assert.deepEqual(
+    diagnostics.filter((diagnostic) => !diagnostic.known),
+    [],
+  );
   return { result, assessment: assessments.at(-1) };
 }
 
 describe("repository links judged against the executed test closure", () => {
+  it("refuses an uncatalogued diagnostic before returning an initialization result", async () => {
+    const root = await bunRepository({
+      "tests/value.test.ts":
+        'import { test } from "bun:test"; import "../src/linked/value"; test("value", () => {});\n',
+      "src/real/value.ts": "export const value = 1;\n",
+    });
+    await linkDirectory(root, "src/real", "src/linked");
+    for (const operation of ["doctor", "init"] as const) {
+      await assert.rejects(
+        new AssertLedger()[operation](root, {
+          onLinkAssessment: (assessment) => {
+            if (assessment.refused !== undefined)
+              Object.assign(assessment.refused, { reasonCode: "SYNTHETIC_UNCATALOGUED" });
+          },
+        }),
+        (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(error.message, "DIAGNOSTIC_CATALOGUE_INCOMPLETE");
+          assert.equal(error.cause, "SYNTHETIC_UNCATALOGUED");
+          assert.equal(new AssertLedger().explain([error.message]).diagnostics[0]?.known, true);
+          return true;
+        },
+      );
+    }
+    const files = await readdir(root);
+    assert(!files.includes("assertledger.config.json"));
+    assert(!files.includes("assertledger.lock.json"));
+  });
+  it("explains closure configuration refusals propagated through static doctor", async () => {
+    for (const [files, expected] of [
+      [
+        {
+          "tests/value.test.ts":
+            'import "#missing"; import { test } from "bun:test"; test("value", () => {});\n',
+        },
+        "TEST_CLOSURE_PACKAGE_IMPORT_UNSUPPORTED",
+      ],
+      [
+        { "tsconfig.json": '{"extends":"@missing/tsconfig.json"}' },
+        "TEST_CLOSURE_TSCONFIG_EXTENDS_UNSUPPORTED",
+      ],
+      [{ "bunfig.toml": "jsxImportSource = 1\n" }, "TEST_CLOSURE_BUNFIG_JSX_UNSUPPORTED"],
+    ] as const) {
+      const root = await bunRepository(files);
+      await linkDirectory(root, ".agents/skills", ".claude/skills");
+      await assert.rejects(new AssertLedger().doctor(root), (error: unknown) => {
+        assert(error instanceof Error);
+        assert.equal(error.message, expected);
+        assert.equal(new AssertLedger().explain([error.message]).diagnostics[0]?.known, true);
+        return true;
+      });
+    }
+  });
   it("plans a repository whose only link is outside every test closure, and names it", async () => {
     const root = await bunRepository();
     await linkDirectory(root, ".agents/skills", ".claude/skills");

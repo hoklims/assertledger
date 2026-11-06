@@ -1,4 +1,8 @@
-import type { RepositoryInitResult, RepositoryInitResultV2 } from "../contracts/index.js";
+import type {
+  RepositoryInitResult,
+  RepositoryInitResultV2,
+  RepositoryInitResultV3,
+} from "../contracts/index.js";
 import {
   parseRuntimeDoctorResult,
   parseRuntimeDoctorResultV2,
@@ -180,7 +184,7 @@ export async function runBunRuntimeDoctorChecks(
 }
 
 export interface RuntimeDoctorDependencies {
-  inspectConfiguration(): Promise<RepositoryInitResult>;
+  inspectConfiguration(): Promise<RepositoryInitResult | RepositoryInitResultV3>;
   probeExecutable(): Promise<{ nodeVersion: string }>;
   probeDependencies(): Promise<void>;
   probeTemporaryWorkspace(): Promise<void>;
@@ -274,7 +278,7 @@ export async function runRuntimeDoctorChecks(
     ),
   );
 
-  let configuration: RepositoryInitResult;
+  let configuration: RepositoryInitResult | RepositoryInitResultV3;
   try {
     configuration = await dependencies.inspectConfiguration();
   } catch {

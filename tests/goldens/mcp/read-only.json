@@ -5210,6 +5210,278 @@
                     "nextCommands"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "string",
+                      "const": "3.0.0"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "CONFLICT"
+                    },
+                    "reasonCodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Z][A-Z0-9_]*$"
+                      }
+                    },
+                    "detections": {
+                      "type": "object",
+                      "properties": {
+                        "packageManager": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "pnpm",
+                                "npm",
+                                "yarn",
+                                "bun",
+                                "uv",
+                                "poetry",
+                                "pip"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "framework": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "node:test",
+                                "vitest",
+                                "jest",
+                                "bun:test",
+                                "pytest"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "testCommand": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "executable": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 512
+                                },
+                                "arguments": {
+                                  "maxItems": 100,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                  }
+                                }
+                              },
+                              "required": [
+                                "executable",
+                                "arguments"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ciProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "github-actions",
+                              "gitlab-ci",
+                              "azure-pipelines",
+                              "circleci"
+                            ]
+                          }
+                        },
+                        "adapterRecommendation": {
+                          "type": "string",
+                          "enum": [
+                            "node-test",
+                            "operator-supplied",
+                            "unavailable"
+                          ]
+                        },
+                        "reasonCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Z][A-Z0-9_]*$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "packageManager",
+                        "framework",
+                        "testCommand",
+                        "ciProviders",
+                        "adapterRecommendation",
+                        "reasonCodes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "CREATE",
+                              "REGENERATE"
+                            ]
+                          },
+                          "path": {
+                            "type": "string",
+                            "enum": [
+                              "assertledger.config.json",
+                              "assertledger.lock.json"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "enum": [
+                              "assertledger.config.json",
+                              "assertledger.lock.json"
+                            ]
+                          },
+                          "digest": {
+                            "type": "string",
+                            "pattern": "^sha256:[a-f0-9]{64}$"
+                          },
+                          "content": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 16777216
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "digest",
+                          "content"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "requiredOperatorInputs": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string",
+                          "const": "worlds"
+                        },
+                        {
+                          "type": "string",
+                          "const": "candidates"
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "nextCommands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "executable": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "arguments": {
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 1024
+                            }
+                          }
+                        },
+                        "required": [
+                          "executable",
+                          "arguments"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "detectedFrameworks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "framework": {
+                            "type": "string",
+                            "enum": [
+                              "node:test",
+                              "bun:test",
+                              "vitest",
+                              "jest",
+                              "pytest"
+                            ]
+                          },
+                          "files": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        },
+                        "required": [
+                          "framework",
+                          "files"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "status",
+                    "reasonCodes",
+                    "detections",
+                    "actions",
+                    "files",
+                    "requiredOperatorInputs",
+                    "nextCommands",
+                    "detectedFrameworks"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             },
@@ -5745,6 +6017,278 @@
                     "files",
                     "requiredOperatorInputs",
                     "nextCommands"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "string",
+                      "const": "3.0.0"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "CONFLICT"
+                    },
+                    "reasonCodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Z][A-Z0-9_]*$"
+                      }
+                    },
+                    "detections": {
+                      "type": "object",
+                      "properties": {
+                        "packageManager": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "pnpm",
+                                "npm",
+                                "yarn",
+                                "bun",
+                                "uv",
+                                "poetry",
+                                "pip"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "framework": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "node:test",
+                                "vitest",
+                                "jest",
+                                "bun:test",
+                                "pytest"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "testCommand": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "executable": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 512
+                                },
+                                "arguments": {
+                                  "maxItems": 100,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                  }
+                                }
+                              },
+                              "required": [
+                                "executable",
+                                "arguments"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ciProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "github-actions",
+                              "gitlab-ci",
+                              "azure-pipelines",
+                              "circleci"
+                            ]
+                          }
+                        },
+                        "adapterRecommendation": {
+                          "type": "string",
+                          "enum": [
+                            "node-test",
+                            "operator-supplied",
+                            "unavailable"
+                          ]
+                        },
+                        "reasonCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Z][A-Z0-9_]*$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "packageManager",
+                        "framework",
+                        "testCommand",
+                        "ciProviders",
+                        "adapterRecommendation",
+                        "reasonCodes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "CREATE",
+                              "REGENERATE"
+                            ]
+                          },
+                          "path": {
+                            "type": "string",
+                            "enum": [
+                              "assertledger.config.json",
+                              "assertledger.lock.json"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "enum": [
+                              "assertledger.config.json",
+                              "assertledger.lock.json"
+                            ]
+                          },
+                          "digest": {
+                            "type": "string",
+                            "pattern": "^sha256:[a-f0-9]{64}$"
+                          },
+                          "content": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 16777216
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "digest",
+                          "content"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "requiredOperatorInputs": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string",
+                          "const": "worlds"
+                        },
+                        {
+                          "type": "string",
+                          "const": "candidates"
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "nextCommands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "executable": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "arguments": {
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 1024
+                            }
+                          }
+                        },
+                        "required": [
+                          "executable",
+                          "arguments"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "detectedFrameworks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "framework": {
+                            "type": "string",
+                            "enum": [
+                              "node:test",
+                              "bun:test",
+                              "vitest",
+                              "jest",
+                              "pytest"
+                            ]
+                          },
+                          "files": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        },
+                        "required": [
+                          "framework",
+                          "files"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "status",
+                    "reasonCodes",
+                    "detections",
+                    "actions",
+                    "files",
+                    "requiredOperatorInputs",
+                    "nextCommands",
+                    "detectedFrameworks"
                   ],
                   "additionalProperties": false
                 }
@@ -49402,11 +49946,11 @@
         "content": [
           {
             "type": "text",
-            "text": "{\"schemaVersion\":\"1.0.0\",\"status\":\"CONFLICT\",\"reasonCodes\":[\"FRAMEWORK_AMBIGUOUS\"],\"detections\":{\"packageManager\":\"pnpm\",\"framework\":null,\"testCommand\":null,\"ciProviders\":[],\"adapterRecommendation\":\"unavailable\",\"reasonCodes\":[\"FRAMEWORK_AMBIGUOUS\"]},\"actions\":[],\"files\":[],\"requiredOperatorInputs\":[\"worlds\",\"candidates\"],\"nextCommands\":[{\"executable\":\"assertledger\",\"arguments\":[\"audit\",\".\",\"--json\"]}]}"
+            "text": "{\"schemaVersion\":\"3.0.0\",\"status\":\"CONFLICT\",\"reasonCodes\":[\"FRAMEWORK_AMBIGUOUS\"],\"detections\":{\"packageManager\":\"pnpm\",\"framework\":null,\"testCommand\":null,\"ciProviders\":[],\"adapterRecommendation\":\"unavailable\",\"reasonCodes\":[\"FRAMEWORK_AMBIGUOUS\"]},\"actions\":[],\"files\":[],\"requiredOperatorInputs\":[\"worlds\",\"candidates\"],\"nextCommands\":[{\"executable\":\"assertledger\",\"arguments\":[\"audit\",\".\",\"--json\"]}],\"detectedFrameworks\":[{\"framework\":\"bun:test\",\"files\":[\"native.test.ts\"]},{\"framework\":\"node:test\",\"files\":[\"command-shape.test.mjs\"]}]}"
           }
         ],
         "structuredContent": {
-          "schemaVersion": "1.0.0",
+          "schemaVersion": "3.0.0",
           "status": "CONFLICT",
           "reasonCodes": [
             "FRAMEWORK_AMBIGUOUS"
@@ -49434,6 +49978,20 @@
                 "audit",
                 ".",
                 "--json"
+              ]
+            }
+          ],
+          "detectedFrameworks": [
+            {
+              "framework": "bun:test",
+              "files": [
+                "native.test.ts"
+              ]
+            },
+            {
+              "framework": "node:test",
+              "files": [
+                "command-shape.test.mjs"
               ]
             }
           ]
@@ -49491,7 +50049,7 @@
         "content": [
           {
             "type": "text",
-            "text": "{\"catalogueVersion\":\"1.0.0\",\"diagnostics\":[{\"code\":\"GIT_DISABLED\",\"known\":false,\"severity\":\"limitation\",\"explanation\":\"This code has no explanation in the installed catalogue.\",\"nextAction\":\"Keep the original result and consult the matching package version's reference; do not infer a pass.\"}]}"
+            "text": "{\"catalogueVersion\":\"1.0.0\",\"diagnostics\":[{\"code\":\"GIT_DISABLED\",\"known\":true,\"severity\":\"limitation\",\"explanation\":\"Git history was disabled for this audit.\",\"nextAction\":\"Rerun audit without --no-git to include available Git history.\"}]}"
           }
         ],
         "structuredContent": {
@@ -49499,10 +50057,10 @@
           "diagnostics": [
             {
               "code": "GIT_DISABLED",
-              "known": false,
+              "known": true,
               "severity": "limitation",
-              "explanation": "This code has no explanation in the installed catalogue.",
-              "nextAction": "Keep the original result and consult the matching package version's reference; do not infer a pass."
+              "explanation": "Git history was disabled for this audit.",
+              "nextAction": "Rerun audit without --no-git to include available Git history."
             }
           ]
         }

@@ -1,3 +1,4 @@
+import { knownDiagnosticCode } from "../contracts/diagnostic-catalogue.js";
 import { createScanner, SyntaxKind } from "typescript/unstable/ast";
 
 export interface JavaScriptToken {
@@ -66,8 +67,11 @@ export function* scanJavaScriptTokens(
       };
     }
   } catch (cause) {
-    throw new TypeError(`JAVASCRIPT_TOKENIZATION_FAILED: ${JSON.stringify(file)} at ${position}`, {
-      cause,
-    });
+    throw new TypeError(
+      `${knownDiagnosticCode("JAVASCRIPT_TOKENIZATION_FAILED")}: ${JSON.stringify(file)} at ${position}`,
+      {
+        cause,
+      },
+    );
   }
 }

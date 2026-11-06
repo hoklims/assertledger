@@ -58,6 +58,11 @@
       "$id": "https://testforge.dev/schemas/repository-init-result.v2.json"
     },
     {
+      "path": "schemas/repository-init-result.v3.json",
+      "rawSha256": "sha256:5baaaa7315eb966ef200285592da92bfa18d31a93cf3f6ddd0bb4f48638d18d9",
+      "$id": "https://testforge.dev/schemas/repository-init-result.v3.json"
+    },
+    {
       "path": "schemas/verification-request.v2.json",
       "rawSha256": "sha256:3e6da760006795dc07fbd17f0ce3666577d8de5c94879c449f40b5dc93ee9204",
       "$id": "https://testforge.dev/schemas/verification-request.v2.json"

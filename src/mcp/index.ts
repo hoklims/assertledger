@@ -28,6 +28,7 @@ import {
   RepositoryAnalysisSchema,
   RepositoryInitResultSchema,
   RepositoryInitResultV2Schema,
+  RepositoryInitResultV3Schema,
   RuntimeDoctorResultSchema,
   RuntimeDoctorResultV2Schema,
   VerificationRequestSchema,
@@ -241,6 +242,7 @@ export function createAssertLedgerServer(options: AssertLedgerServerOptions = {}
     outputSchema: z.union([
       z.strictObject({ ...RepositoryInitResultSchema.shape }),
       z.strictObject({ ...RepositoryInitResultV2Schema.shape }),
+      z.strictObject({ ...RepositoryInitResultV3Schema.shape }),
     ]),
     annotations: {
       destructiveHint: false,

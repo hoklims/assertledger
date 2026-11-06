@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ContractError } from "./contracts/index.js";
+import { knownDiagnosticCode, type KnownDiagnosticCode } from "./contracts/diagnostic-catalogue.js";
 import { QualificationExpectedDomainSchema } from "./contracts/qualification.js";
 import {
   quoteRepositoryEntry,
@@ -175,12 +176,12 @@ async function readJsonInput(argument: string | undefined, io: CliIo): Promise<u
   } else {
     const inputPath = path.resolve(io.cwd, argument);
     if ((await stat(inputPath)).size > MAXIMUM_JSON_INPUT_BYTES) {
-      throw new TypeError("JSON_INPUT_TOO_LARGE");
+      throw new TypeError(knownDiagnosticCode("JSON_INPUT_TOO_LARGE"));
     }
     text = await readFile(inputPath, "utf8");
   }
   if (Buffer.byteLength(text, "utf8") > MAXIMUM_JSON_INPUT_BYTES) {
-    throw new TypeError("JSON_INPUT_TOO_LARGE");
+    throw new TypeError(knownDiagnosticCode("JSON_INPUT_TOO_LARGE"));
   }
   if (text.trim().length === 0) throw new SyntaxError("JSON input is required");
   return JSON.parse(text) as unknown;
@@ -204,12 +205,20 @@ function requiredFlag(argv: readonly string[], name: string): string {
   return value;
 }
 
-function optionalFlag(argv: readonly string[], name: string): string | undefined {
+function optionalFlag(
+  argv: readonly string[],
+  name: string,
+  missingCode?: KnownDiagnosticCode,
+): string | undefined {
   const index = argv.indexOf(name);
   if (index < 0) return undefined;
   const value = argv[index + 1];
   if (value === undefined || value.startsWith("--"))
-    throw new TypeError(`MISSING_${name.slice(2).toUpperCase().replaceAll("-", "_")}`);
+    throw new TypeError(
+      missingCode === undefined
+        ? `MISSING_${name.slice(2).toUpperCase().replaceAll("-", "_")}`
+        : knownDiagnosticCode(missingCode),
+    );
   return value;
 }
 
@@ -902,6 +911,12 @@ export async function runCli(
             [
               `Status: ${result.status}`,
               `Reason codes: ${reasons}`,
+              ...(result.schemaVersion === "3.0.0"
+                ? result.detectedFrameworks.map(
+                    (entry) =>
+                      `Detected ${entry.framework}: ${entry.files.map(quoteRepositoryEntry).join(", ")}`,
+                  )
+                : []),
               `Required operator inputs: ${result.requiredOperatorInputs.join(", ")}`,
               renderDiagnostics(result.reasonCodes),
               `Next safe action: ${result.nextCommands[0]?.executable ?? "assertledger"} ${(result.nextCommands[0]?.arguments ?? []).join(" ")}`,
@@ -1197,7 +1212,11 @@ export async function runCli(
       case "audit": {
         const rootArgument = argv[1] && !argv[1].startsWith("--") ? argv[1] : ".";
         const root = path.resolve(io.cwd, rootArgument);
-        const explicitRequest = optionalFlag(argv, "--verification-request");
+        const explicitRequest = optionalFlag(
+          argv,
+          "--verification-request",
+          "MISSING_VERIFICATION_REQUEST",
+        );
         let request: unknown | undefined;
         if (explicitRequest !== undefined) request = await readJsonInput(explicitRequest, io);
         else {
@@ -1366,6 +1385,7 @@ export async function runCli(
           name !== "repository-init-lock-v2" &&
           name !== "repository-init-result" &&
           name !== "repository-init-result-v2" &&
+          name !== "repository-init-result-v3" &&
           name !== "evidence-manifest" &&
           name !== "evidence-manifest-v2" &&
           name !== "evidence-manifest-v3" &&
@@ -1779,7 +1799,8 @@ const defaultIo: CliIo = {
     for await (const chunk of process.stdin) {
       const buffer = Buffer.from(chunk);
       bytes += buffer.length;
-      if (bytes > MAXIMUM_JSON_INPUT_BYTES) throw new TypeError("JSON_INPUT_TOO_LARGE");
+      if (bytes > MAXIMUM_JSON_INPUT_BYTES)
+        throw new TypeError(knownDiagnosticCode("JSON_INPUT_TOO_LARGE"));
       chunks.push(buffer);
     }
     return Buffer.concat(chunks).toString("utf8");

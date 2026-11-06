@@ -12,6 +12,7 @@ import {
   repositoryAuditJsonSchema,
 } from "../src/contracts/index.js";
 import { auditRepository, initializeRepository } from "../src/engine/index.js";
+import { explainReasonCodes } from "../src/diagnostics.js";
 import { AssertLedger } from "../src/sdk/index.js";
 import { runPublicCli } from "./support/public-surface.js";
 
@@ -328,6 +329,68 @@ function request(root: string) {
 }
 
 describe("repository audit v1", () => {
+  it("explains invalid verification requests rejected by audit", async () => {
+    const root = await fixture();
+    const duplicated = request(root);
+    assert(duplicated.worlds[0] && duplicated.worlds[1]);
+    duplicated.worlds[1].id = duplicated.worlds[0].id;
+    const noReference = request(root);
+    noReference.worlds = noReference.worlds.filter((world) => world.kind !== "REFERENCE");
+    const noTarget = request(root);
+    noTarget.worlds = noTarget.worlds.filter((world) => world.kind !== "TARGET");
+    const noNeutral = request(root);
+    noNeutral.worlds = noNeutral.worlds.filter((world) => world.kind !== "NEUTRAL");
+    const duplicateCandidate = request(root);
+    assert(duplicateCandidate.candidates[0] && duplicateCandidate.candidates[1]);
+    duplicateCandidate.candidates[1].id = duplicateCandidate.candidates[0].id;
+    const zeroTargetWeight = request(root);
+    assert(zeroTargetWeight.worlds[1]);
+    zeroTargetWeight.worlds[1].weight = 0;
+    const weightedReference = request(root);
+    assert(weightedReference.worlds[0]);
+    weightedReference.worlds[0].weight = 1;
+    const oversizedCandidate = request(root);
+    oversizedCandidate.budgets.maximumCandidateBytes = 1;
+    assert(oversizedCandidate.candidates[0]?.files[0]);
+    oversizedCandidate.candidates[0].files[0].content = "xx";
+    const oversizedCandidates = request(root);
+    oversizedCandidates.budgets.maximumTotalCandidateBytes = 1;
+    const oversizedWorlds = request(root);
+    oversizedWorlds.budgets.maximumWorldOverlayBytes = 1;
+    assert(oversizedWorlds.worlds[1]?.files[0]);
+    oversizedWorlds.worlds[1].files[0].content = "xx";
+    const unsafeOutcome = request(root);
+    unsafeOutcome.policy.acceptedTargetOutcomes = ["TIMEOUT"];
+    const unsafeArguments = request(root);
+    Object.assign(unsafeArguments.adapter, { extraArguments: ["--test-only"] });
+    const reservedEnvironment = request(root);
+    Object.assign(reservedEnvironment.isolation, { environmentAllowlist: ["NODE_OPTIONS"] });
+    for (const [value, expected] of [
+      [duplicated, "DUPLICATE_WORLD_ID"],
+      [noReference, "REFERENCE_WORLD_REQUIRED"],
+      [noTarget, "TARGET_WORLD_REQUIRED"],
+      [noNeutral, "NEUTRAL_WORLD_REQUIRED"],
+      [duplicateCandidate, "DUPLICATE_CANDIDATE_ID"],
+      [zeroTargetWeight, "TARGET_WEIGHT_REQUIRED"],
+      [weightedReference, "NON_TARGET_WEIGHT_FORBIDDEN"],
+      [oversizedCandidate, "CANDIDATE_BYTES_EXCEEDED"],
+      [oversizedCandidates, "TOTAL_CANDIDATE_BYTES_EXCEEDED"],
+      [oversizedWorlds, "WORLD_OVERLAY_BYTES_EXCEEDED"],
+      [unsafeOutcome, "UNSAFE_TARGET_OUTCOME"],
+      [unsafeArguments, "UNSAFE_NODE_TEST_ARGUMENT"],
+      [reservedEnvironment, "RESERVED_ENVIRONMENT_VARIABLE"],
+    ] as const) {
+      await assert.rejects(
+        auditRepository(root, { verificationRequest: value }),
+        (error: unknown) => {
+          const code = (error as { code?: string }).code;
+          assert.equal(code, expected);
+          assert.equal(explainReasonCodes([code]).diagnostics[0]?.known, true, code);
+          return true;
+        },
+      );
+    }
+  });
   it("publishes a strict factual schema without score, note, or verdict properties", () => {
     const schemaText = JSON.stringify(repositoryAuditJsonSchema());
     assert.doesNotMatch(schemaText, /"(?:score|note|verdict)"/u);
@@ -418,7 +481,15 @@ describe("repository audit v1", () => {
       },
     ];
     for (const inconsistent of cases) {
-      assert.throws(() => parseRepositoryAuditV2(inconsistent), /REPOSITORY_AUDIT_/u);
+      assert.throws(
+        () => parseRepositoryAuditV2(inconsistent),
+        (error: unknown) => {
+          const code = (error as { code?: string }).code;
+          assert.match(code ?? "", /^REPOSITORY_AUDIT_/u);
+          assert.equal(explainReasonCodes([code as string]).diagnostics[0]?.known, true, code);
+          return true;
+        },
+      );
     }
   });
 
@@ -445,6 +516,10 @@ describe("repository audit v1", () => {
     assert.equal(unsupported?.weakAssertions, null);
     assert.equal(result.verificationRequest, null);
     assert(result.reasonCodes.includes("VERIFICATION_REQUEST_UNAVAILABLE"));
+    assert.deepEqual(
+      explainReasonCodes(result.reasonCodes).diagnostics.filter((entry) => !entry.known),
+      [],
+    );
   });
 
   it("detects a repository mutation between inventories", async () => {

@@ -16,6 +16,14 @@ import { initializeRepository, RepositoryInitWriteError } from "./index.js";
 
 export type SetupClient = "codex" | "claude-code";
 type AnyRepositoryInitResult = RepositoryInitResult | RepositoryInitResultV2;
+
+function setupInitResult(
+  result: Awaited<ReturnType<typeof initializeRepository>>,
+): AnyRepositoryInitResult {
+  if (result.schemaVersion !== "3.0.0") return result;
+  const { detectedFrameworks: _detectedFrameworks, ...legacy } = result;
+  return { ...legacy, schemaVersion: "1.0.0" };
+}
 export type RepositorySetupStatus =
   | "WOULD_CREATE"
   | "CREATED"
@@ -58,9 +66,9 @@ export interface RepositorySetupResult {
 }
 
 export interface SetupRepositoryDependencies {
-  planInit?(root: string): Promise<AnyRepositoryInitResult>;
+  planInit?(root: string): ReturnType<typeof initializeRepository>;
   afterInitApplied?(): Promise<void>;
-  applyInit?(root: string): Promise<AnyRepositoryInitResult>;
+  applyInit?(root: string): ReturnType<typeof initializeRepository>;
   applyConnection?(): Promise<ClientConnectionResult>;
   planConnection?(
     root: string,
@@ -222,8 +230,9 @@ export async function setupRepository(
   const requestedRoot = path.resolve(root);
   let initPlan: AnyRepositoryInitResult;
   try {
-    initPlan = await (dependencies.planInit?.(root) ??
-      initializeRepository(root, { dryRun: true }));
+    initPlan = setupInitResult(
+      await (dependencies.planInit?.(root) ?? initializeRepository(root, { dryRun: true })),
+    );
   } catch {
     return {
       status: "CONFLICT",
@@ -355,7 +364,9 @@ export async function setupRepository(
 
   let appliedInit: AnyRepositoryInitResult;
   try {
-    appliedInit = await (dependencies.applyInit?.(root) ?? initializeRepository(root));
+    appliedInit = setupInitResult(
+      await (dependencies.applyInit?.(root) ?? initializeRepository(root)),
+    );
   } catch (error) {
     const ownedPaths = error instanceof RepositoryInitWriteError ? error.installedPaths : [];
     const initRollback = await rollbackCreatedInitFiles(root, initPlan, ownedPaths);

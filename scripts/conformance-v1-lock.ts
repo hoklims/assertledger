@@ -73,4 +73,4 @@ export const CONFORMANCE_V1_PUBLIC_DIGESTS = {
 
 // Schemas published after conformance v1 are locked additively: the v1 bundle bytes stay frozen.
 export const PUBLISHED_SCHEMA_EXTENSIONS_DIGEST =
-  "sha256:a96692df9db7095e2d9b679a89801c594248b6084670152159059cb40a1a5ab5";
+  "sha256:fb05c442fdca7d72c0de63061e6b18ccf4ab3450f0def80495f6c93929e725ca";
