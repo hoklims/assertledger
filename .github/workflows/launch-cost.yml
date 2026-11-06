@@ -1,0 +1,68 @@
+name: Launch cost experiment
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/launch-cost.yml
+      - scripts/benchmark-launch-cost.ts
+      - tests/launch-cost.test.ts
+      - benchmarks/launch-cost/probe.rs
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    if: github.event.pull_request.head.repo.full_name == github.repository && (contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) || github.event.pull_request.user.id == 49699333)
+    name: Launch cost / ${{ matrix.target }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+      E1_TARGET: ${{ matrix.target }}
+      E1_SUFFIX: ${{ matrix.os == 'windows-2022' && '.exe' || '' }}
+      E1_REVISION: ${{ github.sha }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.1.2
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Exercise refusal controls
+        run: pnpm exec tsx --test tests/launch-cost.test.ts
+      - name: Build the native std-only probe
+        run: pnpm exec tsx scripts/benchmark-launch-cost.ts build "$E1_TARGET" "$RUNNER_TEMP/e1-probe$E1_SUFFIX"
+      - name: Check the argument boundary and positive controls
+        run: pnpm exec tsx scripts/benchmark-launch-cost.ts controls "$RUNNER_TEMP/e1-probe$E1_SUFFIX"
+      - name: Measure one sequential series
+        run: pnpm exec tsx scripts/benchmark-launch-cost.ts measure "$RUNNER_TEMP/e1-probe$E1_SUFFIX" "$E1_TARGET" "$RUNNER_TEMP/e1-results" "$E1_REVISION"
+      - name: Retain observations, including partial failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launch-cost-${{ github.sha }}-${{ matrix.target }}
+          path: ${{ runner.temp }}/e1-results/
+          if-no-files-found: warn
+          retention-days: 14

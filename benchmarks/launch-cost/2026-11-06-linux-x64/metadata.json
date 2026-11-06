@@ -1,0 +1,220 @@
+{
+  "target": "x86_64-unknown-linux-gnu",
+  "revision": "fedea045d705ca27fad0011c2fc97095e0f088b9",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "node": "v24.22.2",
+  "platform": "linux",
+  "arch": "x64",
+  "machine": "x86_64",
+  "release": "6.8.0-1070-azure",
+  "osVersion": "#78~22.04.1-Ubuntu SMP Thu Sep 24 18:46:45 UTC 2026",
+  "cpus": 4,
+  "model": "AMD EPYC 9V74 80-Core Processor",
+  "totalMemory": 16765378560,
+  "executableIdentities": {
+    "rust": {
+      "executable": "e1-probe",
+      "argv": ["core", "noop"],
+      "sha256": "860bae1ba81add6917769831875a93ed41220291f83bc12f0950164375222193",
+      "size": 4546672
+    },
+    "node": {
+      "executable": "node",
+      "argv": ["--eval", "", "core", "noop"],
+      "sha256": "904a6d3484241d466989f9df9ba3aab822b1496191bdb28230eb491a55c32a52",
+      "size": 126881248
+    },
+    "true": {
+      "executable": "true",
+      "argv": ["core", "noop"],
+      "sha256": "94f5d1c6ad51bbd532bf2e702b3d28cb57ba8887435b4514a06e4ba0cd7fedba",
+      "size": 26936
+    }
+  },
+  "sources": {
+    "driver": "44b5c26e5b176ecb54ef117d463ea7f6350e6820b4f2c25413a10ba460782c0f",
+    "probe": "7961dd9c4eacbd04e929986feede8168c2bc80207b9b3a39fd879d26c3c0fdbb"
+  },
+  "timeoutMs": 2000,
+  "budgetMs": 120000,
+  "warmupPerTarget": 20,
+  "samplesPerTarget": 600,
+  "orders": [
+    ["rust", "true", "node"],
+    ["true", "node", "rust"],
+    ["node", "rust", "true"],
+    ["rust", "node", "true"],
+    ["node", "true", "rust"],
+    ["true", "rust", "node"]
+  ],
+  "start": {
+    "at": "2026-11-06T15:54:39.080Z",
+    "loadavg": [0.58, 0.21, 0.08],
+    "freeMemory": 15402217472,
+    "cpuTimes": {
+      "user": 25910,
+      "nice": 0,
+      "sys": 13220,
+      "idle": 712870,
+      "irq": 0
+    }
+  },
+  "telemetry": [
+    {
+      "at": "2026-11-06T15:54:39.819Z",
+      "loadavg": [0.58, 0.21, 0.08],
+      "freeMemory": 15486418944,
+      "cpuTimes": {
+        "user": 26280,
+        "nice": 0,
+        "sys": 13660,
+        "idle": 714980,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:43.217Z",
+      "loadavg": [0.62, 0.23, 0.08],
+      "freeMemory": 15600992256,
+      "cpuTimes": {
+        "user": 27800,
+        "nice": 0,
+        "sys": 15750,
+        "idle": 724850,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:43.218Z",
+      "loadavg": [0.62, 0.23, 0.08],
+      "freeMemory": 15600992256,
+      "cpuTimes": {
+        "user": 27800,
+        "nice": 0,
+        "sys": 15750,
+        "idle": 724850,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:46.625Z",
+      "loadavg": [0.65, 0.24, 0.09],
+      "freeMemory": 15594561536,
+      "cpuTimes": {
+        "user": 29330,
+        "nice": 0,
+        "sys": 17800,
+        "idle": 734760,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:46.625Z",
+      "loadavg": [0.65, 0.24, 0.09],
+      "freeMemory": 15594561536,
+      "cpuTimes": {
+        "user": 29330,
+        "nice": 0,
+        "sys": 17800,
+        "idle": 734770,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:50.020Z",
+      "loadavg": [0.65, 0.24, 0.09],
+      "freeMemory": 15587848192,
+      "cpuTimes": {
+        "user": 30850,
+        "nice": 0,
+        "sys": 19860,
+        "idle": 744500,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:50.020Z",
+      "loadavg": [0.65, 0.24, 0.09],
+      "freeMemory": 15587848192,
+      "cpuTimes": {
+        "user": 30850,
+        "nice": 0,
+        "sys": 19860,
+        "idle": 744500,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:53.437Z",
+      "loadavg": [0.67, 0.25, 0.09],
+      "freeMemory": 15599370240,
+      "cpuTimes": {
+        "user": 32370,
+        "nice": 0,
+        "sys": 21910,
+        "idle": 754490,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:53.437Z",
+      "loadavg": [0.67, 0.25, 0.09],
+      "freeMemory": 15599656960,
+      "cpuTimes": {
+        "user": 32370,
+        "nice": 0,
+        "sys": 21910,
+        "idle": 754490,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:56.835Z",
+      "loadavg": [0.7, 0.27, 0.1],
+      "freeMemory": 15601967104,
+      "cpuTimes": {
+        "user": 33800,
+        "nice": 0,
+        "sys": 24040,
+        "idle": 764340,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:56.835Z",
+      "loadavg": [0.7, 0.27, 0.1],
+      "freeMemory": 15601967104,
+      "cpuTimes": {
+        "user": 33800,
+        "nice": 0,
+        "sys": 24040,
+        "idle": 764340,
+        "irq": 0
+      }
+    },
+    {
+      "at": "2026-11-06T15:54:59.677Z",
+      "loadavg": [0.7, 0.27, 0.1],
+      "freeMemory": 15707254784,
+      "cpuTimes": {
+        "user": 35270,
+        "nice": 0,
+        "sys": 25570,
+        "idle": 772600,
+        "irq": 0
+      }
+    }
+  ],
+  "end": {
+    "at": "2026-11-06T15:54:59.677Z",
+    "loadavg": [0.7, 0.27, 0.1],
+    "freeMemory": 15707254784,
+    "cpuTimes": {
+      "user": 35270,
+      "nice": 0,
+      "sys": 25570,
+      "idle": 772600,
+      "irq": 0
+    }
+  }
+}
