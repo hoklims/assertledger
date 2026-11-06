@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -113,6 +113,45 @@ async function fixtureRepository(): Promise<string> {
 }
 
 describe("runtime doctor", () => {
+  it("classifies an inspected framework conflict with existing configuration as blocked", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "assertledger-runtime-conflict-"));
+    temporaryDirectories.push(root);
+    const manifest = path.join(root, "package.json");
+    const testFile = path.join(root, "tests", "value.test.ts");
+    await writeFile(
+      manifest,
+      JSON.stringify({ packageManager: "npm@11.0.0", scripts: { test: "node --test" } }),
+    );
+    await mkdir(path.join(root, "tests"));
+    await writeFile(testFile, 'import { test } from "node:test";');
+    const commandOptions = { deadlineMs: 15_000 };
+    const initialized = captureIo(root);
+    assert.equal(await runPublicCli(["init", root, "--json"], initialized.io, commandOptions), 0);
+    assert.equal(JSON.parse(initialized.stdout()).status, "CREATED");
+    await writeFile(
+      manifest,
+      JSON.stringify({ packageManager: "npm@11.0.0", scripts: { test: "bun test" } }),
+    );
+    await writeFile(testFile, 'import { test } from "bun:test";');
+    const inspected = captureIo(root);
+    assert.equal(await runPublicCli(["doctor", root, "--json"], inspected.io, commandOptions), 4);
+    const conflict = JSON.parse(inspected.stdout());
+    assert.equal(conflict.schemaVersion, "3.0.0");
+    assert.deepEqual(conflict.reasonCodes, ["FRAMEWORK_AMBIGUOUS"]);
+    const runtime = captureIo(root);
+    assert.equal(
+      await runPublicCli(
+        ["doctor", root, "--runtime", "--allow-unsafe-execution", "--json"],
+        runtime.io,
+        commandOptions,
+      ),
+      3,
+    );
+    const result = JSON.parse(runtime.stdout());
+    assert.equal(result.status, "BLOCKED");
+    assert.deepEqual(result.reasonCodes, ["RUNTIME_CONFIGURATION_BLOCKED"]);
+  });
+
   it("keeps runtime MCP opt-in and matches SDK diagnostics within the allowed root", async () => {
     const root = await realpath(await fixtureRepository());
     const outside = await fixtureRepository();

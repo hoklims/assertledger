@@ -3593,7 +3593,8 @@ async function probeRepositoryRuntime(
     inspectConfiguration: async () => {
       const inspected =
         configuration ?? (await initializeRepository(repositoryRoot, { dryRun: true }));
-      if (inspected.schemaVersion !== "1.0.0") throw new Error("RUNTIME_CONFIGURATION_UNAVAILABLE");
+      if (inspected.schemaVersion !== "1.0.0" && inspected.schemaVersion !== "3.0.0")
+        throw new Error("RUNTIME_CONFIGURATION_UNAVAILABLE");
       return inspected;
     },
     probeExecutable: async () => {
