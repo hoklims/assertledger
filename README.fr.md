@@ -250,7 +250,7 @@ Le guide Git est en français ; les autres références techniques sont en angla
 | Vérifier le paquet réellement distribué | [Contrôles de distribution](docs/distribution.md) · [Preuves CI](docs/ci.md) |
 | Développer un adaptateur | [Protocole des adaptateurs](docs/adapter-protocol.md) · [Architecture](docs/architecture.md) |
 | Consulter le périmètre de la version 1.0 | [Critères de release](docs/release-1.0.md) · [Feuille de route](docs/roadmap.md) |
-| Explorer les évaluations avancées | [Profils](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) |
+| Explorer les évaluations avancées | [Profils](docs/agentic-test-profile.md) · [Benchmarks](docs/agentic-benchmark.md) · [Calibration](docs/agentic-corpus-plan.md) · [Durée de campagne](benchmarks/campaign-profile/README.md) |
 
 Les profils scientifiques et la calibration conservent leurs propres exigences de preuve.
 Leur présence n’établit ni un avantage sur un produit externe ni une adéquation au marché mesurée.

@@ -2,7 +2,8 @@
 
 [Container isolation](container-isolation.md) describes the security controls. This page describes
 operator diagnostics and a reproducible timing procedure. Runtime diagnostics do not enter the
-manifest or its decision inputs.
+manifest or its decision inputs. For the local Node campaign decomposition, see the
+[E5 campaign profile](../benchmarks/campaign-profile/README.md).
 
 ## Trace runtime calls
 
