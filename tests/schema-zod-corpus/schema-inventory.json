@@ -1,0 +1,335 @@
+[
+  {
+    "filename": "agentic-benchmark-acquisition-replay-result.v1.json",
+    "sha256": "eb006b18365198a1bcef90de4879121280d6d9b7366661a8157c5eda0e1b548e",
+    "schemaName": "AgenticBenchmarkAcquisitionReplayResultSchema",
+    "parserName": "parseAgenticBenchmarkAcquisitionReplayResult"
+  },
+  {
+    "filename": "agentic-benchmark-acquisition-request.v1.json",
+    "sha256": "60d52ec51276905c0aa8a7786c38d0ad925de3151bdface73a6938cb72c98ba8",
+    "schemaName": "AgenticBenchmarkAcquisitionRequestSchema",
+    "parserName": "parseAgenticBenchmarkAcquisitionRequest"
+  },
+  {
+    "filename": "agentic-benchmark-acquisition-result.v1.json",
+    "sha256": "361ce73f5536e92a9f88bd0ec761602ce1d8eeed9665b618f6bd48d57919a511",
+    "schemaName": "AgenticBenchmarkAcquisitionResultSchema",
+    "parserName": "parseAgenticBenchmarkAcquisitionResult"
+  },
+  {
+    "filename": "agentic-benchmark-artifact.v1.json",
+    "sha256": "d7e282c97e697c8256bd69ecf7f7e0eff2e66b15ef7790c0004712f4c98dafda",
+    "schemaName": "AgenticBenchmarkArtifactSchema",
+    "parserName": "parseAgenticBenchmarkArtifact"
+  },
+  {
+    "filename": "agentic-benchmark-replay-result.v1.json",
+    "sha256": "ab6814cb377432958e55791d4ab1941f920d552f34616dfabdef2b35cec077c9",
+    "schemaName": "AgenticBenchmarkReplayResultSchema",
+    "parserName": "parseAgenticBenchmarkReplayResult"
+  },
+  {
+    "filename": "agentic-benchmark-request.v1.json",
+    "sha256": "18805afa19cdd5a3d4bc5b7794e3020b25047267ba713af46922aacdd690f49e",
+    "schemaName": "AgenticBenchmarkRequestSchema",
+    "parserName": "parseAgenticBenchmarkRequest"
+  },
+  {
+    "filename": "agentic-corpus-allocation-commitment-replay-result.v1.json",
+    "sha256": "aea2b1e6310c028ad43fd1b3699f63a4473934acc2dbd690834a75370850e4e2",
+    "schemaName": "AgenticCorpusAllocationCommitmentReplayResultSchema",
+    "parserName": "parseAgenticCorpusAllocationCommitmentReplayResult"
+  },
+  {
+    "filename": "agentic-corpus-allocation-commitment.v1.json",
+    "sha256": "29b83d2299fc8de4476fb49b30d221c1d20c50cd7ba82dcaf27c3f1597d83919",
+    "schemaName": "AgenticCorpusAllocationCommitmentSchema",
+    "parserName": "parseAgenticCorpusAllocationCommitment"
+  },
+  {
+    "filename": "agentic-corpus-allocation-replay-result.v1.json",
+    "sha256": "9f660ac3425d67c94742fbfef64be0ea4e1938bb88ea49fc097355c935b257d4",
+    "schemaName": "AgenticCorpusAllocationReplayResultSchema",
+    "parserName": "parseAgenticCorpusAllocationReplayResult"
+  },
+  {
+    "filename": "agentic-corpus-allocation-request.v1.json",
+    "sha256": "a44b3f2bdacc28029588d07c78e09f44ea512342ca1cbeacc62ea71b7d1c5074",
+    "schemaName": "AgenticCorpusAllocationRequestSchema",
+    "parserName": "parseAgenticCorpusAllocationRequest"
+  },
+  {
+    "filename": "agentic-corpus-allocation-reveal.v1.json",
+    "sha256": "aaafebd9564300861f947656c35e73cf02d9531655bc59d4cbba6458c743fed8",
+    "schemaName": "AgenticCorpusAllocationRevealSchema",
+    "parserName": "parseAgenticCorpusAllocationReveal"
+  },
+  {
+    "filename": "agentic-corpus-allocation.v1.json",
+    "sha256": "248de6e66dc51aae9785785597ac66432855269f78f821e259c2627d7af0c9f8",
+    "schemaName": "AgenticCorpusAllocationSchema",
+    "parserName": "parseAgenticCorpusAllocation"
+  },
+  {
+    "filename": "agentic-corpus-experiment-artifact.v1.json",
+    "sha256": "57f649fd4dd6e3387132443ed7714a37578fcba128f1be2d9004cfa36276a5ca",
+    "schemaName": "AgenticCorpusExperimentArtifactSchema",
+    "parserName": "parseAgenticCorpusExperimentArtifact"
+  },
+  {
+    "filename": "agentic-corpus-experiment-plan-replay-result.v1.json",
+    "sha256": "8dc2133a84cb00e64ac28929baf085593eea9384cc0cf6a69beb8d908c222284",
+    "schemaName": "AgenticCorpusExperimentPlanReplayResultSchema",
+    "parserName": "parseAgenticCorpusExperimentPlanReplayResult"
+  },
+  {
+    "filename": "agentic-corpus-experiment-plan.v1.json",
+    "sha256": "0cf6eb5314b4eb11b1ea6237f7ced841a7757af743f0783325d6c38d5e8ce619",
+    "schemaName": "AgenticCorpusExperimentPlanSchema",
+    "parserName": "parseAgenticCorpusExperimentPlan"
+  },
+  {
+    "filename": "agentic-corpus-experiment-replay-request.v1.json",
+    "sha256": "e834f9c179883e050f87582a83dad2f22a40379aa0b47fff79c82742f1724841",
+    "schemaName": "AgenticCorpusExperimentReplayRequestSchema",
+    "parserName": "parseAgenticCorpusExperimentReplayRequest"
+  },
+  {
+    "filename": "agentic-corpus-experiment-replay-result.v1.json",
+    "sha256": "2411a221c98c799c668e767b5a6dc3b8b1a7f4b168a60b8065898491b1cef14b",
+    "schemaName": "AgenticCorpusExperimentReplayResultSchema",
+    "parserName": "parseAgenticCorpusExperimentReplayResult"
+  },
+  {
+    "filename": "agentic-corpus-experiment-request.v1.json",
+    "sha256": "b2edfd64843a7ad5cc5bea9e2a63b80258387a271694428c20e5c0de7ce31075",
+    "schemaName": "AgenticCorpusExperimentRequestSchema",
+    "parserName": "parseAgenticCorpusExperimentRequest"
+  },
+  {
+    "filename": "agentic-corpus-provenance.v1.json",
+    "sha256": "2ded32d34b79784425de6578d0cc6d33043f51b14da1e8111e7cfdf2233f4324",
+    "schemaName": "AgenticCorpusProvenanceSchema",
+    "parserName": "parseAgenticCorpusProvenance"
+  },
+  {
+    "filename": "agentic-corpus-trust-policy.v1.json",
+    "sha256": "b6694e06556f3fac9ed349b1a725dc73d8ef40ce1bae417bbe39acac59f4fda8",
+    "schemaName": "AgenticCorpusTrustPolicySchema",
+    "parserName": "parseAgenticCorpusTrustPolicy"
+  },
+  {
+    "filename": "agentic-profile-replay-result.v1.json",
+    "sha256": "bb552aee20dd2abe7ad6b72743e510f856f02410ce744ec269f7053a0058e302",
+    "schemaName": "AgenticProfileReplayResultSchema",
+    "parserName": "parseAgenticProfileReplayResult"
+  },
+  {
+    "filename": "agentic-profile-replay-result.v2.json",
+    "sha256": "d6eed66747b1f05753cfd17c8791f789c78749211747164599364a3c52b03cc7",
+    "schemaName": "AgenticProfileReplayResultV2Schema",
+    "parserName": "parseAgenticProfileReplayResultV2"
+  },
+  {
+    "filename": "agentic-profile-report.v1.json",
+    "sha256": "13934855623f40c28db251cfb7a3acec048652e1bfd97f3f8b8161a2c2f51aa5",
+    "schemaName": "AgenticProfileReportSchema",
+    "parserName": "parseAgenticProfileReport"
+  },
+  {
+    "filename": "agentic-profile-report.v2.json",
+    "sha256": "49d74357dba6a43c25664a84d31a24ac9391cb0251e228018560a267c01b1e49",
+    "schemaName": "AgenticProfileReportV2Schema",
+    "parserName": "parseAgenticProfileReportV2"
+  },
+  {
+    "filename": "agentic-profile-request.v1.json",
+    "sha256": "e195f1db1e24dcca01fd72ed24478af36f8e69e20bd9db2e7c6ae0ef43ff9b7f",
+    "schemaName": "AgenticProfileRequestSchema",
+    "parserName": "parseAgenticProfileRequest"
+  },
+  {
+    "filename": "agentic-profile-request.v2.json",
+    "sha256": "a00a3ceffc0b92a63df0d5c28f2e837ffd70e8a34ef565d7be058e3b25b6bf06",
+    "schemaName": "AgenticProfileRequestV2Schema",
+    "parserName": "parseAgenticProfileRequestV2"
+  },
+  {
+    "filename": "evidence-export-replay-result.v1.json",
+    "sha256": "3b52decc4b977391a37e20f0a21a74a295f33a7c47739ff882dde38e86a9dab7",
+    "schemaName": "EvidenceExportReplayResultSchema",
+    "parserName": "parseEvidenceExportReplayResult"
+  },
+  {
+    "filename": "evidence-export-request.v1.json",
+    "sha256": "4e960f1cfadc759189a1c62e76ec384cf0b82ae1e6d44cb18d000d30fc6247bc",
+    "schemaName": "EvidenceExportRequestSchema",
+    "parserName": "parseEvidenceExportRequest"
+  },
+  {
+    "filename": "evidence-export.v1.json",
+    "sha256": "fc5bca67694200bc2c588d1e12c7aaed884619f53cfe11e21a8e02261363fb7d",
+    "schemaName": "EvidenceExportSchema",
+    "parserName": "parseEvidenceExport"
+  },
+  {
+    "filename": "evidence-manifest.v1.json",
+    "sha256": "06dfd4241ef7d356141dae5e2b2b9808b18cd50dcdcf71a132ef5720ef16c4a1",
+    "schemaName": "EvidenceManifestSchema",
+    "parserName": "parseEvidenceManifest"
+  },
+  {
+    "filename": "evidence-manifest.v2.json",
+    "sha256": "5c8a34f83bd7fef3a1accb957378956313607ed54b6c07ad8565a809e0ccf68e",
+    "schemaName": "EvidenceManifestV2Schema",
+    "parserName": "parseEvidenceManifestV2"
+  },
+  {
+    "filename": "evidence-manifest.v3.json",
+    "sha256": "a1ff17f9c610ad6fee4583716a434d7ca13f2777794116153b0b44d4f4e3aa7c",
+    "schemaName": "EvidenceManifestV3Schema",
+    "parserName": "parseEvidenceManifestV3"
+  },
+  {
+    "filename": "evidence-manifest.v4.json",
+    "sha256": "6707fcf8d3f68cb3d8ac5730c3474d58d5e64537ceea0b67d2c405320207a16c",
+    "schemaName": "EvidenceManifestV4Schema",
+    "parserName": "parseEvidenceManifestV4"
+  },
+  {
+    "filename": "evidence-manifest.v5.json",
+    "sha256": "ad6fc0753c6182767b83516743eca6cf1ef8324ae4674cda52182e4c1d095fc5",
+    "schemaName": "EvidenceManifestV5Schema",
+    "parserName": "parseEvidenceManifestV5"
+  },
+  {
+    "filename": "evidence-provider-manifest.v1.json",
+    "sha256": "7574f6e2bd8312f591343d059ee4a1008ad80058ecf6b990c0b50811015c5830",
+    "schemaName": "EvidenceProviderManifestSchema",
+    "parserName": "parseEvidenceProviderManifest"
+  },
+  {
+    "filename": "qualification-execution-request.v1.json",
+    "sha256": "55660a7cc1324f28d5e3f2f6c3a46babea53388a5fbc120b84512116edfbee79",
+    "schemaName": "QualificationExecutionRequestSchema"
+  },
+  {
+    "filename": "qualification-plan.v1.json",
+    "sha256": "9031c5a1cfa7a7b6a6c8928f8b3acb8d464b2b110f47f647374da2ae5360c9ca",
+    "schemaName": "QualificationPlanSchema",
+    "parserName": "parseQualificationPlan"
+  },
+  {
+    "filename": "qualification-receipt.v1.json",
+    "sha256": "9c04acd147b66bc1cf6776eab98613e3ff4a67ab87ef7175a749e44fa42b0848",
+    "schemaName": "QualificationReceiptSchema"
+  },
+  {
+    "filename": "qualification-replay-result.v1.json",
+    "sha256": "dcba32bdd1d9e5dcc435b29963debba9a715bed12afffd307c7443649c92fb35",
+    "schemaName": "QualificationReplayResultSchema"
+  },
+  {
+    "filename": "replay-result.v1.json",
+    "sha256": "3607ffbf5474c2e118e11f3d14f73b3e3a35c11c9d555f46dabf0b01081a503f",
+    "schemaName": "ReplayResultSchema",
+    "parserName": "parseReplayResult"
+  },
+  {
+    "filename": "repository-analysis.v1.json",
+    "sha256": "a5dd7d0e225acf74f4d6758d88fa125cbb241f1c7fd28402fd4c3761a65e6af2",
+    "schemaName": "RepositoryAnalysisSchema",
+    "parserName": "parseRepositoryAnalysis"
+  },
+  {
+    "filename": "repository-audit.v1.json",
+    "sha256": "660638fd5c4f636da3bf107fdec9bde52e2261b91a65ca3bfa3353ed947200f3",
+    "schemaName": "RepositoryAuditSchema",
+    "parserName": "parseRepositoryAudit"
+  },
+  {
+    "filename": "repository-audit.v2.json",
+    "sha256": "c65998d453aa2cc9e5ebb96ab1dc2a20123477b8d6fffde74a280911aa323600",
+    "schemaName": "RepositoryAuditV2Schema",
+    "parserName": "parseRepositoryAuditV2"
+  },
+  {
+    "filename": "repository-init-config.v1.json",
+    "sha256": "cd577fe27e1e613548dc4a7e382aadf8e5e0f5b3ede46c659e843c2a7cb2ab25",
+    "schemaName": "RepositoryInitConfigSchema",
+    "parserName": "parseRepositoryInitConfig"
+  },
+  {
+    "filename": "repository-init-config.v2.json",
+    "sha256": "51d5c3c7f994f0474eff0f2fb900214c9f07569b0730a733abeea0ade8a63832",
+    "schemaName": "RepositoryInitConfigV2Schema",
+    "parserName": "parseRepositoryInitConfigV2"
+  },
+  {
+    "filename": "repository-init-lock.v1.json",
+    "sha256": "cf82e7c24bd4e019d9ccade4dab965d363e9e6448fdc894fdba5eb307ef4030a",
+    "schemaName": "RepositoryInitLockSchema",
+    "parserName": "parseRepositoryInitLock"
+  },
+  {
+    "filename": "repository-init-lock.v2.json",
+    "sha256": "1db8d97b7b3560ef7a9fb095c35ea50337a35a49a58115a52a15b70ccb8f5f84",
+    "schemaName": "RepositoryInitLockV2Schema",
+    "parserName": "parseRepositoryInitLockV2"
+  },
+  {
+    "filename": "repository-init-result.v1.json",
+    "sha256": "40035bb5c8d4072d0f7ba522e3b8d1dbf574eb9d9780c9c64aa731b5589cecce",
+    "schemaName": "RepositoryInitResultSchema",
+    "parserName": "parseRepositoryInitResult"
+  },
+  {
+    "filename": "repository-init-result.v2.json",
+    "sha256": "6e7f2a437319e216c268b8d7dc8e7fd32df60408c0e87bf2e3b1f6b08f202e83",
+    "schemaName": "RepositoryInitResultV2Schema",
+    "parserName": "parseRepositoryInitResultV2"
+  },
+  {
+    "filename": "verification-request.v1.json",
+    "sha256": "279a601cc872576581b19004244b7aba6ec894261a9ef0df15ff99eab08d4b1c",
+    "schemaName": "VerificationRequestSchema",
+    "parserName": "parseVerificationRequest"
+  },
+  {
+    "filename": "verification-request.v2.json",
+    "sha256": "3e6da760006795dc07fbd17f0ce3666577d8de5c94879c449f40b5dc93ee9204",
+    "schemaName": "VerificationRequestV2Schema",
+    "parserName": "parseVerificationRequestV2"
+  },
+  {
+    "filename": "verification-request.v3.json",
+    "sha256": "d38e70f10d56cbfb155fed89ed0b62cae9ab1305d8328e15f1024b2108059117",
+    "schemaName": "VerificationRequestV3Schema",
+    "parserName": "parseVerificationRequestV3"
+  },
+  {
+    "filename": "verification-request.v4.json",
+    "sha256": "530c90708977561c591d631e3b39055f2be5412c151222517c058d7bad1b9f8a",
+    "schemaName": "VerificationRequestV4Schema",
+    "parserName": "parseVerificationRequestV4"
+  },
+  {
+    "filename": "verification-request.v5.json",
+    "sha256": "4c53bf897ad22a1ef8de9e42e8dd6f0cba37575682b03b150450314fc887a9f2",
+    "schemaName": "VerificationRequestV5Schema",
+    "parserName": "parseVerificationRequestV5"
+  },
+  {
+    "filename": "witness-import-request.v1.json",
+    "sha256": "80cddb677d6dcae47a119bf4e773018a95191e7262d263c881cd3bb55d0b542b",
+    "schemaName": "WitnessImportRequestSchema",
+    "parserName": "parseWitnessImportRequest"
+  },
+  {
+    "filename": "witness-import-request.v2.json",
+    "sha256": "b0ae349265fc1645e29bc705afedbca379cb98d634fe21a7cbe44feb7ed945d4",
+    "schemaName": "WitnessImportRequestV2Schema",
+    "parserName": "parseWitnessImportRequestV2"
+  }
+]
