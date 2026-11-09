@@ -1,0 +1,33 @@
+import json, statistics, math
+from pathlib import Path
+p = Path(__file__).parent
+raw = [json.loads(line) for line in (p / "samples.jsonl").read_text().splitlines()]
+metadata = json.loads((p / "metadata.json").read_text())
+def percentile(values, probability):
+    position = (len(values) - 1) * probability
+    low, high = math.floor(position), math.ceil(position)
+    return values[low] + (values[high] - values[low]) * (position - low)
+summary = {}
+for name in ("rust", "true", "node"):
+    rows = [r for r in raw if r["phase"] == "measured" and r["name"] == name]
+    values = sorted(r["elapsedNs"] / 1e6 for r in rows)
+    median = statistics.median(values)
+    summary[name] = dict(n=len(values), min=min(values), p25=percentile(values, .25), median=median, p75=percentile(values, .75), p95=percentile(values, .95), p99=percentile(values, .99), max=max(values), mean=statistics.mean(values), sd=statistics.stdev(values), mad=statistics.median(abs(v - median) for v in values), firstObservedMs=next(r["elapsedNs"] / 1e6 for r in raw if r["phase"] == "first-observed" and r["name"] == name), blockMedians=[statistics.median(r["elapsedNs"] / 1e6 for r in rows if r["block"] == i) for i in range(6)])
+pairs = []
+for block in range(6):
+    for i in range(100):
+        values = {r["name"]: r["elapsedNs"] / 1e6 for r in raw if r["phase"] == "measured" and r["block"] == block and r["i"] == i}
+        pairs.append(values["rust"] - values["true"])
+summary["pairedRustMinusTrue"] = dict(median=statistics.median(pairs), p25=percentile(sorted(pairs), .25), p75=percentile(sorted(pairs), .75))
+summary["contention"] = []
+for start, end in zip(metadata["telemetry"][::2], metadata["telemetry"][1::2]):
+    delta = {key: end["cpuTimes"][key] - value for key, value in start["cpuTimes"].items()}
+    summary["contention"].append(dict(block=start["block"], hostCpuBusyPct=100 * (1 - delta["idle"] / sum(delta.values())), loadavgStart=start["loadavg"], loadavgEnd=end["loadavg"], freeGiBStart=start["freeMemory"] / 2**30, freeGiBEnd=end["freeMemory"] / 2**30))
+summary["rawCount"] = len(raw)
+assert len(raw) == 1863
+assert all(r["code"] == 0 and r["signal"] is None and r["outputBytes"] == 0 for r in raw)
+assert all(summary[name]["n"] == 600 for name in ("rust", "true", "node"))
+assert len({r["pid"] for r in raw}) == len(raw)
+(p / "summary-replayed.json").write_text(json.dumps(summary, indent=2) + "\n")
+assert summary == json.loads((p / "summary.json").read_text())
+print("PASS: summary independently replayed from 1863 complete raw records; 600 measured per target, unique owned child PIDs")

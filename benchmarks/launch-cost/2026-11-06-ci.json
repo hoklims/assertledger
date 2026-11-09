@@ -1,0 +1,44 @@
+{
+  "run": "https://github.com/hoklims/assertledger/actions/runs/42247340038",
+  "attempt": 1,
+  "head": "66b4c6232befa89efda900e8dd49f4ec28a9d7a9",
+  "mergeRevision": "fedea045d705ca27fad0011c2fc97095e0f088b9",
+  "observations": [
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "directory": "2026-11-06-linux-x64",
+      "job": "https://github.com/hoklims/assertledger/actions/runs/42247340038/job/127992904626",
+      "artifactId": 13519146827,
+      "artifactDigest": "sha256:16fd75972dcea41eebf9b451c2b678ae16f10834a256afbd6655d8b8b8104f63",
+      "rawSha256": "d5a2d48c6185e4c9d37bb52c27f7bd6d63dbc20e37fcb7803bb0ca73a3047785",
+      "downloadedFileSha256": {
+        "metadata.json": "daa97ed9ebdb2e3851b82d8ff868a68eef4bf544804d34ac802b54c3964ad9d5",
+        "summary.json": "fd2a901acc6f5e56f41216abb3ab99beb0abdf40dbea49b1c1bab948e1280c5d"
+      }
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "directory": "2026-11-06-windows-x64",
+      "job": "https://github.com/hoklims/assertledger/actions/runs/42247340038/job/127992904154",
+      "artifactId": 13518157673,
+      "artifactDigest": "sha256:17235e0051f878fcafeb6e05206bc06684cafabc917a3dc5613f30cc01589855",
+      "rawSha256": "4a6855ee9cf4ec5bceaa28fcdf945194aef639a5a214222616cfb98aac901d6d",
+      "downloadedFileSha256": {
+        "metadata.json": "265e4d58306edbbe73d153b954fc09433ff510ff7ac3d1f2a4ea0f5e2a0ebba0",
+        "summary.json": "7b92a791d1d372dfaa7723d57eb002de497653710886f6defad8d95123cdd4a2"
+      }
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "directory": "2026-11-06-linux-arm64",
+      "job": "https://github.com/hoklims/assertledger/actions/runs/42247340038/job/127992904390",
+      "artifactId": 13518197175,
+      "artifactDigest": "sha256:b05b140b6a29dfd187a1a5ea2129b30b055df36d906a6c8ddc26ce0ed65b5b68",
+      "rawSha256": "f66626503e75fe7cb9a38d8e3c8559d5050797aad94bebc7fafade01cb5c44c9",
+      "downloadedFileSha256": {
+        "metadata.json": "87a6bdd466c818cc8345733c97326a7ae809b718032ddc75fdb8583aa832846b",
+        "summary.json": "6d9d797da0cc7872d9e36d60bc88ff5656139c49bf315b46ab40b4f3a5169bb5"
+      }
+    }
+  ]
+}

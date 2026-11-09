@@ -1,0 +1,93 @@
+import { spawn } from "node:child_process";
+import { open, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
+const root = fileURLToPath(new URL(".", import.meta.url));
+const definitions = {
+  rust: [root + "probe", ["core", "noop"]],
+  true: ["/usr/bin/true", ["core", "noop"]],
+  node: [process.execPath, ["--eval", "", "core", "noop"]],
+};
+const orders = [["rust", "true", "node"], ["true", "node", "rust"], ["node", "rust", "true"], ["rust", "node", "true"], ["node", "true", "rust"], ["true", "rust", "node"]];
+function ambient() {
+  const times = os.cpus().reduce((sum, cpu) => {
+    for (const [key, value] of Object.entries(cpu.times)) sum[key] = (sum[key] ?? 0) + value;
+    return sum;
+  }, {});
+  return { at: new Date().toISOString(), loadavg: os.loadavg(), freeMemory: os.freemem(), cpuTimes: times };
+}
+let deadline;
+async function invoke(executable, argv, timeoutMs = 2000) {
+  if (deadline) {
+    const remainingMs = Number(deadline - process.hrtime.bigint()) / 1e6;
+    if (remainingMs <= 0) throw new Error("Series budget exhausted");
+    timeoutMs = Math.min(timeoutMs, remainingMs);
+  }
+  return await new Promise((resolve, reject) => {
+    const start = process.hrtime.bigint();
+    let outputBytes = 0;
+    let timedOut = false;
+    let failure;
+    let child;
+    try {
+      child = spawn(executable, argv, { cwd: root, shell: false, stdio: ["pipe", "pipe", "pipe"] });
+    } catch (error) { reject(error); return; }
+    const pid = child.pid;
+    const timeout = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs);
+    child.stdout.on("data", bytes => { outputBytes += bytes.length; });
+    child.stderr.on("data", bytes => { outputBytes += bytes.length; });
+    child.stdin.on("error", error => { failure = error.message; });
+    child.on("error", error => { failure = error.message; });
+    child.once("close", (code, signal) => {
+      const elapsedNs = Number(process.hrtime.bigint() - start);
+      clearTimeout(timeout);
+      if (failure || timedOut || code !== 0 || signal !== null || outputBytes !== 0) {
+        reject(new Error(JSON.stringify({ executable, argv, pid, failure, timedOut, code, signal, outputBytes })));
+        return;
+      }
+      resolve({ pid, elapsedNs, code, signal, outputBytes });
+    });
+    child.stdin.end();
+  });
+}
+if (process.argv[2] === "--self-test") {
+  const assert = (await import("node:assert/strict")).default;
+  await assert.rejects(invoke(root + "absent", []), /ENOENT/);
+  await assert.rejects(invoke(process.execPath, ["--eval", "process.exit(3)"]), /"code":3/);
+  await assert.rejects(invoke(process.execPath, ["--eval", "console.log(1)"]), /"outputBytes":2/);
+  await assert.rejects(invoke(process.execPath, ["--eval", "setTimeout(()=>{},10000)"], 100), /"timedOut":true/);
+  await invoke(...definitions.rust);
+  await invoke(...definitions.true);
+  await invoke(...definitions.node);
+  console.log("PASS: spawn errors, nonzero exit, unexpected output and owned-child timeout refuse; all three controls succeed");
+} else if (process.argv[2] === "--final") {
+  deadline = process.hrtime.bigint() + 60_000_000_000n;
+  const raw = await open(root + "samples.jsonl", "wx");
+  const metadata = { start: ambient(), driverPid: process.pid, executable: process.execPath, node: process.versions, platform: os.platform(), arch: os.arch(), release: os.release(), cpus: os.cpus().length, model: os.cpus()[0].model, totalMemory: os.totalmem(), definitions, timeoutMs: 2000, warmupPerTarget: 20, samplesPerTarget: 600, orders, telemetry: [] };
+  metadata.hashes = {};
+  for (const file of ["probe.rs", "probe", "boundary.mjs", "measure.mjs"]) metadata.hashes[file] = createHash("sha256").update(await readFile(root + file)).digest("hex");
+  for (const name of orders[0]) {
+    const first = await invoke(...definitions[name]);
+    await raw.write(JSON.stringify({ phase: "first-observed", name, ...first }) + "\n");
+  }
+  for (let i = 0; i < 20; i++) for (const name of orders[i % 6]) {
+    const result = await invoke(...definitions[name]);
+    await raw.write(JSON.stringify({ phase: "warmup", i, name, ...result }) + "\n");
+  }
+  for (let block = 0; block < orders.length; block++) {
+    metadata.telemetry.push({ block, edge: "start", ...ambient() });
+    for (let i = 0; i < 100; i++) for (const name of orders[block]) {
+      const result = await invoke(...definitions[name]);
+      await raw.write(JSON.stringify({ phase: "measured", block, i, name, ...result }) + "\n");
+    }
+    metadata.telemetry.push({ block, edge: "end", ...ambient() });
+  }
+  metadata.end = ambient();
+  await raw.close();
+  await writeFile(root + "metadata.json", JSON.stringify(metadata, null, 2) + "\n", { flag: "wx" });
+  console.log(JSON.stringify({ completed: true, start: metadata.start.at, end: metadata.end.at, samplesPerTarget: 600 }));
+} else {
+  throw new Error("Choose --self-test or --final explicitly");
+}
