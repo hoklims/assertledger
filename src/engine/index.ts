@@ -670,6 +670,7 @@ async function walkFiles(
   root: string,
   excludes: ReadonlySet<string>,
   links?: string[],
+  includesPath?: (relative: string) => boolean,
 ): Promise<RepositoryInventory> {
   const files: string[] = [];
   const directories: string[] = [];
@@ -680,8 +681,9 @@ async function walkFiles(
     const entries = await readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
     for (const entry of entries) {
-      if (excludes.has(portablePathKey(entry.name))) continue;
       const relative = path.posix.join(relativeDirectory.split(path.sep).join("/"), entry.name);
+      if (includesPath !== undefined && !includesPath(relative)) continue;
+      if (excludes.has(portablePathKey(entry.name))) continue;
       const entryStats = await lstat(path.join(root, ...relative.split("/")));
       if (entryStats.isSymbolicLink()) {
         if (links === undefined) throw repositoryLinkError(relative);
@@ -3982,6 +3984,10 @@ export async function analyzeRepository(
     options.excludes ??
     (options.configuredExcludes === true ? await configuredRepositoryExcludes(root) : []);
   const { files } = await walkFiles(root, effectiveExcludes(declaredExcludes));
+  return analyzeRepositoryFiles(root, files);
+}
+
+async function analyzeRepositoryFiles(root: string, files: string[]) {
   const digest = createHash("sha256");
   const languageCounts = new Map<string, number>();
   const frameworks = new Set<string>();
@@ -4134,15 +4140,66 @@ async function auditGit(root: string, args: string[]): Promise<{ ok: boolean; st
       cwd: root,
       shell: false,
       windowsHide: true,
+      timeout: 10_000,
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([name]) =>
+            !["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"].includes(
+              name.toUpperCase(),
+            ),
+        ),
+      ),
       stdio: ["ignore", "pipe", "ignore"],
     });
     const chunks: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.on("error", () => resolve({ ok: false, stdout: "" }));
-    child.on("close", (code) =>
-      resolve({ ok: code === 0, stdout: Buffer.concat(chunks).toString("utf8").trim() }),
-    );
+    child.on("close", (code) => {
+      try {
+        resolve({
+          ok: code === 0,
+          stdout: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+            Buffer.concat(chunks),
+          ),
+        });
+      } catch {
+        resolve({ ok: false, stdout: "" });
+      }
+    });
   });
+}
+
+async function auditGitPaths(root: string): Promise<(relative: string) => boolean> {
+  const caseConfig = await auditGit(root, [
+    "config",
+    "--type=bool",
+    "--default=false",
+    "--get",
+    "core.ignorecase",
+  ]);
+  const caseValue = caseConfig.stdout.trim();
+  if (!caseConfig.ok || (caseValue !== "true" && caseValue !== "false"))
+    throw new Error(knownDiagnosticCode("GIT_INDEX_UNAVAILABLE"));
+  const pathKey = (relative: string): string =>
+    caseValue === "true" ? relative.replace(/[A-Z]/gu, (letter) => letter.toLowerCase()) : relative;
+  const result = await auditGit(root, [
+    "-c",
+    "core.precomposeUnicode=false",
+    "ls-files",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "-z",
+  ]);
+  if (!result.ok || (result.stdout.length > 0 && !result.stdout.endsWith("\0")))
+    throw new Error(knownDiagnosticCode("GIT_INDEX_UNAVAILABLE"));
+  const paths = new Set<string>();
+  for (const file of result.stdout.split("\0").filter(Boolean)) {
+    const segments = file.split("/");
+    for (let length = 1; length <= segments.length; length += 1)
+      paths.add(pathKey(segments.slice(0, length).join("/")));
+  }
+  return (relative) => paths.has(pathKey(relative));
 }
 
 function associatedAuditTests(source: string, tests: readonly string[]): string[] {
@@ -4198,12 +4255,20 @@ async function auditRepositoryFacts(
     }
   }
   const appliedExcludes = { source, entries: [...effectiveExcludes(declaredExcludes)].sort() };
+  const worktree = options.noGit
+    ? { ok: false, stdout: "" }
+    : await auditGit(root, ["rev-parse", "--is-inside-work-tree"]);
+  const gitInventory = worktree.ok && worktree.stdout.trim() === "true";
   const inventory = async () => {
     try {
-      return (await analyzeRepository(root, { excludes: appliedExcludes.entries })) as {
-        repositoryDigest: string;
-        files: string[];
-      };
+      const includedPaths = gitInventory ? await auditGitPaths(root) : undefined;
+      const { files } = await walkFiles(
+        root,
+        effectiveExcludes(appliedExcludes.entries),
+        undefined,
+        includedPaths,
+      );
+      return await analyzeRepositoryFiles(root, files);
     } catch (error) {
       if (error instanceof Error && error.message === "UNSUPPORTED_REPOSITORY_SYMLINK") {
         throw new RepositoryAuditInventoryError(
@@ -4246,14 +4311,13 @@ async function auditRepositoryFacts(
   let trackedFiles: Set<string> | null = null;
   if (options.noGit) reasonCodes.add("GIT_DISABLED");
   else {
-    const worktree = await auditGit(root, ["rev-parse", "--is-inside-work-tree"]);
-    if (!worktree.ok || worktree.stdout !== "true") reasonCodes.add("GIT_UNAVAILABLE");
+    if (!gitInventory) reasonCodes.add("GIT_UNAVAILABLE");
     else {
       const head = await auditGit(root, ["show", "-s", "--format=%ct", "HEAD"]);
       const shallowResult = await auditGit(root, ["rev-parse", "--is-shallow-repository"]);
-      if (head.ok && /^\d+$/u.test(head.stdout) && shallowResult.ok) {
+      if (head.ok && /^\d+$/u.test(head.stdout.trim()) && shallowResult.ok) {
         headTimestamp = Number(head.stdout);
-        shallow = shallowResult.stdout === "true";
+        shallow = shallowResult.stdout.trim() === "true";
         if (shallow) reasonCodes.add("GIT_HISTORY_SHALLOW");
         else {
           gitSupported = true;

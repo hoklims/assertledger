@@ -6,10 +6,36 @@ verification verdict.
 
 Current output uses [audit v2](repository-audit-v2-migration.md), which preserves the factual
 measurements and adds `appliedExcludes: { source, entries }`. With a verification request, its
-exclusions plus defaults define the inventory, matching the campaign copy; configuration adds no
+exclusions plus defaults filter the inventory; configuration adds no
 exclusions. Without a request, audit uses a valid initialization configuration, otherwise defaults.
 Both inventories reuse the same exclusion snapshot. Historical v1 artifacts remain readable with
 the unchanged v1 parser and schema.
+
+In a Git worktree, audit selects tracked files and non-ignored untracked files using
+`git -c core.precomposeUnicode=false ls-files --cached --others --exclude-standard -z`,
+then applies the exclusions above. Disabling Git's macOS name precomposition for this listing
+preserves disk spellings: admitted non-NFC names retain the existing portable-path refusal rather
+than being silently omitted. Ignore patterns are evaluated against these literal spellings.
+When `core.ignorecase` is true, ASCII case differences between the index and disk names are
+reconciled while retaining the disk spelling. This includes case-only file and directory renames;
+it does not normalize Unicode aliases. Once a Git inventory is selected, a failed or invalid case
+configuration query refuses with `GIT_INDEX_UNAVAILABLE`.
+Git's nested `.gitignore`, `.git/info/exclude`, and global ignore rules apply to untracked files;
+tracked files remain included even if an ignore rule matches them. Audit reads current disk bytes,
+including staged and unstaged edits, and omits deleted files. It does not recurse into submodules.
+Included symlinks, including directory links, still refuse the inventory. Filenames retain their
+spelling and must satisfy the existing portable-path rules.
+
+Outside a Git worktree, when Git is unavailable, or with `--no-git`, audit retains the disk inventory;
+ignore rules do not apply. Once a Git inventory is selected, a failed index listing refuses with
+`GIT_INDEX_UNAVAILABLE` instead of silently widening the inventory. Both inventories requery Git.
+
+An ignored local index cache such as `.semctx/semctx.db` can be created, rebuilt, or removed without
+changing the Git audit's `repositoryDigest`, `fileCount`, or byte-based cost estimate. For comparable
+proof epochs, preserve the working-tree content, ignore rules, and explicit exclusions: an audit
+digest is not solely a commit identifier. Campaign copying and manifest digest projections remain
+unchanged and can still include ignored caches unless explicitly excluded in the request; audit
+costs describe its own inventory rather than the campaign's complete disk copy.
 
 ```sh
 assertledger audit . --json
