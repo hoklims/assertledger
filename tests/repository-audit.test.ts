@@ -109,6 +109,35 @@ describe("audit exclusions", () => {
     assert.notEqual(deleted.repositoryDigest, added.repositoryDigest);
   });
 
+  for (const renamed of [
+    { from: "README.md", to: "readme.md", file: "readme.md" },
+    { from: "src", to: "SRC", file: "SRC/choice.ts" },
+  ]) {
+    it(`retains tracked bytes after a case-only rename of ${renamed.from}`, async () => {
+      const root = await gitFixture();
+      await execFileAsync("git", ["config", "core.ignorecase", "true"], { cwd: root });
+      await writeFile(path.join(root, ".gitignore"), `${renamed.to}\n`);
+      const before = await auditRepository(root);
+      await rename(path.join(root, renamed.from), path.join(root, "rename-temporary"));
+      await rename(path.join(root, "rename-temporary"), path.join(root, renamed.to));
+      const after = await auditRepository(root);
+      assert.equal(after.fileCount, before.fileCount);
+      assert(after.files.some((file) => file.path === renamed.file));
+      await writeFile(path.join(root, renamed.file), "export const changed = true;\n");
+      assert.notEqual((await auditRepository(root)).repositoryDigest, after.repositoryDigest);
+    });
+  }
+
+  it("does not admit an ignored case alias when Git uses case-sensitive paths", async () => {
+    const root = await gitFixture();
+    await execFileAsync("git", ["config", "core.ignorecase", "false"], { cwd: root });
+    await writeFile(path.join(root, ".gitignore"), "readme.md\n");
+    await rm(path.join(root, "README.md"));
+    const before = await auditRepository(root);
+    await writeFile(path.join(root, "readme.md"), "ignored replacement\n");
+    assert.equal((await auditRepository(root)).repositoryDigest, before.repositoryDigest);
+  });
+
   it("uses nested ignores, negations, local excludes and explicit request exclusions", async () => {
     const root = await gitFixture();
     await writeFile(path.join(root, ".gitignore"), "*.cache\n");
@@ -164,6 +193,18 @@ describe("audit exclusions", () => {
     await assert.rejects(auditRepository(root), (error: unknown) => {
       assert.match(String(error), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
       assert.equal((error as Error).cause, "src");
+      return true;
+    });
+  });
+
+  it("refuses a tracked ancestor replaced by a case-renamed directory link", async () => {
+    const root = await gitFixture();
+    await execFileAsync("git", ["config", "core.ignorecase", "true"], { cwd: root });
+    await rename(path.join(root, "src"), path.join(root, "original-src"));
+    await symlink(path.join(root, "original-src"), path.join(root, "SRC"), "junction");
+    await assert.rejects(auditRepository(root), (error: unknown) => {
+      assert.match(String(error), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+      assert.equal((error as Error).cause, "SRC");
       return true;
     });
   });
@@ -258,7 +299,11 @@ describe("audit exclusions", () => {
       { cwd: root },
     );
     const linkedRoot = path.join(root, ".testforge", "linked");
-    await execFileAsync("git", ["worktree", "add", "--detach", linkedRoot], { cwd: root });
+    await execFileAsync(
+      "git",
+      ["-c", "core.autocrlf=false", "worktree", "add", "--detach", linkedRoot],
+      { cwd: root },
+    );
     await writeFile(path.join(linkedRoot, "cache.db"), "ignored cache\n");
     const linked = await auditRepository(linkedRoot);
     assert.equal(linked.fileCount, 4);
@@ -277,6 +322,29 @@ describe("audit exclusions", () => {
     } finally {
       if (previous === undefined) delete process.env.GIT_INDEX_FILE;
       else process.env.GIT_INDEX_FILE = previous;
+    }
+  });
+
+  it("refuses unavailable or malformed Git case configuration", async (context) => {
+    const root = await gitFixture();
+    const spawn = childProcess.spawn;
+    let program = "process.exit(2)";
+    const replacement = context.mock.method(
+      childProcess,
+      "spawn",
+      (command: string, args: string[], options: SpawnOptions) =>
+        command === "git" && args[0] === "config"
+          ? spawn(process.execPath, ["-e", program], options)
+          : spawn(command, args, options),
+    );
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(auditRepository(root), /GIT_INDEX_UNAVAILABLE/u);
+      program = "process.stdout.write('maybe\\n')";
+      await assert.rejects(auditRepository(root), /GIT_INDEX_UNAVAILABLE/u);
+    } finally {
+      replacement.mock.restore();
+      syncBuiltinESMExports();
     }
   });
 

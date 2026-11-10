@@ -16,6 +16,10 @@ In a Git worktree, audit selects tracked files and non-ignored untracked files u
 then applies the exclusions above. Disabling Git's macOS name precomposition for this listing
 preserves disk spellings: admitted non-NFC names retain the existing portable-path refusal rather
 than being silently omitted. Ignore patterns are evaluated against these literal spellings.
+When `core.ignorecase` is true, ASCII case differences between the index and disk names are
+reconciled while retaining the disk spelling. This includes case-only file and directory renames;
+it does not normalize Unicode aliases. Once a Git inventory is selected, a failed or invalid case
+configuration query refuses with `GIT_INDEX_UNAVAILABLE`.
 Git's nested `.gitignore`, `.git/info/exclude`, and global ignore rules apply to untracked files;
 tracked files remain included even if an ignore rule matches them. Audit reads current disk bytes,
 including staged and unstaged edits, and omits deleted files. It does not recurse into submodules.

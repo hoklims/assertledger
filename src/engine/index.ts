@@ -670,7 +670,7 @@ async function walkFiles(
   root: string,
   excludes: ReadonlySet<string>,
   links?: string[],
-  includedPaths?: ReadonlySet<string>,
+  includesPath?: (relative: string) => boolean,
 ): Promise<RepositoryInventory> {
   const files: string[] = [];
   const directories: string[] = [];
@@ -682,7 +682,7 @@ async function walkFiles(
     entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
     for (const entry of entries) {
       const relative = path.posix.join(relativeDirectory.split(path.sep).join("/"), entry.name);
-      if (includedPaths !== undefined && !includedPaths.has(relative)) continue;
+      if (includesPath !== undefined && !includesPath(relative)) continue;
       if (excludes.has(portablePathKey(entry.name))) continue;
       const entryStats = await lstat(path.join(root, ...relative.split("/")));
       if (entryStats.isSymbolicLink()) {
@@ -4169,7 +4169,19 @@ async function auditGit(root: string, args: string[]): Promise<{ ok: boolean; st
   });
 }
 
-async function auditGitPaths(root: string): Promise<Set<string>> {
+async function auditGitPaths(root: string): Promise<(relative: string) => boolean> {
+  const caseConfig = await auditGit(root, [
+    "config",
+    "--type=bool",
+    "--default=false",
+    "--get",
+    "core.ignorecase",
+  ]);
+  const caseValue = caseConfig.stdout.trim();
+  if (!caseConfig.ok || (caseValue !== "true" && caseValue !== "false"))
+    throw new Error(knownDiagnosticCode("GIT_INDEX_UNAVAILABLE"));
+  const pathKey = (relative: string): string =>
+    caseValue === "true" ? relative.replace(/[A-Z]/gu, (letter) => letter.toLowerCase()) : relative;
   const result = await auditGit(root, [
     "-c",
     "core.precomposeUnicode=false",
@@ -4185,9 +4197,9 @@ async function auditGitPaths(root: string): Promise<Set<string>> {
   for (const file of result.stdout.split("\0").filter(Boolean)) {
     const segments = file.split("/");
     for (let length = 1; length <= segments.length; length += 1)
-      paths.add(segments.slice(0, length).join("/"));
+      paths.add(pathKey(segments.slice(0, length).join("/")));
   }
-  return paths;
+  return (relative) => paths.has(pathKey(relative));
 }
 
 function associatedAuditTests(source: string, tests: readonly string[]): string[] {
