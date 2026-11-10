@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import childProcess, { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import childProcess, { execFile, type SpawnOptions } from "node:child_process";
+import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -11,7 +11,7 @@ import {
   parseRepositoryAuditV2,
   repositoryAuditJsonSchema,
 } from "../src/contracts/index.js";
-import { auditRepository, initializeRepository } from "../src/engine/index.js";
+import { analyzeRepository, auditRepository, initializeRepository } from "../src/engine/index.js";
 import { explainReasonCodes } from "../src/diagnostics.js";
 import { AssertLedger } from "../src/sdk/index.js";
 import { runPublicCli } from "./support/public-surface.js";
@@ -20,6 +20,293 @@ const temporaryDirectories: string[] = [];
 const execFileAsync = promisify(execFile);
 
 describe("audit exclusions", () => {
+  async function gitFixture() {
+    const root = await fixture();
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    return root;
+  }
+
+  async function cliAudit(root: string) {
+    let stdout = "";
+    let stderr = "";
+    const exit = await runPublicCli(["audit", ".", "--json"], {
+      cwd: root,
+      writeStdout: (text) => {
+        stdout += text;
+      },
+      writeStderr: (text) => {
+        stderr += text;
+      },
+    });
+    assert.equal(exit, 0, stderr);
+    return parseRepositoryAuditV2(JSON.parse(stdout));
+  }
+
+  it("keeps the digest and count stable across local index-cache writes", async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, ".gitignore"), ".semctx/\n");
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=Audit Fixture",
+        "-c",
+        "user.email=audit@example.invalid",
+        "commit",
+        "-qm",
+        "initial",
+      ],
+      { cwd: root },
+    );
+    const before = await auditRepository(root);
+    assert.equal((await cliAudit(root)).repositoryDigest, before.repositoryDigest);
+    assert.equal(before.fileCount, 4);
+    const diskBefore = (await analyzeRepository(root)) as { repositoryDigest: string };
+    assert.equal(before.repositoryDigest, diskBefore.repositoryDigest);
+    await mkdir(path.join(root, ".semctx"));
+    for (const content of ["first index", "rebuilt index"]) {
+      await writeFile(path.join(root, ".semctx", "semctx.db"), content);
+      const after = await auditRepository(root);
+      assert.equal(after.repositoryDigest, before.repositoryDigest);
+      assert.equal(after.fileCount, before.fileCount);
+      assert.equal(after.repositoryBytes, before.repositoryBytes);
+      const cli = await cliAudit(root);
+      assert.equal(cli.repositoryDigest, before.repositoryDigest);
+      assert.equal(cli.fileCount, before.fileCount);
+      assert.deepEqual(after.files, before.files);
+      const diskAfter = (await analyzeRepository(root)) as { repositoryDigest: string };
+      assert.notEqual(diskAfter.repositoryDigest, before.repositoryDigest);
+    }
+    await rm(path.join(root, ".semctx"), { recursive: true });
+    assert.equal((await auditRepository(root)).repositoryDigest, before.repositoryDigest);
+  });
+
+  it("reads working-tree bytes for tracked, staged and permitted untracked files", async () => {
+    const root = await gitFixture();
+    const before = await auditRepository(root);
+    await writeFile(path.join(root, "README.md"), "staged\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+    const staged = await auditRepository(root);
+    assert.notEqual(staged.repositoryDigest, before.repositoryDigest);
+    await writeFile(path.join(root, "README.md"), "unstaged\n");
+    const unstaged = await auditRepository(root);
+    assert.notEqual(unstaged.repositoryDigest, staged.repositoryDigest);
+    await writeFile(path.join(root, ".gitignore"), "README.md\n*.local\n");
+    await writeFile(path.join(root, "new.ts"), "export const added = true;\n");
+    await writeFile(path.join(root, "ignored.local"), "ignored\n");
+    const added = await auditRepository(root);
+    assert.deepEqual(
+      added.files.map((file) => file.path),
+      [".gitignore", "new.ts", "README.md", "src/choice.ts", "tests/choice.test.ts"],
+    );
+    await rm(path.join(root, "README.md"));
+    const deleted = await auditRepository(root);
+    assert.equal(deleted.fileCount, added.fileCount - 1);
+    assert(!deleted.files.some((file) => file.path === "README.md"));
+    assert.notEqual(deleted.repositoryDigest, added.repositoryDigest);
+  });
+
+  it("uses nested ignores, negations, local excludes and explicit request exclusions", async () => {
+    const root = await gitFixture();
+    await writeFile(path.join(root, ".gitignore"), "*.cache\n");
+    await writeFile(path.join(root, "src", ".gitignore"), "!kept.cache\n");
+    await writeFile(path.join(root, ".git", "info", "exclude"), "local.db\n");
+    const globalIgnore = path.join(root, ".git", "global-ignore");
+    await writeFile(globalIgnore, "global.tmp\n");
+    await execFileAsync("git", ["config", "core.excludesFile", globalIgnore], { cwd: root });
+    await writeFile(path.join(root, "global.tmp"), "ignored\n");
+    await writeFile(path.join(root, "local.db"), "ignored\n");
+    await writeFile(path.join(root, "src", "hidden.cache"), "ignored\n");
+    if (process.platform !== "win32")
+      await writeFile(path.join(root, "src", "nonportable?.cache"), "ignored\n");
+    await writeFile(path.join(root, "src", "kept.cache"), "included\n");
+    const verificationRequest = request(root);
+    verificationRequest.repository.exclude = ["tests"];
+    const result = await auditRepository(root, { verificationRequest });
+    assert.deepEqual(
+      result.files.map((file) => file.path),
+      [".gitignore", "README.md", "src/.gitignore", "src/choice.ts", "src/kept.cache"],
+    );
+    assert.equal(result.appliedExcludes.source, "request");
+  });
+
+  it("retains disk inventory outside Git and when Git is explicitly disabled", async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, ".gitignore"), "cache.db\n");
+    await writeFile(path.join(root, "cache.db"), "local index\n");
+    const outsideGit = await auditRepository(root);
+    assert.equal(outsideGit.fileCount, 5);
+    assert(outsideGit.reasonCodes.includes("GIT_UNAVAILABLE"));
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    const disabled = await auditRepository(root, { noGit: true });
+    assert.equal(disabled.repositoryDigest, outsideGit.repositoryDigest);
+    assert(disabled.reasonCodes.includes("GIT_DISABLED"));
+    assert.equal((await auditRepository(root)).fileCount, 4);
+  });
+
+  it("ignores excluded links but refuses admitted links and linked ancestors", async () => {
+    const root = await gitFixture();
+    await writeFile(path.join(root, ".gitignore"), "ignored-link\n");
+    await symlink(path.join(root, "src"), path.join(root, "ignored-link"), "junction");
+    assert.equal((await auditRepository(root)).fileCount, 4);
+    await symlink(path.join(root, "src"), path.join(root, "admitted-link"), "junction");
+    await assert.rejects(auditRepository(root), (error: unknown) => {
+      assert.match(String(error), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+      assert.equal((error as Error).cause, "admitted-link");
+      return true;
+    });
+    await rm(path.join(root, "admitted-link"));
+    await rename(path.join(root, "src"), path.join(root, "original-src"));
+    await symlink(path.join(root, "original-src"), path.join(root, "src"), "junction");
+    await assert.rejects(auditRepository(root), (error: unknown) => {
+      assert.match(String(error), /UNSUPPORTED_REPOSITORY_SYMLINK/u);
+      assert.equal((error as Error).cause, "src");
+      return true;
+    });
+  });
+
+  it("preserves spaces and Unicode in Git filenames and audits a subdirectory", async () => {
+    const root = await gitFixture();
+    await writeFile(path.join(root, " leading-space.ts"), "export const value = 1;\n");
+    await writeFile(path.join(root, "src", "café.ts"), "export const cafe = 1;\n");
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    const result = await auditRepository(root);
+    assert.equal(result.fileCount, 5);
+    assert(result.files.some((file) => file.path === " leading-space.ts"));
+    const nested = await auditRepository(path.join(root, "src"));
+    assert.equal(nested.fileCount, 2);
+    assert(nested.files.every((file) => !file.path.startsWith("src/")));
+  });
+
+  it("never admits an ignored Unicode alias of a missing tracked file", async () => {
+    const root = await gitFixture();
+    await execFileAsync("git", ["config", "core.precomposeUnicode", "false"], { cwd: root });
+    await writeFile(path.join(root, ".gitignore"), "cafe\u0301.ts\n");
+    await writeFile(path.join(root, "café.ts"), "tracked\n");
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await rm(path.join(root, "café.ts"));
+    const before = await auditRepository(root);
+    await writeFile(path.join(root, "cafe\u0301.ts"), "ignored\n");
+    let after: Awaited<ReturnType<typeof auditRepository>> | undefined;
+    await assert.doesNotReject(async () => {
+      after = await auditRepository(root);
+    });
+    assert.equal(after?.repositoryDigest, before.repositoryDigest);
+    assert.equal(after?.fileCount, before.fileCount);
+  });
+
+  it("refuses a nonportable tracked name even when Git precomposes Unicode", async () => {
+    const root = await gitFixture();
+    await execFileAsync("git", ["config", "core.precomposeUnicode", "true"], { cwd: root });
+    await writeFile(path.join(root, "cafe\u0301.ts"), "tracked\n");
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await assert.rejects(auditRepository(root), /Ambiguous Unicode path segment must use NFC/u);
+  });
+
+  it("rechecks Git membership while tolerating writes to ignored files", async () => {
+    const root = await gitFixture();
+    await writeFile(path.join(root, ".gitignore"), "cache.db\n");
+    const before = await auditRepository(root);
+    const during = await auditRepository(root, {
+      afterInitialInventory: () => writeFile(path.join(root, "cache.db"), "new cache\n"),
+    });
+    assert.equal(during.repositoryDigest, before.repositoryDigest);
+    await assert.rejects(
+      auditRepository(root, {
+        afterInitialInventory: () =>
+          writeFile(path.join(root, "new.ts"), "export const value = 1;\n"),
+      }),
+      /REPOSITORY_CHANGED_DURING_AUDIT/u,
+    );
+    await assert.rejects(
+      auditRepository(root, {
+        afterInitialInventory: () =>
+          writeFile(path.join(root, ".git", "info", "exclude"), "new.ts\n"),
+      }),
+      /REPOSITORY_CHANGED_DURING_AUDIT/u,
+    );
+  });
+
+  it("refuses a broken Git index instead of silently inventorying ignored files", async () => {
+    const root = await gitFixture();
+    await writeFile(path.join(root, ".git", "index"), "corrupt index");
+    await assert.rejects(auditRepository(root), /GIT_INDEX_UNAVAILABLE/u);
+  });
+
+  it("audits empty Git repositories and linked worktrees", async () => {
+    const root = await gitFixture();
+    const emptyRoot = await mkdtemp(path.join(os.tmpdir(), "assertledger-audit-empty-"));
+    temporaryDirectories.push(emptyRoot);
+    await execFileAsync("git", ["init", "-q"], { cwd: emptyRoot });
+    assert.equal((await auditRepository(emptyRoot)).fileCount, 0);
+    await writeFile(path.join(root, ".gitignore"), "cache.db\n");
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=Audit Fixture",
+        "-c",
+        "user.email=audit@example.invalid",
+        "commit",
+        "-qm",
+        "initial",
+      ],
+      { cwd: root },
+    );
+    const linkedRoot = path.join(root, ".testforge", "linked");
+    await execFileAsync("git", ["worktree", "add", "--detach", linkedRoot], { cwd: root });
+    await writeFile(path.join(linkedRoot, "cache.db"), "ignored cache\n");
+    const linked = await auditRepository(linkedRoot);
+    assert.equal(linked.fileCount, 4);
+    assert.equal(linked.repositoryDigest, (await auditRepository(root)).repositoryDigest);
+  });
+
+  it("does not use an inherited Git index for a different repository", async () => {
+    const root = await gitFixture();
+    await writeFile(path.join(root, ".gitignore"), "README.md\n");
+    const previous = process.env.GIT_INDEX_FILE;
+    process.env.GIT_INDEX_FILE = path.join(root, ".git", "other-index");
+    try {
+      const result = await auditRepository(root);
+      assert.equal(result.fileCount, 4);
+      assert(result.files.some((file) => file.path === "README.md"));
+    } finally {
+      if (previous === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = previous;
+    }
+  });
+
+  it("refuses incomplete or invalid UTF-8 Git listings", async (context) => {
+    const root = await gitFixture();
+    const spawn = childProcess.spawn;
+    let output = Buffer.from("README.md");
+    const replacement = context.mock.method(
+      childProcess,
+      "spawn",
+      (command: string, args: string[], options: SpawnOptions) =>
+        command === "git" && args.includes("ls-files")
+          ? spawn(
+              process.execPath,
+              ["-e", `process.stdout.write(Buffer.from('${output.toString("hex")}', 'hex'))`],
+              options,
+            )
+          : spawn(command, args, options),
+    );
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(auditRepository(root), /GIT_INDEX_UNAVAILABLE/u);
+      output = Buffer.from([0xff, 0x00]);
+      await assert.rejects(auditRepository(root), /GIT_INDEX_UNAVAILABLE/u);
+    } finally {
+      replacement.mock.restore();
+      syncBuiltinESMExports();
+    }
+  });
+
   it("exposes the new audit schema in the CLI and retains the v1 selector", async () => {
     const ledger = new AssertLedger();
     for (const name of ["repository-audit", "repository-audit-v2"] as const) {

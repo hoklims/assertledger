@@ -13,7 +13,7 @@ schema to the existing conformance rail without regenerating any frozen lock.
 V2 adds `appliedExcludes: { source, entries }`. Entries are sorted, unique portable
 entry names, including the defaults `.git`, `.testforge`, and `node_modules`.
 With a verification request, source is `request` and entries derive exclusively
-from `request.repository.exclude` plus defaults, exactly as campaign copying does.
+from `request.repository.exclude` plus defaults, as campaign copying does.
 Configuration never removes additional files from a campaign audit.
 Without a request, a valid `assertledger.config.json` supplies source `config`;
 otherwise source is `defaults`. CLI explicit requests and automatic
@@ -32,3 +32,14 @@ This changes the audited inventory and may change its digest, byte count, and
 campaign cost projection compared with v1. Campaign execution and its manifest
 and decision digest projections are unchanged. Consumers validating audit JSON
 must select the v2 schema; do not strip disclosure and relabel current output as v1.
+
+## Git ignore correction
+
+Current Git audits additionally filter their inventory through Git's tracked and non-ignored
+untracked file list. This corrects local ignored caches affecting audit digests and counts without
+changing the v2 schema or digest byte encoding. Trees with the same selected files retain their
+previous audit digest. Ignored extras and submodule contents are no longer selected, so they can
+change the digest and cost estimate compared with previous audits, even in a clean checkout. Historical
+v1/v2 artifacts remain readable. Campaign manifests, decision and artifact digest projections,
+and the disk-based `analyze` operation are unchanged. See [audit inventory rules](repository-audit.md)
+for disk fallbacks, working-tree edits, links, and the limits of audit cost estimates.
