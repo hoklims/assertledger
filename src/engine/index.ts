@@ -5179,7 +5179,12 @@ async function runBunExecutableProbe(
     args: [
       "-e",
       windowsDesignated
-        ? "console.log(JSON.stringify({execPath:process.execPath,bunVersion:Bun.version,bunRevision:Bun.revision,platform:process.platform,arch:process.arch}))"
+        ? `const id = {execPath: process.execPath, bunVersion: Bun.version, bunRevision: Bun.revision};
+           if (id.bunVersion === ${JSON.stringify(WINDOWS_X64_BUN_143_DESIGNATED_PROFILE.bunVersion)}) {
+             id.platform = process.platform;
+             id.arch = process.arch;
+           }
+           console.log(JSON.stringify(id));`
         : "console.log(JSON.stringify({execPath:process.execPath,bunVersion:Bun.version,bunRevision:Bun.revision}))",
     ],
     cwd: repositoryRoot,
@@ -5199,7 +5204,7 @@ async function runBunExecutableProbe(
   if (
     !isRecord(report) ||
     Object.keys(report).sort().join("\0") !==
-      (windowsDesignated
+      (windowsDesignated && report.bunVersion === WINDOWS_X64_BUN_143_DESIGNATED_PROFILE.bunVersion
         ? "arch\0bunRevision\0bunVersion\0execPath\0platform"
         : "bunRevision\0bunVersion\0execPath") ||
     typeof report.execPath !== "string" ||
