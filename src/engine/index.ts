@@ -26,12 +26,12 @@ import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SyntaxKind } from "typescript/unstable/ast";
-import type { BunPreflightRefusal } from "../contracts/diagnostics.js";
 import {
   assertKnownDiagnosticCodes,
-  knownDiagnosticCode,
   type KnownDiagnosticCode,
+  knownDiagnosticCode,
 } from "../contracts/diagnostic-catalogue.js";
+import type { BunPreflightRefusal } from "../contracts/diagnostics.js";
 import {
   AdapterSchema,
   type AgenticBenchmarkAcquisitionRequest,
@@ -49,10 +49,10 @@ import {
   parseRepositoryInitLockV2,
   parseRepositoryInitResult,
   parseRepositoryInitResultV2,
-  parseVersionedRepositoryInitResult,
   parseVerificationRequest,
   parseVersionedRepositoryInitConfig,
   parseVersionedRepositoryInitLock,
+  parseVersionedRepositoryInitResult,
   parseVersionedVerificationRequest,
   type RepositoryAuditV2,
   type RepositoryInitConfigV2,
@@ -83,7 +83,12 @@ import {
   sealManifestArtifact,
   sha256Canonical,
 } from "../core/index.js";
-import { BUN_TEST_DESIGNATED_ADAPTER_PROFILE } from "./adapters/bun-test-designated-profile.js";
+import {
+  BUN_TEST_DESIGNATED_ADAPTER_PROFILE,
+  isWindowsX64Bun143,
+  permitsWindowsX64Bun143,
+  WINDOWS_X64_BUN_143_DESIGNATED_PROFILE,
+} from "./adapters/bun-test-designated-profile.js";
 import { BUN_TEST_ADAPTER_PROFILE } from "./adapters/bun-test-profile.js";
 import { NODE_TEST_ADAPTER_PROFILE } from "./adapters/node-test-profile.js";
 import {
@@ -5167,12 +5172,20 @@ async function runBunExecutableProbe(
   environmentAllowlist: string[],
   timeoutMs: number,
   maximumOutputBytes: number,
+  windowsDesignated: boolean,
 ): Promise<{ execPath: string; bunVersion: string; bunRevision: string }> {
   const result = await runProcess({
     executable,
     args: [
       "-e",
-      "console.log(JSON.stringify({execPath:process.execPath,bunVersion:Bun.version,bunRevision:Bun.revision}))",
+      windowsDesignated
+        ? `const id = {execPath: process.execPath, bunVersion: Bun.version, bunRevision: Bun.revision};
+           if (id.bunVersion === ${JSON.stringify(WINDOWS_X64_BUN_143_DESIGNATED_PROFILE.bunVersion)}) {
+             id.platform = process.platform;
+             id.arch = process.arch;
+           }
+           console.log(JSON.stringify(id));`
+        : "console.log(JSON.stringify({execPath:process.execPath,bunVersion:Bun.version,bunRevision:Bun.revision}))",
     ],
     cwd: repositoryRoot,
     environment: environmentFromAllowlist(environmentAllowlist),
@@ -5190,7 +5203,10 @@ async function runBunExecutableProbe(
   }
   if (
     !isRecord(report) ||
-    Object.keys(report).sort().join("\0") !== "bunRevision\0bunVersion\0execPath" ||
+    Object.keys(report).sort().join("\0") !==
+      (windowsDesignated && report.bunVersion === WINDOWS_X64_BUN_143_DESIGNATED_PROFILE.bunVersion
+        ? "arch\0bunRevision\0bunVersion\0execPath\0platform"
+        : "bunRevision\0bunVersion\0execPath") ||
     typeof report.execPath !== "string" ||
     report.execPath.length === 0 ||
     typeof report.bunVersion !== "string" ||
@@ -5198,10 +5214,13 @@ async function runBunExecutableProbe(
   ) {
     throw new Error("BUN_TEST_EXECUTABLE_PROBE_FAILED");
   }
-  if (
-    report.bunVersion !== BUN_TEST_ADAPTER_PROFILE.bunVersion ||
-    report.bunRevision !== BUN_TEST_ADAPTER_PROFILE.bunRevision
-  ) {
+  const current =
+    report.bunVersion === BUN_TEST_ADAPTER_PROFILE.bunVersion &&
+    report.bunRevision === BUN_TEST_ADAPTER_PROFILE.bunRevision;
+  const designated143 =
+    windowsDesignated &&
+    isWindowsX64Bun143(report.bunVersion, report.bunRevision, report.platform, report.arch);
+  if (!current && !designated143) {
     throw new Error("BUN_TEST_VERSION_UNSUPPORTED");
   }
   return {
@@ -5217,6 +5236,7 @@ async function probeBunTestExecutable(
   environmentAllowlist: string[],
   timeoutMs: number,
   maximumOutputBytes: number,
+  windowsDesignated = false,
 ): Promise<BunExecutableIdentity> {
   const first = await runBunExecutableProbe(
     requestedExecutable,
@@ -5224,6 +5244,7 @@ async function probeBunTestExecutable(
     environmentAllowlist,
     timeoutMs,
     maximumOutputBytes,
+    windowsDesignated,
   );
   let resolvedExecutable: string;
   try {
@@ -5238,6 +5259,7 @@ async function probeBunTestExecutable(
     environmentAllowlist,
     timeoutMs,
     maximumOutputBytes,
+    windowsDesignated,
   );
   if (
     (await realpath(second.execPath)) !== resolvedExecutable ||
@@ -6812,6 +6834,12 @@ async function verifyPreparedCampaign(
             trustedLocalEnvironmentAllowlist(request),
             request.budgets.timeoutMsPerExecution,
             request.budgets.maximumOutputBytes,
+            permitsWindowsX64Bun143(
+              request.adapter.kind,
+              request.isolation.kind,
+              process.platform,
+              process.arch,
+            ),
           )
         : await probeContainerBunExecutable(
             container,
@@ -7101,7 +7129,11 @@ async function verifyPreparedCampaign(
                 : request.adapter.kind === "bun-test-designated" && bunIdentity !== undefined
                   ? {
                       kind: "bun-test-designated",
-                      profile: BUN_TEST_DESIGNATED_ADAPTER_PROFILE,
+                      profile:
+                        bunIdentity.bunRevision ===
+                        WINDOWS_X64_BUN_143_DESIGNATED_PROFILE.bunRevision
+                          ? WINDOWS_X64_BUN_143_DESIGNATED_PROFILE
+                          : BUN_TEST_DESIGNATED_ADAPTER_PROFILE,
                       requestedExecutable: bunIdentity.requestedExecutable,
                       resolvedExecutable: bunIdentity.resolvedExecutable,
                       executableDigest: bunIdentity.executableDigest,

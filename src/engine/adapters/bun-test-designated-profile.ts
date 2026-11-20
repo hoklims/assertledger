@@ -22,3 +22,44 @@ export const BUN_TEST_DESIGNATED_ADAPTER_PROFILE = {
     supportsContainer: true,
   },
 } as const;
+
+/** Separately qualified for the Windows-native v4/v5 backend only. */
+export const WINDOWS_X64_BUN_143_DESIGNATED_PROFILE = {
+  ...BUN_TEST_DESIGNATED_ADAPTER_PROFILE,
+  profileVersion: "1.1.0",
+  bunVersion: "1.4.3",
+  bunRevision: "c6da4a4d3010e5553438c60f6bd76d981976867c",
+  platform: "win32",
+  arch: "x64",
+  capabilities: { ...BUN_TEST_DESIGNATED_ADAPTER_PROFILE.capabilities, supportsContainer: false },
+} as const;
+
+export function permitsWindowsX64Bun143(
+  adapter: string,
+  backend: string,
+  hostPlatform: NodeJS.Platform,
+  hostArch: string,
+): boolean {
+  return (
+    adapter === "bun-test-designated" &&
+    backend === "windows-native" &&
+    hostPlatform === "win32" &&
+    hostArch === "x64"
+  );
+}
+
+/** The regular Bun 1.4.4 profile has separate pins in each execution backend. */
+export function isWindowsX64Bun143(
+  version: string,
+  revision: string,
+  platform: unknown,
+  arch: unknown,
+): boolean {
+  const profile = WINDOWS_X64_BUN_143_DESIGNATED_PROFILE;
+  return (
+    version === profile.bunVersion &&
+    revision === profile.bunRevision &&
+    platform === profile.platform &&
+    arch === profile.arch
+  );
+}

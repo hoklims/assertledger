@@ -62,6 +62,16 @@ test with the expected line, and every reference and neutral attempt must pass.
 
 ## Backend
 
+On Windows x64, the Windows-native backend for designated tests can also import evidence
+with Bun 1.4.3 revision `c6da4a4d3010e5553438c60f6bd76d981976867c`. The verifier checks the
+actual executable's version, full revision, platform and architecture and records
+`WINDOWS_NATIVE_UNSANDBOXED` and designated profile `1.1.0`. Both the v1 and v2 witness formats
+use their usual matcher-attribution and preflight gates. The general runtime doctor, candidate
+adapter, orchestration collector, container backend and other platforms retain their Bun 1.4.4 pin.
+The 1.4.3 profile covers only designated Bun assertions, including Bun tests that invoke other
+programs and assert on their outputs. It does not provide direct assertion attribution to Python,
+PowerShell or Rust test functions.
+
 The witness never selects its backend. The operator passes exactly one of:
 
 ```sh

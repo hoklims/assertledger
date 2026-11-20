@@ -1,11 +1,16 @@
 # Qualified Bun runtime moves to 1.4.4
 
-The built-in Bun adapters qualify exactly one runtime. It moves from Bun 1.4.2 (revision
+This records the primary runtime migration. A later, separately qualified Windows x64
+designated compatibility profile supports the exact Bun 1.4.3 release for verification v4/v5.
+Its backend, evidence identity and limits are documented in [Witness import](witness-import.md#backend).
+The Windows qualification job replays three manifests from a fresh directory. It requires
+attributed assertions in both v4 and v5 and rejection of an ordinary exception.
+
+The primary runtime moves from Bun 1.4.2 (revision
 `744846f844374847c902b5e7fd59b4342a51ef99`, `bun --revision` prints `1.4.2+744846f84`) to
 Bun 1.4.4 (revision `38afee6c84fcf48c0edb2466aa4b27d287a59c30`, `bun --revision` prints
 `1.4.4+38afee6c8`). This is the identity of the official release binaries installed by CI.
-There is no range: neither 1.4.2 nor 1.4.3 is accepted. A different revision is also refused even
-when its reported version is 1.4.4; the version label alone does not qualify a rebuilt binary.
+The primary profile requires this exact version and revision.
 
 This applies to the `bun-test` adapter (verification v3), the designated `bun-test-designated`
 adapter (verification v4 and v5, including the container and Windows-native backends), witness
@@ -14,8 +19,8 @@ collector.
 
 ## What a different Bun now does
 
-A Bun that is not exactly 1.4.4 is refused before any campaign executes. It is never a target
-kill and never evidence:
+For a runtime outside the exact identities admitted by the selected adapter and backend,
+the version check runs before a campaign executes.
 
 - `verify` and `import-witness` exit 4 with `BUN_TEST_VERSION_UNSUPPORTED`; `explain` now names
   Bun 1.4.4 as the next action.
