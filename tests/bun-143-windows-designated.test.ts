@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -14,6 +14,14 @@ import { designatedCampaign, designatedRepository, FAULT } from "./support/desig
 
 const executable = process.env.ASSERTLEDGER_BUN143_EXECUTABLE;
 const revision = "c6da4a4d3010e5553438c60f6bd76d981976867c";
+const evidenceDirectory = process.env.ASSERTLEDGER_BUN143_EVIDENCE_DIR;
+
+async function retainManifest(name: string, manifest: unknown) {
+  if (evidenceDirectory) {
+    await writeFile(path.join(evidenceDirectory, name), JSON.stringify(manifest), { flag: "wx" });
+  }
+}
+
 const windowsNative = {
   kind: "windows-native",
   acknowledgedUnsafeExecution: true,
@@ -108,6 +116,7 @@ describe("Bun 1.4.3 Windows x64 designated qualification", {
         );
       }
       assert.equal(replayEvidenceManifest(manifest).valid, true);
+      await retainManifest(`verified-${schemaVersion}.json`, manifest);
     });
   }
 
@@ -128,5 +137,6 @@ describe("Bun 1.4.3 Windows x64 designated qualification", {
       manifest.observations.some((row) => row.outcome === "ASSERTION_FAILURE"),
       false,
     );
+    await retainManifest("ordinary-exception.json", manifest);
   });
 });
