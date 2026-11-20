@@ -1,5 +1,9 @@
 # Qualified Bun runtime moves to 1.4.4
 
+This records the primary runtime migration. A later, separately qualified Windows x64
+designated compatibility profile supports the exact Bun 1.4.3 release for verification v4/v5.
+Its backend, evidence identity and limits are documented in [Witness import](witness-import.md#backend).
+
 The built-in Bun adapters qualify exactly one runtime. It moves from Bun 1.4.2 (revision
 `744846f844374847c902b5e7fd59b4342a51ef99`, `bun --revision` prints `1.4.2+744846f84`) to
 Bun 1.4.4 (revision `38afee6c84fcf48c0edb2466aa4b27d287a59c30`, `bun --revision` prints

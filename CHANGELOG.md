@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The explicitly acknowledged Windows-native x64 backend supports an additional exact runtime
+  for designated Bun tests and witness import: Bun 1.4.3 at revision
+  `c6da4a4d3010e5553438c60f6bd76d981976867c`. Verification v4 and v5 record this runtime
+  in the designated profile and evidence. The primary Bun runtime is still 1.4.4.
+
 - `doctor` accepts the detection overrides of `init`: `--package-manager`, `--test-command-json`
   (`-` reads stdin) and `--adapter-config`, also in `AssertLedger.doctor` options. A dry run that
   `init` accepts is now reproducible by `doctor`: these flags take the same values as for `init`

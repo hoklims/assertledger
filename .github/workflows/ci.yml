@@ -46,6 +46,16 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: docker pull "$ASSERTLEDGER_CONTAINER_IMAGE"
       - run: pnpm check
+      - name: Set up Bun for the Windows x64 designated compatibility profile
+        if: matrix.os == 'windows-latest' && matrix.node == 22
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - name: Verify the additional designated runtime and replay its evidence
+        if: matrix.os == 'windows-latest' && matrix.node == 22
+        env:
+          ASSERTLEDGER_BUN143_EXECUTABLE: bun
+        run: pnpm exec tsx --test tests/bun-143-windows-designated.test.ts
 
   package:
     name: Package smoke test / Node ${{ matrix.node }} / ${{ matrix.os }}

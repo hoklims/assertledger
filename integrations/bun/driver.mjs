@@ -618,9 +618,6 @@ async function main() {
     timeout: 5_000,
     maxBuffer: MAX_OUTPUT_BYTES,
   });
-  if (revision.status !== 0 || revision.stderr !== "" || revision.stdout.trim() !== BUN_REVISION) {
-    throw new Error("UNSUPPORTED_BUN_REVISION");
-  }
   const candidates = JSON.parse(process.env.TESTFORGE_CANDIDATE_FILES ?? "[]");
   if (!Array.isArray(candidates)) throw new Error("INVALID_CANDIDATES");
   const normalizedBase = baseTests.map(normalizeRelativeFile);
@@ -633,6 +630,37 @@ async function main() {
   const selection = parseDesignatedSelection(process.env.ASSERTLEDGER_BUN_DESIGNATED, files);
   if (selection !== undefined && normalizedCandidates.length > 0) {
     throw new Error("INVALID_DESIGNATED_SELECTION");
+  }
+  if (revision.status !== 0 || revision.stderr !== "") throw new Error("UNSUPPORTED_BUN_REVISION");
+  if (revision.stdout.trim() !== BUN_REVISION) {
+    if (
+      selection === undefined ||
+      process.platform !== "win32" ||
+      process.arch !== "x64" ||
+      revision.stdout.trim() !== "1.4.3+c6da4a4d3"
+    )
+      throw new Error("UNSUPPORTED_BUN_REVISION");
+    // The CLI's usual revision display abbreviates the hash. The Windows profile pins the full
+    // executable revision and architecture; verify both again in the actual Bun process.
+    const compat = spawnSync(
+      executable,
+      ["-e", "console.log([Bun.version,Bun.revision,process.platform,process.arch].join(' '))"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        shell: false,
+        windowsHide: true,
+        timeout: 5_000,
+        maxBuffer: MAX_OUTPUT_BYTES,
+      },
+    );
+    if (
+      compat.status !== 0 ||
+      compat.stderr !== "" ||
+      compat.stdout.trim() !== "1.4.3 c6da4a4d3010e5553438c60f6bd76d981976867c win32 x64"
+    ) {
+      throw new Error("UNSUPPORTED_BUN_REVISION");
+    }
   }
   await installHelper(await readFile(helperSourcePath, "utf8"), root);
   const junitFile = path.join(root, `__assertledger_bun_junit_${randomUUID()}.xml`);
