@@ -134,7 +134,10 @@ verification request's exclusions when the snapshot is copied. With a request, `
 those same exclusions plus defaults, independent of configuration. Without a request, `audit`
 uses the valid configuration's exclusions, like the public `analyze` entry point, or defaults.
 Audit v2 reports the effective names and their source and reuses one snapshot for both inventories.
-An analyze digest can therefore differ from a campaign audit or manifest digest of the same tree.
+Git audits additionally select tracked and non-ignored untracked files; `--no-git` and non-Git
+audits retain the disk inventory. Audit costs describe that selected inventory, which can be smaller
+than a campaign copy containing ignored files. See [audit inventory rules](repository-audit.md).
+An analyze digest can therefore differ from an audit or manifest digest of the same tree.
 Candidate contents and world overlays have separate
 digests. Preserve the snapshot and resolved dependency identities for stronger provenance.
 
